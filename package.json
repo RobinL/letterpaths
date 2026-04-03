@@ -1,6 +1,7 @@
 {
   "name": "letterpaths-workspace",
   "private": true,
+  "license": "MIT",
   "scripts": {
     "dev": "pnpm --filter editor dev",
     "build": "pnpm -r build",
