@@ -211,6 +211,47 @@ body {
     serif;
 }
 
+.demo-join__segmented {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.demo-join__segmented-option {
+  position: relative;
+}
+
+.demo-join__segmented-input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.demo-join__segmented-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 120px;
+  padding: 10px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(31, 43, 45, 0.16);
+  background: rgba(255, 255, 255, 0.75);
+  color: var(--ink);
+  cursor: pointer;
+  transition:
+    background 0.2s ease,
+    color 0.2s ease,
+    border-color 0.2s ease,
+    transform 0.2s ease;
+}
+
+.demo-join__segmented-input:checked + .demo-join__segmented-label {
+  background: var(--ink);
+  color: white;
+  border-color: var(--ink);
+  transform: translateY(-1px);
+}
+
 .demo-join__canvas {
   border-radius: 20px;
   border: 1px solid rgba(31, 43, 45, 0.15);

@@ -1,12 +1,12 @@
 import "./demo.css"
 import {
   AnimationPlayer,
+  buildHandwritingPath,
   CubicBezier,
   TracingSession,
   compileTracingPath,
-  defaultJoinSpacingOptions,
-  joinCursiveWord,
   lettersByVariantId,
+  type HandwritingStyle,
   type JoinSpacingOptions,
   type WritingPath
 } from "letterpaths"
@@ -49,10 +49,17 @@ if (!app) {
 }
 
 const DEFAULT_TEXT = "cursive"
+const DEFAULT_HANDWRITING_STYLE: HandwritingStyle = "cursive"
 const targetGuides = {
   xHeight: 360,
   baseline: 720
 }
+
+const handwritingStyleOptions = [
+  { value: "print", label: "Print" },
+  { value: "pre-cursive", label: "Pre-cursive" },
+  { value: "cursive", label: "Cursive" }
+] as const satisfies ReadonlyArray<{ value: HandwritingStyle; label: string }>
 
 const joinControlDefinitions = [
   {
@@ -127,7 +134,28 @@ app.innerHTML = `
             autocomplete="off"
           />
         </label>
-        <details class="demo-join__disclosure" open>
+        <div class="demo-join__field">
+          Handwriting style
+          <div class="demo-join__segmented" role="radiogroup" aria-label="Handwriting style">
+            ${handwritingStyleOptions
+    .map(
+      (option) => `
+                <label class="demo-join__segmented-option">
+                  <input
+                    class="demo-join__segmented-input"
+                    type="radio"
+                    name="handwriting-style"
+                    value="${option.value}"
+                    ${option.value === DEFAULT_HANDWRITING_STYLE ? "checked" : ""}
+                  />
+                  <span class="demo-join__segmented-label">${option.label}</span>
+                </label>
+              `
+    )
+    .join("")}
+          </div>
+        </div>
+        <details class="demo-join__disclosure" id="join-controls" open>
           <summary class="demo-join__disclosure-summary">Join spacing controls</summary>
           <div class="demo-join__slider-grid">
             ${joinControlDefinitions
@@ -184,8 +212,21 @@ const joinStaticSvg = document.querySelector<SVGSVGElement>("#join-svg-static")
 const traceSvg = document.querySelector<SVGSVGElement>("#trace-svg")
 const resetButton = document.querySelector<HTMLButtonElement>("#reset-button")
 const completeMessage = document.querySelector<HTMLDivElement>("#complete-message")
+const joinControls = document.querySelector<HTMLDetailsElement>("#join-controls")
+const handwritingStyleInputs = Array.from(
+  document.querySelectorAll<HTMLInputElement>('input[name="handwriting-style"]')
+)
 
-if (!input || !joinSvg || !joinStaticSvg || !traceSvg || !resetButton || !completeMessage) {
+if (
+  !input ||
+  !joinSvg ||
+  !joinStaticSvg ||
+  !traceSvg ||
+  !resetButton ||
+  !completeMessage ||
+  !joinControls ||
+  handwritingStyleInputs.length === 0
+) {
   throw new Error("Missing elements for handwriting demo.")
 }
 
@@ -217,6 +258,16 @@ let traceRenderQueued = false
 let traceStrokeEls: SVGPathElement[] = []
 let traceCursorEl: SVGGElement | null = null
 let traceStrokeLengths: number[] = []
+
+const readHandwritingStyle = (): HandwritingStyle =>
+  (handwritingStyleInputs.find((radio) => radio.checked)?.value as HandwritingStyle | undefined) ??
+  DEFAULT_HANDWRITING_STYLE
+
+const syncModeControls = (style: HandwritingStyle) => {
+  const showJoinControls = style === "cursive"
+  joinControls.hidden = !showJoinControls
+  joinControls.open = showJoinControls
+}
 
 const stopAnimation = () => {
   if (animationFrameId !== null) {
@@ -473,17 +524,24 @@ const setupTracing = (path: WritingPath, width: number, height: number, offsetY:
 }
 
 const render = (value: string) => {
+  const handwritingStyle = readHandwritingStyle()
+  syncModeControls(handwritingStyle)
   const trimmed = value.trim().toLowerCase()
   if (!trimmed) {
-    renderJoinEmpty(joinSvg, "Enter a word to render joined cursive.")
-    renderJoinEmpty(joinStaticSvg, "Enter a word to render joined cursive.")
+    renderJoinEmpty(joinSvg, "Enter text to render.")
+    renderJoinEmpty(joinStaticSvg, "Enter text to render.")
     renderTraceEmpty("Enter a word to trace.")
     stopAnimation()
     return
   }
 
   const joinSpacing = readJoinSpacing()
-  const writingPath = joinCursiveWord(trimmed, { targetGuides, joinSpacing, letters })
+  const writingPath = buildHandwritingPath(trimmed, {
+    style: handwritingStyle,
+    targetGuides,
+    joinSpacing,
+    letters
+  })
 
   if (writingPath.strokes.length === 0) {
     renderJoinEmpty(joinSvg, "No drawable points.")
@@ -664,6 +722,9 @@ traceSvg.addEventListener("pointerup", onPointerUp)
 traceSvg.addEventListener("pointercancel", onPointerCancel)
 
 input.addEventListener("input", () => render(input.value))
+handwritingStyleInputs.forEach((inputEl) => {
+  inputEl.addEventListener("change", () => render(input.value))
+})
 joinControlDefinitions.forEach((control) => {
   joinSpacingInputs[control.key]?.addEventListener("input", () => {
     syncJoinSpacingLabels()

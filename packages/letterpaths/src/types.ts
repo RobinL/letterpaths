@@ -1,4 +1,5 @@
 export type LetterStyle = "print" | "cursive";
+export type HandwritingStyle = "print" | "pre-cursive" | "cursive";
 export type LetterCase = "upper" | "lower";
 export type SegmentId =
   | "lead-in"
