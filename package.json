@@ -1,0 +1,9 @@
+{
+  "name": "letterpaths-workspace",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm --filter editor dev",
+    "build": "pnpm -r build",
+    "check:lib": "pnpm --filter letterpaths build"
+  }
+}
