@@ -4,6 +4,7 @@
   "scripts": {
     "dev": "pnpm --filter editor dev",
     "build": "pnpm -r build",
-    "check:lib": "pnpm --filter letterpaths build"
+    "check:lib": "pnpm --filter letterpaths build",
+    "deploy": "pnpm --filter editor run deploy"
   }
 }

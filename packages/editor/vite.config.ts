@@ -1,17 +1,22 @@
 import { defineConfig } from "vite";
 import path from "node:path";
 
-export default defineConfig(({ mode }) => ({
+const githubPagesBase = "/letterpaths/";
+
+export default defineConfig(({ command }) => ({
+  base: command === "build" ? githubPagesBase : "/",
+  build: {
+    rollupOptions: {
+      input: {
+        main: path.resolve(__dirname, "index.html"),
+        editor: path.resolve(__dirname, "editor.html"),
+      },
+    },
+  },
   resolve: {
-    alias:
-      mode === "development"
-        ? {
-            letterpaths: path.resolve(
-              __dirname,
-              "../letterpaths/src/index.ts"
-            ),
-          }
-        : {},
+    alias: {
+      letterpaths: path.resolve(__dirname, "../letterpaths/src/index.ts"),
+    },
   },
   server: {
     fs: {
