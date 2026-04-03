@@ -5,8 +5,10 @@ import {
   CubicBezier,
   TracingSession,
   compileTracingPath,
+  defaultJoinSpacingOptions,
   lettersByVariantId,
   type HandwritingStyle,
+  type JoinMetric,
   type JoinSpacingOptions,
   type WritingPath
 } from "letterpaths"
@@ -61,6 +63,8 @@ const handwritingStyleOptions = [
   { value: "cursive", label: "Cursive" }
 ] as const satisfies ReadonlyArray<{ value: HandwritingStyle; label: string }>
 
+type JoinControlKey = keyof typeof defaultJoinSpacingOptions
+
 const joinControlDefinitions = [
   {
     key: "verticalDistanceWeight",
@@ -71,20 +75,12 @@ const joinControlDefinitions = [
     value: 0.14
   },
   {
-    key: "angleDifferenceWeight",
-    label: "Bend demand influence",
+    key: "angleChangeWeight",
+    label: "Join turn influence",
     min: -5,
     max: 5,
     step: 0.05,
-    value: 0.5
-  },
-  {
-    key: "bendReversalWeight",
-    label: "Reverse bend influence",
-    min: -5,
-    max: 5,
-    step: 0.05,
-    value: 0.05
+    value: defaultJoinSpacingOptions.angleChangeWeight
   },
   {
     key: "kerningScale",
@@ -103,7 +99,7 @@ const joinControlDefinitions = [
     value: 95
   }
 ] as const satisfies ReadonlyArray<{
-  key: keyof Required<JoinSpacingOptions>
+  key: JoinControlKey
   label: string
   min: number
   max: number
@@ -181,6 +177,7 @@ app.innerHTML = `
     .join("")}
           </div>
         </details>
+        <div class="demo-join__metrics" id="join-metrics"></div>
       </div>
       <div class="demo-join__canvases">
         <div class="demo-join__canvas">
@@ -213,6 +210,7 @@ const traceSvg = document.querySelector<SVGSVGElement>("#trace-svg")
 const resetButton = document.querySelector<HTMLButtonElement>("#reset-button")
 const completeMessage = document.querySelector<HTMLDivElement>("#complete-message")
 const joinControls = document.querySelector<HTMLDetailsElement>("#join-controls")
+const joinMetricsEl = document.querySelector<HTMLDivElement>("#join-metrics")
 const handwritingStyleInputs = Array.from(
   document.querySelectorAll<HTMLInputElement>('input[name="handwriting-style"]')
 )
@@ -225,6 +223,7 @@ if (
   !resetButton ||
   !completeMessage ||
   !joinControls ||
+  !joinMetricsEl ||
   handwritingStyleInputs.length === 0
 ) {
   throw new Error("Missing elements for handwriting demo.")
@@ -235,14 +234,14 @@ const joinSpacingInputs = Object.fromEntries(
     control.key,
     document.querySelector<HTMLInputElement>(`#${control.key}`)
   ])
-) as Record<keyof Required<JoinSpacingOptions>, HTMLInputElement | null>
+) as Record<JoinControlKey, HTMLInputElement | null>
 
 const joinSpacingValues = Object.fromEntries(
   joinControlDefinitions.map((control) => [
     control.key,
     document.querySelector<HTMLSpanElement>(`#${control.key}-value`)
   ])
-) as Record<keyof Required<JoinSpacingOptions>, HTMLSpanElement | null>
+) as Record<JoinControlKey, HTMLSpanElement | null>
 
 if (
   Object.values(joinSpacingInputs).some((inputEl) => !inputEl) ||
@@ -285,6 +284,61 @@ const renderJoinEmpty = (svg: SVGSVGElement, message: string) => {
   `
 }
 
+const formatMetric = (value: number): string =>
+  Number.isFinite(value) ? value.toFixed(Math.abs(value) >= 100 ? 0 : 1) : "0"
+
+const renderJoinMetrics = (
+  metrics: JoinMetric[] | undefined,
+  handwritingStyle: HandwritingStyle
+) => {
+  if (handwritingStyle !== "cursive") {
+    joinMetricsEl.innerHTML = `
+      <p class="demo-join__metrics-empty">
+        Join metrics are available in cursive mode.
+      </p>
+    `
+    return
+  }
+
+  if (!metrics || metrics.length === 0) {
+    joinMetricsEl.innerHTML = `
+      <p class="demo-join__metrics-empty">
+        Enter at least two joinable letters to inspect spacing metrics.
+      </p>
+    `
+    return
+  }
+
+  joinMetricsEl.innerHTML = `
+    <div class="demo-join__metrics-header">
+      <span>Join metrics</span>
+      <span>${metrics.length} pair${metrics.length === 1 ? "" : "s"}</span>
+    </div>
+    <div class="demo-join__metrics-table">
+      <div class="demo-join__metrics-row demo-join__metrics-row--head">
+        <span>Pair</span>
+        <span>Vertical</span>
+        <span>Angle</span>
+        <span>Raw gap</span>
+        <span>Applied</span>
+      </div>
+      ${metrics
+        .map(
+          (metric) => `
+            <div class="demo-join__metrics-row">
+              <span>${metric.pair}</span>
+              <span>${formatMetric(metric.verticalDistance)}</span>
+              <span>${formatMetric(metric.angleChangeDegrees)}</span>
+              <span>${formatMetric(metric.rawGap)}</span>
+              <span>${formatMetric(metric.appliedGap)}</span>
+            </div>
+          `
+        )
+        .join("")}
+    </div>
+  `
+}
+
 const renderTraceEmpty = (message: string) => {
   traceSvg.innerHTML = `
     <rect class="demo-trace__bg" x="0" y="0" width="1600" height="1000"></rect>
@@ -300,10 +354,9 @@ const renderTraceEmpty = (message: string) => {
   completeMessage.classList.remove("visible")
 }
 
-const readJoinSpacing = (): Required<JoinSpacingOptions> => ({
+const readJoinSpacing = (): JoinSpacingOptions => ({
   verticalDistanceWeight: Number(joinSpacingInputs.verticalDistanceWeight?.value ?? 0),
-  angleDifferenceWeight: Number(joinSpacingInputs.angleDifferenceWeight?.value ?? 0),
-  bendReversalWeight: Number(joinSpacingInputs.bendReversalWeight?.value ?? 0),
+  angleChangeWeight: Number(joinSpacingInputs.angleChangeWeight?.value ?? 0),
   kerningScale: Number(joinSpacingInputs.kerningScale?.value ?? 0),
   minSidebearingGap: Number(joinSpacingInputs.minSidebearingGap?.value ?? 0)
 })
@@ -531,6 +584,7 @@ const render = (value: string) => {
     renderJoinEmpty(joinSvg, "Enter text to render.")
     renderJoinEmpty(joinStaticSvg, "Enter text to render.")
     renderTraceEmpty("Enter a word to trace.")
+    renderJoinMetrics(undefined, handwritingStyle)
     stopAnimation()
     return
   }
@@ -547,9 +601,12 @@ const render = (value: string) => {
     renderJoinEmpty(joinSvg, "No drawable points.")
     renderJoinEmpty(joinStaticSvg, "No drawable points.")
     renderTraceEmpty("No drawable paths.")
+    renderJoinMetrics(undefined, handwritingStyle)
     stopAnimation()
     return
   }
+
+  renderJoinMetrics(writingPath.joinMetrics, handwritingStyle)
 
   const padding = 120
   const width = Math.max(1000, Math.ceil(writingPath.bounds.maxX - writingPath.bounds.minX + padding * 2))

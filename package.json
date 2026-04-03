@@ -6,6 +6,7 @@
     "dev": "pnpm --filter editor dev",
     "build": "pnpm -r build",
     "check:lib": "pnpm --filter letterpaths build",
+    "test:kerning": "pnpm --filter letterpaths test:join-spacing",
     "deploy": "pnpm --filter editor run deploy"
   }
 }

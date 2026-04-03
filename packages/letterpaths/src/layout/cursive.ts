@@ -11,6 +11,7 @@ import {
   filterCurvesBySegment,
   findCursiveLetter,
   findEntryCurve,
+  findEntryPhaseCurves,
   findExitCurve,
   getEntryVariantForExitVariant,
   getExitVariantForLetter,
@@ -104,18 +105,29 @@ export function joinCursiveWord(
       .filter((stroke) => stroke.curves.length > 0);
 
     const entryCurve = findEntryCurve(filteredMainStrokes);
+    const entryPhaseCurves = findEntryPhaseCurves(filteredMainStrokes);
     const exitCurve = findExitCurve(filteredMainStrokes);
     if (!entryCurve || !exitCurve) {
       continue;
     }
+    const effectiveEntryPhaseCurves =
+      entryPhaseCurves.length > 0 ? entryPhaseCurves : [entryCurve];
 
     const mainSteps = buildStepsFromStrokes(filteredMainStrokes);
     const deferredStepsForLetter = buildStepsFromDeferredStrokes(deferredStrokes);
 
     let appliedGap = 0;
     if (prevExitCurve && prevChar) {
-      const spacing = measureJoinSpacing(prevExitCurve, entryCurve, joinSpacing);
       const entryOffsetFromLeftSidebearing = entryCurve.p0.x - normalizedGuides.left;
+      const previousExitToRightSidebearing = prevRightSidebearing - prevExitCurve.p3.x;
+      const nextEntryFromLeftSidebearing = entryOffsetFromLeftSidebearing;
+      const spacing = measureJoinSpacing(
+        prevExitCurve,
+        effectiveEntryPhaseCurves,
+        previousExitToRightSidebearing,
+        nextEntryFromLeftSidebearing,
+        joinSpacing
+      );
       const targetCursorX =
         prevExitCurve.p3.x + spacing.rawGap - entryOffsetFromLeftSidebearing;
       const minCursorX = prevRightSidebearing + joinSpacing.minSidebearingGap;
@@ -123,8 +135,7 @@ export function joinCursiveWord(
       const offsetX = cursorX - normalizedGuides.left;
       const shiftedEntryX = entryCurve.p0.x + offsetX;
       const renderedSidebearingGap = cursorX - prevRightSidebearing;
-      const previousExitToRightSidebearing = prevRightSidebearing - prevExitCurve.p3.x;
-      const nextEntryFromLeftSidebearing = shiftedEntryX - cursorX;
+      const renderedNextEntryFromLeftSidebearing = shiftedEntryX - cursorX;
       appliedGap = shiftedEntryX - prevExitCurve.p3.x;
       joinMetrics.push({
         pairIndex: joinMetrics.length,
@@ -132,13 +143,9 @@ export function joinCursiveWord(
         previousChar: prevChar,
         nextChar: char,
         verticalDistance: spacing.verticalDistance,
-        bendDemandDegrees: spacing.bendDemandDegrees,
-        exitToChordTurnDegrees: spacing.exitToChordTurnDegrees,
-        chordToEntryTurnDegrees: spacing.chordToEntryTurnDegrees,
-        bendReversalDegrees: spacing.bendReversalDegrees,
+        angleChangeDegrees: spacing.angleChangeDegrees,
         verticalContribution: spacing.verticalContribution,
-        bendContribution: spacing.bendContribution,
-        bendReversalContribution: spacing.bendReversalContribution,
+        angleChangeContribution: spacing.angleChangeContribution,
         combinedContribution: spacing.combinedContribution,
         kerningScale: spacing.kerningScale,
         rawGap: spacing.rawGap,
@@ -147,7 +154,7 @@ export function joinCursiveWord(
         renderedSidebearingGap,
         renderedExitToEntryGap: appliedGap,
         previousExitToRightSidebearing,
-        nextEntryFromLeftSidebearing,
+        nextEntryFromLeftSidebearing: renderedNextEntryFromLeftSidebearing,
         previousExitX: prevExitCurve.p3.x,
         previousRightSidebearingX: prevRightSidebearing,
         targetNextLeftSidebearingX: targetCursorX,

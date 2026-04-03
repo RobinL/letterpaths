@@ -12,6 +12,7 @@ export {
   printLetterSpacing,
   type BuildHandwritingOptions,
   type JoinCursiveOptions,
+  type ResolvedJoinSpacingOptions,
   type JoinSpacingOptions
 } from "./shared";
 

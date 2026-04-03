@@ -184,6 +184,58 @@ body {
   gap: 16px;
 }
 
+.demo-join__metrics {
+  border: 1px solid rgba(31, 43, 45, 0.12);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.45);
+  padding: 14px;
+}
+
+.demo-join__metrics-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 10px;
+  font-family: "Space Mono", "Courier New", monospace;
+  font-size: 0.8rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.demo-join__metrics-table {
+  display: grid;
+  gap: 6px;
+  overflow-x: auto;
+}
+
+.demo-join__metrics-row {
+  display: grid;
+  grid-template-columns: 1fr repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  min-width: 520px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.6);
+  font-family: "Space Mono", "Courier New", monospace;
+  font-size: 0.8rem;
+  color: var(--ink);
+}
+
+.demo-join__metrics-row--head {
+  background: transparent;
+  padding: 0 10px 4px;
+  color: var(--muted);
+}
+
+.demo-join__metrics-empty {
+  margin: 0;
+  font-family: "Space Mono", "Courier New", monospace;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
 .demo-join__range-row {
   display: flex;
   align-items: center;

@@ -37,10 +37,18 @@ export type BuildHandwritingOptions = JoinCursiveOptions & {
 
 export type JoinSpacingOptions = {
   verticalDistanceWeight?: number;
-  angleDifferenceWeight?: number;
-  bendReversalWeight?: number;
+  angleChangeWeight?: number;
   kerningScale?: number;
   minSidebearingGap?: number;
+  angleDifferenceWeight?: number;
+  bendReversalWeight?: number;
+};
+
+export type ResolvedJoinSpacingOptions = {
+  verticalDistanceWeight: number;
+  angleChangeWeight: number;
+  kerningScale: number;
+  minSidebearingGap: number;
 };
 
 type StandaloneLayoutConfig = {
@@ -60,15 +68,13 @@ export const printLetterSpacing = 130;
 export const cursiveLetterSpacing = 60;
 export const preCursiveLetterSpacing = cursiveLetterSpacing;
 
-export const defaultJoinSpacingOptions: Required<JoinSpacingOptions> = {
+export const defaultJoinSpacingOptions: ResolvedJoinSpacingOptions = {
   verticalDistanceWeight: 0.19,
-  angleDifferenceWeight: 0.45,
-  bendReversalWeight: 0.5,
+  angleChangeWeight: 0.45,
   kerningScale: 1,
   minSidebearingGap: 50
 };
-
-const maxTangentMismatchForReverseBendDegrees = 60;
+const midpointLiftVerticalScale = 300;
 
 export function buildStandaloneWord(
   text: string,
@@ -277,6 +283,25 @@ export function findEntryCurve(strokes: LetterStroke[]): Curve | null {
   return strokes[0]?.curves[0] ?? null;
 }
 
+export function findEntryPhaseCurves(strokes: LetterStroke[]): Curve[] {
+  const curves = strokes.flatMap((stroke) => stroke.curves);
+  const entryPhaseCurves: Curve[] = [];
+  let collecting = false;
+
+  for (const curve of curves) {
+    if (curve.segment === "entry") {
+      collecting = true;
+      entryPhaseCurves.push(curve);
+      continue;
+    }
+    if (collecting) {
+      break;
+    }
+  }
+
+  return entryPhaseCurves;
+}
+
 export function findExitCurve(strokes: LetterStroke[]): Curve | null {
   for (let i = strokes.length - 1; i >= 0; i -= 1) {
     const curves = strokes[i]?.curves ?? [];
@@ -470,14 +495,14 @@ function resolveHandleLengths(
 
 export function resolveJoinSpacingOptions(
   options?: JoinSpacingOptions
-): Required<JoinSpacingOptions> {
+): ResolvedJoinSpacingOptions {
   return {
     verticalDistanceWeight:
       options?.verticalDistanceWeight ?? defaultJoinSpacingOptions.verticalDistanceWeight,
-    angleDifferenceWeight:
-      options?.angleDifferenceWeight ?? defaultJoinSpacingOptions.angleDifferenceWeight,
-    bendReversalWeight:
-      options?.bendReversalWeight ?? defaultJoinSpacingOptions.bendReversalWeight,
+    angleChangeWeight:
+      options?.angleChangeWeight ??
+      options?.angleDifferenceWeight ??
+      defaultJoinSpacingOptions.angleChangeWeight,
     kerningScale: options?.kerningScale ?? defaultJoinSpacingOptions.kerningScale,
     minSidebearingGap:
       options?.minSidebearingGap ?? defaultJoinSpacingOptions.minSidebearingGap
@@ -486,71 +511,104 @@ export function resolveJoinSpacingOptions(
 
 export function measureJoinSpacing(
   exitCurve: Curve,
-  entryCurve: Curve,
-  options: Required<JoinSpacingOptions>
+  entryPhaseCurves: Curve[],
+  previousExitToRightSidebearing: number,
+  nextEntryFromLeftSidebearing: number,
+  options: ResolvedJoinSpacingOptions
 ): {
   verticalDistance: number;
-  bendDemandDegrees: number;
-  exitToChordTurnDegrees: number;
-  chordToEntryTurnDegrees: number;
-  bendReversalDegrees: number;
+  angleChangeDegrees: number;
   verticalContribution: number;
-  bendContribution: number;
-  bendReversalContribution: number;
+  angleChangeContribution: number;
   combinedContribution: number;
   kerningScale: number;
   rawGap: number;
 } {
-  const exitTangent = getExitTangent(exitCurve);
-  const entryTangent = getEntryTangent(entryCurve);
-  const chordDirection = normalizeVector({
-    x: entryCurve.p0.x - exitCurve.p3.x,
-    y: entryCurve.p0.y - exitCurve.p3.y
-  });
-  const verticalDistance = Math.abs(entryCurve.p0.y - exitCurve.p3.y);
-  const exitToChordTurnDegrees = Math.abs(
-    getSignedAngleBetweenVectorsDegrees(exitTangent, chordDirection)
+  const entryCurve = entryPhaseCurves[0];
+  const lastEntryCurve = entryPhaseCurves[entryPhaseCurves.length - 1];
+  if (!entryCurve || !lastEntryCurve) {
+    return {
+      verticalDistance: 0,
+      angleChangeDegrees: 0,
+      verticalContribution: 0,
+      angleChangeContribution: 0,
+      combinedContribution: 0,
+      kerningScale: options.kerningScale,
+      rawGap: 0
+    };
+  }
+
+  const minJoinEntryX =
+    exitCurve.p3.x +
+    previousExitToRightSidebearing +
+    options.minSidebearingGap +
+    nextEntryFromLeftSidebearing;
+  const entryOffsetX = minJoinEntryX - entryCurve.p0.x;
+  const provisionalEntryCurves = entryPhaseCurves.map((curve) =>
+    translateCurve(curve, entryOffsetX, 0)
   );
-  const chordToEntryTurnDegrees = Math.abs(
-    getSignedAngleBetweenVectorsDegrees(chordDirection, entryTangent)
+  const provisionalEntryCurve = provisionalEntryCurves[0]!;
+  const provisionalLastEntryCurve = provisionalEntryCurves[provisionalEntryCurves.length - 1]!;
+  const provisionalJoinCurve = buildJoinCurve(exitCurve, provisionalEntryCurve);
+  const verticalDistance = Math.abs(provisionalEntryCurve.p0.y - exitCurve.p3.y);
+  const startTangent = getExitTangent(exitCurve);
+  const entryStartTangent = getEntryTangent(provisionalEntryCurve);
+  const endpointAngleChangeDegrees = getAngleBetweenVectorsDegrees(
+    startTangent,
+    entryStartTangent
   );
-  const exitToEntryTangentDegrees = getAngleBetweenVectorsDegrees(exitTangent, entryTangent);
-  const signedExitToChordTurnDegrees = getSignedAngleBetweenVectorsDegrees(
-    exitTangent,
-    chordDirection
-  );
-  const signedChordToEntryTurnDegrees = getSignedAngleBetweenVectorsDegrees(
-    chordDirection,
-    entryTangent
-  );
-  const bendDemandDegrees = exitToChordTurnDegrees + chordToEntryTurnDegrees;
-  const bendReversalDegrees =
-    signedExitToChordTurnDegrees !== 0 &&
-    signedChordToEntryTurnDegrees !== 0 &&
-    Math.sign(signedExitToChordTurnDegrees) !== Math.sign(signedChordToEntryTurnDegrees) &&
-    exitToEntryTangentDegrees <= maxTangentMismatchForReverseBendDegrees
-      ? Math.min(exitToChordTurnDegrees, chordToEntryTurnDegrees)
-      : 0;
+  const midpointTurnDegrees = measureCurveTurnDegrees(provisionalJoinCurve);
+  const midpointBonusDegrees = Math.max(0, midpointTurnDegrees - endpointAngleChangeDegrees);
+  const verticalLiftFactor = Math.min(1, verticalDistance / midpointLiftVerticalScale);
+  const alignmentFactor = Math.max(0, 1 - endpointAngleChangeDegrees / 90);
+  const entryResolutionHorizontality = Math.abs(getExitTangent(provisionalLastEntryCurve).x);
+  const horizontalDemandFactor = 0.5 + 0.5 * entryResolutionHorizontality;
+  const angleChangeDegrees =
+    (endpointAngleChangeDegrees +
+      midpointBonusDegrees * verticalLiftFactor * alignmentFactor) *
+    horizontalDemandFactor;
   const verticalContribution = options.verticalDistanceWeight * verticalDistance;
-  const bendContribution = options.angleDifferenceWeight * bendDemandDegrees;
-  const bendReversalContribution = options.bendReversalWeight * bendReversalDegrees;
-  const combinedContribution =
-    verticalContribution + bendContribution + bendReversalContribution;
+  const angleChangeContribution = options.angleChangeWeight * angleChangeDegrees;
+  const combinedContribution = verticalContribution + angleChangeContribution;
   const rawGap = options.kerningScale * combinedContribution;
 
   return {
     verticalDistance,
-    bendDemandDegrees,
-    exitToChordTurnDegrees,
-    chordToEntryTurnDegrees,
-    bendReversalDegrees,
+    angleChangeDegrees,
     verticalContribution,
-    bendContribution,
-    bendReversalContribution,
+    angleChangeContribution,
     combinedContribution,
     kerningScale: options.kerningScale,
     rawGap
   };
+}
+
+function measureCurveTurnDegrees(curve: Curve): number {
+  const startTangent = normalizeVector({
+    x: curve.p1.x - curve.p0.x,
+    y: curve.p1.y - curve.p0.y
+  });
+  const endTangent = normalizeVector({
+    x: curve.p3.x - curve.p2.x,
+    y: curve.p3.y - curve.p2.y
+  });
+  const controlMidpoint = {
+    x: (curve.p1.x + curve.p2.x) / 2,
+    y: (curve.p1.y + curve.p2.y) / 2
+  };
+  const midpointFromExit = normalizeVector({
+    x: controlMidpoint.x - curve.p0.x,
+    y: controlMidpoint.y - curve.p0.y
+  });
+  const entryFromMidpoint = normalizeVector({
+    x: curve.p3.x - controlMidpoint.x,
+    y: curve.p3.y - controlMidpoint.y
+  });
+
+  return (
+    getAngleBetweenVectorsDegrees(startTangent, midpointFromExit) +
+    getAngleBetweenVectorsDegrees(entryFromMidpoint, endTangent)
+  );
 }
 
 function getExitTangent(curve: Curve): Point {
@@ -571,15 +629,6 @@ function getAngleBetweenVectorsDegrees(a: Point, b: Point): number {
   const dot = a.x * b.x + a.y * b.y;
   const clamped = Math.min(1, Math.max(-1, dot));
   return (Math.acos(clamped) * 180) / Math.PI;
-}
-
-function getSignedAngleBetweenVectorsDegrees(a: Point, b: Point): number {
-  const angle = getAngleBetweenVectorsDegrees(a, b);
-  const cross = a.x * b.y - a.y * b.x;
-  if (cross === 0) {
-    return 0;
-  }
-  return Math.sign(cross) * angle;
 }
 
 function getStepStartPoint(steps: BezierStep[], index: number): Point {

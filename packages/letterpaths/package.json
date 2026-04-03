@@ -17,7 +17,8 @@
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:join-spacing": "pnpm run build && node --test test/join-spacing.test.mjs"
   },
   "devDependencies": {
     "tsup": "^8.0.0",

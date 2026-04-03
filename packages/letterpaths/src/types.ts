@@ -19,13 +19,9 @@ export type JoinMetric = {
   previousChar: string;
   nextChar: string;
   verticalDistance: number;
-  bendDemandDegrees: number;
-  exitToChordTurnDegrees: number;
-  chordToEntryTurnDegrees: number;
-  bendReversalDegrees: number;
+  angleChangeDegrees: number;
   verticalContribution: number;
-  bendContribution: number;
-  bendReversalContribution: number;
+  angleChangeContribution: number;
   combinedContribution: number;
   kerningScale: number;
   rawGap: number;
