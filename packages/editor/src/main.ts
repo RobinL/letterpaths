@@ -11,6 +11,37 @@ import {
   type WritingPath
 } from "letterpaths"
 
+declare global {
+  interface Window {
+    dataLayer?: unknown[]
+    gtag?: (...args: unknown[]) => void
+  }
+}
+
+const ANALYTICS_MEASUREMENT_ID = "G-94373ZKHEE"
+const ANALYTICS_DISABLED_HOSTS = new Set(["localhost", "127.0.0.1"])
+
+const initializeAnalytics = () => {
+  if (ANALYTICS_DISABLED_HOSTS.has(window.location.hostname)) {
+    return
+  }
+
+  window.dataLayer = window.dataLayer || []
+  window.gtag = function gtag(...args: unknown[]) {
+    window.dataLayer?.push(args)
+  }
+
+  window.gtag("js", new Date())
+  window.gtag("config", ANALYTICS_MEASUREMENT_ID)
+
+  const analyticsScript = document.createElement("script")
+  analyticsScript.async = true
+  analyticsScript.src = `https://www.googletagmanager.com/gtag/js?id=${ANALYTICS_MEASUREMENT_ID}`
+  document.head.append(analyticsScript)
+}
+
+initializeAnalytics()
+
 const app = document.querySelector<HTMLDivElement>("#app")
 
 if (!app) {
