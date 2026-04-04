@@ -311,6 +311,35 @@ body {
   filter: drop-shadow(0 12px 16px rgba(35, 49, 61, 0.2));
 }
 
+.writing-app__deferred-head {
+  pointer-events: none;
+  opacity: 0;
+  overflow: visible;
+  filter: drop-shadow(0 12px 18px rgba(35, 49, 61, 0.24));
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.writing-app__deferred-head image {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.writing-app__deferred-head--dot [data-deferred-part="head"] image {
+  animation: writing-app-snake-head-wobble 0.9s ease-in-out infinite;
+}
+
+@keyframes writing-app-snake-head-wobble {
+  0%,
+  100% {
+    transform: rotate(-8deg) translateY(0);
+  }
+
+  50% {
+    transform: rotate(8deg) translateY(-4px);
+  }
+}
+
 .writing-app__debug-curve {
   fill: none;
   stroke: rgba(35, 49, 61, 0.35);
