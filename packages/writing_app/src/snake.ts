@@ -17,6 +17,8 @@ import snakeBackgroundImage from "./assets/snake/background.png";
 import eagleFlySprite from "./assets/snake/eagle_fly.png";
 import eagleStandSprite from "./assets/snake/eagle_stand.png";
 import snakeHeadAltSprite from "./assets/snake/head_alt.png";
+import snakeFacingCameraAngrySprite from "./assets/snake/snake_facing_camera_angry.png";
+import snakeFacingCameraHappySprite from "./assets/snake/snake_facing_camera_happy.png";
 import snakeHeadSprite from "./assets/snake/head.png";
 import snakeTailSprite from "./assets/snake/tail.png";
 import {
@@ -71,12 +73,20 @@ const TAIL_SIZE = {
 const DEFERRED_SNAKE_SCALE = 0.78;
 const DEFERRED_SNAKE_SEGMENT_SPACING = 44;
 const EAGLE_FLY_MS = 700;
+const EAGLE_STAND_MS = 260;
+const EAGLE_FLY_AWAY_MS = 800;
 const EAGLE_DOT_OFFSET_Y = 18;
 const EAGLE_FLY_SIZE = {
   width: 200,
   height: 106,
   anchorX: 0.5,
   anchorY: 1
+} as const;
+const DOT_SNAKE_SIZE = {
+  width: 69,
+  height: 49,
+  anchorX: 0.5,
+  anchorY: 0.62
 } as const;
 const EAGLE_STAND_SIZE = {
   width: 128,
@@ -117,7 +127,7 @@ type DeferredSnakeExitHead = DeferredSnakeHead & {
   travelDistance: number;
 };
 
-type EaglePhase = "hidden" | "flying" | "standing";
+type DotTargetPhase = "hidden" | "waiting" | "eagle_in" | "eagle_stand" | "eagle_out";
 
 const app = document.querySelector<HTMLDivElement>("#app");
 
@@ -282,23 +292,25 @@ let snakeBodyEls: SVGGElement[] = [];
 let snakeTailEl: SVGGElement | null = null;
 let deferredHeadEl: SVGGElement | null = null;
 let deferredTrailHeadEls = new Map<number, SVGGElement>();
+let dotSnakeEl: SVGGElement | null = null;
+let dotSnakeImageEl: SVGImageElement | null = null;
 let eagleEl: SVGGElement | null = null;
 let eagleImageEl: SVGImageElement | null = null;
 let snakeTrail: SnakePose[] = [];
 let snakeHeadDistance = 0;
 let snakeChewUntil = 0;
 let snakeExitAnimationFrameId: number | null = null;
-let eagleAnimationFrameId: number | null = null;
+let dotTargetAnimationFrameId: number | null = null;
 let isSnakeSlithering = false;
 let isSnakeExitComplete = false;
 let snakeExitBodyCount = 0;
 let completedDeferredHeads: DeferredSnakeHead[] = [];
 let completedDeferredHeadIndices = new Set<number>();
 let deferredExitHeads: DeferredSnakeExitHead[] = [];
-let eaglePhase: EaglePhase = "hidden";
-let eagleStrokeIndex: number | null = null;
-let eagleTargetPoint: Point | null = null;
-let eagleFlightStartedAt = 0;
+let dotTargetPhase: DotTargetPhase = "hidden";
+let dotTargetStrokeIndex: number | null = null;
+let dotTargetPoint: Point | null = null;
+let dotTargetPhaseStartedAt = 0;
 
 const syncToleranceLabel = () => {
   toleranceValue.textContent = `${currentTraceTolerance}px`;
@@ -602,15 +614,19 @@ const createDeferredSnakeMarkup = (attributes: string): string => `
   </g>
 `;
 
-const hideEagle = () => {
-  if (eagleAnimationFrameId !== null) {
-    cancelAnimationFrame(eagleAnimationFrameId);
-    eagleAnimationFrameId = null;
+const hideDotTarget = () => {
+  if (dotTargetAnimationFrameId !== null) {
+    cancelAnimationFrame(dotTargetAnimationFrameId);
+    dotTargetAnimationFrameId = null;
   }
 
-  eaglePhase = "hidden";
-  eagleStrokeIndex = null;
-  eagleTargetPoint = null;
+  dotTargetPhase = "hidden";
+  dotTargetStrokeIndex = null;
+  dotTargetPoint = null;
+  if (dotSnakeEl) {
+    dotSnakeEl.style.opacity = "0";
+    dotSnakeEl.classList.remove("writing-app__dot-snake--waiting");
+  }
   if (eagleEl) {
     eagleEl.style.opacity = "0";
   }
@@ -621,99 +637,211 @@ const getEagleStandPoint = (point: Point): Point => ({
   y: point.y - EAGLE_DOT_OFFSET_Y
 });
 
-const getEaglePose = (
+const getDotSnakeBasePoint = (point: Point): Point => ({
+  x: point.x,
+  y: point.y + 8
+});
+
+const getDotTargetScene = (
   now = performance.now()
-): { point: Point; width: number; height: number; href: string } | null => {
-  if (eaglePhase === "hidden" || !eagleTargetPoint) {
+): {
+  snakePoint: Point;
+  snakeHref: string;
+  snakeWobble: boolean;
+  eaglePoint?: Point;
+  eagleHref?: string;
+  eagleWidth?: number;
+  eagleHeight?: number;
+} | null => {
+  if (dotTargetPhase === "hidden" || !dotTargetPoint) {
     return null;
   }
 
-  const standPoint = getEagleStandPoint(eagleTargetPoint);
-  if (eaglePhase === "standing") {
+  const snakeBasePoint = getDotSnakeBasePoint(dotTargetPoint);
+  const standPoint = getEagleStandPoint(dotTargetPoint);
+
+  if (dotTargetPhase === "waiting") {
     return {
-      point: standPoint,
-      width: EAGLE_STAND_SIZE.width,
-      height: EAGLE_STAND_SIZE.height,
-      href: eagleStandSprite
+      snakePoint: snakeBasePoint,
+      snakeHref: snakeFacingCameraHappySprite,
+      snakeWobble: true
     };
   }
 
-  const progress = Math.max(0, Math.min(1, (now - eagleFlightStartedAt) / EAGLE_FLY_MS));
+  if (dotTargetPhase === "eagle_in") {
+    const progress = Math.max(0, Math.min(1, (now - dotTargetPhaseStartedAt) / EAGLE_FLY_MS));
+    const eased = 1 - (1 - progress) * (1 - progress);
+    return {
+      snakePoint: snakeBasePoint,
+      snakeHref: snakeFacingCameraHappySprite,
+      snakeWobble: false,
+      eaglePoint: {
+        x: standPoint.x,
+        y: -EAGLE_FLY_SIZE.height + (standPoint.y + EAGLE_FLY_SIZE.height) * eased
+      },
+      eagleHref: eagleFlySprite,
+      eagleWidth: EAGLE_FLY_SIZE.width,
+      eagleHeight: EAGLE_FLY_SIZE.height
+    };
+  }
+
+  if (dotTargetPhase === "eagle_stand") {
+    return {
+      snakePoint: snakeBasePoint,
+      snakeHref: snakeFacingCameraHappySprite,
+      snakeWobble: false,
+      eaglePoint: standPoint,
+      eagleHref: eagleStandSprite,
+      eagleWidth: EAGLE_STAND_SIZE.width,
+      eagleHeight: EAGLE_STAND_SIZE.height
+    };
+  }
+
+  const progress = Math.max(0, Math.min(1, (now - dotTargetPhaseStartedAt) / EAGLE_FLY_AWAY_MS));
   const eased = 1 - (1 - progress) * (1 - progress);
+  const eaglePoint = {
+    x: standPoint.x + (currentSceneWidth + EAGLE_FLY_SIZE.width - standPoint.x) * eased,
+    y: standPoint.y + (-EAGLE_FLY_SIZE.height - standPoint.y) * eased
+  };
   return {
-    point: {
-      x: standPoint.x,
-      y: -EAGLE_FLY_SIZE.height + (standPoint.y + EAGLE_FLY_SIZE.height) * eased
+    snakePoint: {
+      x: eaglePoint.x,
+      y: eaglePoint.y + EAGLE_FLY_SIZE.height * 0.6
     },
-    width: EAGLE_FLY_SIZE.width,
-    height: EAGLE_FLY_SIZE.height,
-    href: eagleFlySprite
+    snakeHref: snakeFacingCameraAngrySprite,
+    snakeWobble: false,
+    eaglePoint,
+    eagleHref: eagleFlySprite,
+    eagleWidth: EAGLE_FLY_SIZE.width,
+    eagleHeight: EAGLE_FLY_SIZE.height
   };
 };
 
-const tickEagleAnimation = (now: number) => {
-  eagleAnimationFrameId = null;
-  if (eaglePhase !== "flying") {
-    return;
-  }
-
-  if (now - eagleFlightStartedAt >= EAGLE_FLY_MS) {
-    eaglePhase = "standing";
+const finishDotPickup = () => {
+  const state = tracingSession?.getState();
+  if (!tracingSession || !state) {
+    hideDotTarget();
     requestTraceRender();
     return;
   }
 
+  if (
+    dotTargetStrokeIndex !== null &&
+    state.activeStrokeIndex === dotTargetStrokeIndex &&
+    getActivePreparedStroke(state)?.isDot
+  ) {
+    tracingSession.beginAt(state.cursorPoint);
+    captureFruitAtPoint(state.cursorPoint);
+    unlockNextGroupIfReached(state.cursorPoint);
+  }
+
+  hideDotTarget();
   requestTraceRender();
-  eagleAnimationFrameId = requestAnimationFrame(tickEagleAnimation);
 };
 
-const syncEagleToState = (state: TracingState) => {
+const tickDotTargetAnimation = (now: number) => {
+  dotTargetAnimationFrameId = null;
+  if (dotTargetPhase === "hidden" || dotTargetPhase === "waiting") {
+    return;
+  }
+
+  if (dotTargetPhase === "eagle_in" && now - dotTargetPhaseStartedAt >= EAGLE_FLY_MS) {
+    dotTargetPhase = "eagle_stand";
+    dotTargetPhaseStartedAt = now;
+  } else if (dotTargetPhase === "eagle_stand" && now - dotTargetPhaseStartedAt >= EAGLE_STAND_MS) {
+    dotTargetPhase = "eagle_out";
+    dotTargetPhaseStartedAt = now;
+  } else if (dotTargetPhase === "eagle_out" && now - dotTargetPhaseStartedAt >= EAGLE_FLY_AWAY_MS) {
+    finishDotPickup();
+    return;
+  }
+
+  requestTraceRender();
+  dotTargetAnimationFrameId = requestAnimationFrame(tickDotTargetAnimation);
+};
+
+const startDotPickupAnimation = () => {
+  if (dotTargetPhase !== "waiting") {
+    return;
+  }
+
+  dotTargetPhase = "eagle_in";
+  dotTargetPhaseStartedAt = performance.now();
+  if (dotTargetAnimationFrameId !== null) {
+    cancelAnimationFrame(dotTargetAnimationFrameId);
+  }
+  dotTargetAnimationFrameId = requestAnimationFrame(tickDotTargetAnimation);
+  requestTraceRender();
+};
+
+const syncDotTargetToState = (state: TracingState) => {
   const deferredHead = getDeferredHeadState(state);
   if (!deferredHead?.isDot) {
-    hideEagle();
+    hideDotTarget();
     return;
   }
 
-  if (eagleStrokeIndex !== deferredHead.strokeIndex) {
-    if (eagleAnimationFrameId !== null) {
-      cancelAnimationFrame(eagleAnimationFrameId);
-      eagleAnimationFrameId = null;
-    }
-    eagleStrokeIndex = deferredHead.strokeIndex;
-    eagleTargetPoint = deferredHead.point;
-    eagleFlightStartedAt = performance.now();
-    eaglePhase = "flying";
-    eagleAnimationFrameId = requestAnimationFrame(tickEagleAnimation);
-    return;
+  if (dotTargetStrokeIndex !== deferredHead.strokeIndex) {
+    hideDotTarget();
+    dotTargetStrokeIndex = deferredHead.strokeIndex;
+    dotTargetPoint = deferredHead.point;
+    dotTargetPhase = "waiting";
+  } else if (dotTargetPhase === "waiting") {
+    dotTargetPoint = deferredHead.point;
   }
-
-  eagleTargetPoint = deferredHead.point;
 };
 
-const renderEagle = (now = performance.now()) => {
-  if (!eagleEl || !eagleImageEl) {
+const renderDotTarget = (now = performance.now()) => {
+  if (!dotSnakeEl || !dotSnakeImageEl || !eagleEl || !eagleImageEl) {
     return;
   }
 
-  const eaglePose = getEaglePose(now);
-  if (!eaglePose) {
+  const scene = getDotTargetScene(now);
+  if (!scene) {
+    dotSnakeEl.style.opacity = "0";
+    dotSnakeEl.classList.remove("writing-app__dot-snake--waiting");
     eagleEl.style.opacity = "0";
     return;
   }
 
-  eagleImageEl.setAttribute("href", eaglePose.href);
+  dotSnakeEl.style.opacity = "1";
+  dotSnakeEl.classList.toggle("writing-app__dot-snake--waiting", scene.snakeWobble);
+  dotSnakeImageEl.setAttribute("href", scene.snakeHref);
   setSpritePose(
-    eagleEl,
-    eagleImageEl,
+    dotSnakeEl,
+    dotSnakeImageEl,
     {
-      x: eaglePose.point.x,
-      y: eaglePose.point.y,
+      x: scene.snakePoint.x,
+      y: scene.snakePoint.y,
       angle: 0,
       distance: 0,
       visible: true
     },
-    eaglePose.width,
-    eaglePose.height,
+    DOT_SNAKE_SIZE.width,
+    DOT_SNAKE_SIZE.height,
+    DOT_SNAKE_SIZE.anchorX,
+    DOT_SNAKE_SIZE.anchorY,
+    0
+  );
+
+  if (!scene.eaglePoint || !scene.eagleHref || !scene.eagleWidth || !scene.eagleHeight) {
+    eagleEl.style.opacity = "0";
+    return;
+  }
+
+  eagleImageEl.setAttribute("href", scene.eagleHref);
+  setSpritePose(
+    eagleEl,
+    eagleImageEl,
+    {
+      x: scene.eaglePoint.x,
+      y: scene.eaglePoint.y,
+      angle: 0,
+      distance: 0,
+      visible: true
+    },
+    scene.eagleWidth,
+    scene.eagleHeight,
     EAGLE_STAND_SIZE.anchorX,
     EAGLE_STAND_SIZE.anchorY,
     0
@@ -727,15 +855,15 @@ const isPointerOnDeferredTarget = (point: Point, state: TracingState): boolean =
   }
 
   if (deferredHead.isDot) {
-    if (eaglePhase !== "standing") {
+    if (dotTargetPhase !== "waiting") {
       return false;
     }
-    const eaglePose = getEaglePose();
-    if (!eaglePose) {
+    const scene = getDotTargetScene();
+    if (!scene) {
       return false;
     }
-    const hitRadius = Math.max(eaglePose.width, eaglePose.height) * 0.34;
-    return Math.hypot(point.x - eaglePose.point.x, point.y - eaglePose.point.y) <= hitRadius;
+    const hitRadius = Math.max(DOT_SNAKE_SIZE.width, DOT_SNAKE_SIZE.height) * 0.36;
+    return Math.hypot(point.x - scene.snakePoint.x, point.y - scene.snakePoint.y) <= hitRadius;
   }
 
   const hitRadius = Math.max(34, HEAD_SIZE.width * 0.52);
@@ -1388,7 +1516,7 @@ const resetRoundProgress = () => {
   completedDeferredHeads = [];
   completedDeferredHeadIndices = new Set<number>();
   deferredExitHeads = [];
-  hideEagle();
+  hideDotTarget();
 
   if (snakeExitAnimationFrameId !== null) {
     cancelAnimationFrame(snakeExitAnimationFrameId);
@@ -1432,8 +1560,8 @@ const renderTraceFrame = () => {
 
   const state = tracingSession.getState();
   registerCompletedDeferredHeads(state);
-  syncEagleToState(state);
-  renderEagle();
+  syncDotTargetToState(state);
+  renderDotTarget();
   renderDeferredHead(state);
   if (!isSnakeSlithering && !isSnakeExitComplete) {
     renderCompletedDeferredHeads();
@@ -1672,6 +1800,13 @@ const setupScene = (path: WritingPath, width: number, height: number, offsetY: n
       ${deferredTrailHeadMarkup}
     </g>
     ${createDeferredSnakeMarkup('class="writing-app__deferred-head" id="deferred-head"')}
+    <g class="writing-app__dot-snake" id="dot-snake">
+      <image
+        id="dot-snake-image"
+        href="${snakeFacingCameraHappySprite}"
+        preserveAspectRatio="none"
+      ></image>
+    </g>
     <g class="writing-app__eagle" id="dot-eagle">
       <image
         id="dot-eagle-image"
@@ -1701,6 +1836,8 @@ const setupScene = (path: WritingPath, width: number, height: number, offsetY: n
       traceSvg.querySelectorAll<SVGGElement>("[data-deferred-trail-index]")
     ).map((el) => [Number(el.dataset.deferredTrailIndex), el])
   );
+  dotSnakeEl = traceSvg.querySelector<SVGGElement>("#dot-snake");
+  dotSnakeImageEl = traceSvg.querySelector<SVGImageElement>("#dot-snake-image");
   eagleEl = traceSvg.querySelector<SVGGElement>("#dot-eagle");
   eagleImageEl = traceSvg.querySelector<SVGImageElement>("#dot-eagle-image");
   demoNibEl = traceSvg.querySelector<SVGCircleElement>("#demo-nib");
@@ -1734,7 +1871,7 @@ const setupScene = (path: WritingPath, width: number, height: number, offsetY: n
   completedDeferredHeads = [];
   completedDeferredHeadIndices = new Set<number>();
   deferredExitHeads = [];
-  hideEagle();
+  hideDotTarget();
   hideCompletedDeferredHeads();
   resetFruitState();
   updateSuccessVisibility(false);
@@ -1768,21 +1905,18 @@ const onPointerDown = (event: PointerEvent) => {
     return;
   }
 
-  const started = tracingSession.beginAt(
-    isDeferredStrokeActive(state) && activePreparedStroke?.isDot ? state.cursorPoint : pointer
-  );
+  if (isDeferredStrokeActive(state) && activePreparedStroke?.isDot) {
+    event.preventDefault();
+    startDotPickupAnimation();
+    return;
+  }
+
+  const started = tracingSession.beginAt(pointer);
   if (!started) {
     return;
   }
 
   event.preventDefault();
-  if (isDeferredStrokeActive(state) && activePreparedStroke?.isDot) {
-    captureFruitAtPoint(state.cursorPoint);
-    unlockNextGroupIfReached(state.cursorPoint);
-    requestTraceRender();
-    return;
-  }
-
   activePointerId = event.pointerId;
   traceSvg.setPointerCapture(event.pointerId);
   requestTraceRender();
