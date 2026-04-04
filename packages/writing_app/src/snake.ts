@@ -14,6 +14,8 @@ import {
 } from "letterpaths";
 import snakeBodySprite from "./assets/snake/body.png";
 import snakeBackgroundImage from "./assets/snake/background.png";
+import eagleFlySprite from "./assets/snake/eagle_fly.png";
+import eagleStandSprite from "./assets/snake/eagle_stand.png";
 import snakeHeadAltSprite from "./assets/snake/head_alt.png";
 import snakeHeadSprite from "./assets/snake/head.png";
 import snakeTailSprite from "./assets/snake/tail.png";
@@ -68,6 +70,20 @@ const TAIL_SIZE = {
 } as const;
 const DEFERRED_SNAKE_SCALE = 0.78;
 const DEFERRED_SNAKE_SEGMENT_SPACING = 44;
+const EAGLE_FLY_MS = 700;
+const EAGLE_DOT_OFFSET_Y = 18;
+const EAGLE_FLY_SIZE = {
+  width: 200,
+  height: 106,
+  anchorX: 0.5,
+  anchorY: 1
+} as const;
+const EAGLE_STAND_SIZE = {
+  width: 128,
+  height: 141,
+  anchorX: 0.5,
+  anchorY: 1
+} as const;
 
 type FruitToken = {
   x: number;
@@ -100,6 +116,8 @@ type DeferredSnakeHead = {
 type DeferredSnakeExitHead = DeferredSnakeHead & {
   travelDistance: number;
 };
+
+type EaglePhase = "hidden" | "flying" | "standing";
 
 const app = document.querySelector<HTMLDivElement>("#app");
 
@@ -264,16 +282,23 @@ let snakeBodyEls: SVGGElement[] = [];
 let snakeTailEl: SVGGElement | null = null;
 let deferredHeadEl: SVGGElement | null = null;
 let deferredTrailHeadEls = new Map<number, SVGGElement>();
+let eagleEl: SVGGElement | null = null;
+let eagleImageEl: SVGImageElement | null = null;
 let snakeTrail: SnakePose[] = [];
 let snakeHeadDistance = 0;
 let snakeChewUntil = 0;
 let snakeExitAnimationFrameId: number | null = null;
+let eagleAnimationFrameId: number | null = null;
 let isSnakeSlithering = false;
 let isSnakeExitComplete = false;
 let snakeExitBodyCount = 0;
 let completedDeferredHeads: DeferredSnakeHead[] = [];
 let completedDeferredHeadIndices = new Set<number>();
 let deferredExitHeads: DeferredSnakeExitHead[] = [];
+let eaglePhase: EaglePhase = "hidden";
+let eagleStrokeIndex: number | null = null;
+let eagleTargetPoint: Point | null = null;
+let eagleFlightStartedAt = 0;
 
 const syncToleranceLabel = () => {
   toleranceValue.textContent = `${currentTraceTolerance}px`;
@@ -330,8 +355,26 @@ const getActiveDrawableStroke = (
   return drawablePathStrokes[state.activeStrokeIndex] ?? null;
 };
 
+const getActiveStrokeTravelDistance = (state: Pick<TracingState, "activeStrokeIndex" | "activeStrokeProgress">): number => {
+  const stroke = preparedTracingPath?.strokes[state.activeStrokeIndex];
+  return (stroke?.totalLength ?? 0) * state.activeStrokeProgress;
+};
+
 const isDeferredStrokeActive = (state: Pick<TracingState, "activeStrokeIndex">): boolean =>
   getActiveDrawableStroke(state)?.deferred === true;
+
+const getVisibleSnakeSegments = (
+  travelledDistance: number,
+  maxBodyCount: number,
+  segmentSpacing: number
+): { bodyCount: number; showTail: boolean } => {
+  const maxVisibleBodiesByLength = Math.max(0, Math.floor(travelledDistance / segmentSpacing));
+  const bodyCount = Math.min(maxBodyCount, maxVisibleBodiesByLength);
+  return {
+    bodyCount,
+    showTail: travelledDistance >= (bodyCount + 1) * segmentSpacing
+  };
+};
 
 const getStrokeTerminalPose = (strokeIndex: number): { point: Point; tangent: Point } | null => {
   const stroke = preparedTracingPath?.strokes[strokeIndex];
@@ -385,7 +428,7 @@ const getSnakeExitPose = (state: TracingState): { point: Point; tangent: Point }
 
 const getDeferredHeadState = (
   state: TracingState
-): { point: Point; tangent: Point; isDot: boolean } | null => {
+): { strokeIndex: number; point: Point; tangent: Point; isDot: boolean } | null => {
   if (
     isDemoPlaying ||
     isSnakeSlithering ||
@@ -397,20 +440,11 @@ const getDeferredHeadState = (
   }
 
   return {
+    strokeIndex: state.activeStrokeIndex,
     point: state.cursorPoint,
     tangent: state.cursorTangent,
     isDot: getActivePreparedStroke(state)?.isDot === true
   };
-};
-
-const isPointerOnDeferredHead = (point: Point, state: TracingState): boolean => {
-  const deferredHead = getDeferredHeadState(state);
-  if (!deferredHead) {
-    return false;
-  }
-
-  const hitRadius = Math.max(34, HEAD_SIZE.width * 0.52);
-  return Math.hypot(point.x - deferredHead.point.x, point.y - deferredHead.point.y) <= hitRadius;
 };
 
 const renderDeferredHead = (state: TracingState) => {
@@ -421,11 +455,14 @@ const renderDeferredHead = (state: TracingState) => {
   const deferredHead = getDeferredHeadState(state);
   if (!deferredHead) {
     deferredHeadEl.style.opacity = "0";
-    deferredHeadEl.classList.remove("writing-app__deferred-head--dot");
     return;
   }
 
-  deferredHeadEl.classList.toggle("writing-app__deferred-head--dot", deferredHead.isDot);
+  if (deferredHead.isDot) {
+    deferredHeadEl.style.opacity = "0";
+    return;
+  }
+
   renderDeferredSnake(
     deferredHeadEl,
     {
@@ -434,8 +471,9 @@ const renderDeferredHead = (state: TracingState) => {
       angle: toAngle(deferredHead.tangent)
     },
     {
-      isDot: deferredHead.isDot,
-      headHref: snakeHeadSprite
+      isDot: false,
+      headHref: snakeHeadSprite,
+      travelledDistance: getActiveStrokeTravelDistance(state)
     }
   );
 };
@@ -443,7 +481,7 @@ const renderDeferredHead = (state: TracingState) => {
 const renderDeferredSnake = (
   rootEl: SVGGElement,
   pose: { point: Point; tangent: Point; angle: number },
-  options: { isDot: boolean; headHref?: string } = { isDot: false }
+  options: { isDot: boolean; headHref?: string; travelledDistance?: number } = { isDot: false }
 ) => {
   const headGroupEl = rootEl.querySelector<SVGGElement>("[data-deferred-part='head']");
   const bodyGroupEl = rootEl.querySelector<SVGGElement>("[data-deferred-part='body']");
@@ -485,6 +523,21 @@ const renderDeferredSnake = (
     return;
   }
 
+  const segmentVisibility = getVisibleSnakeSegments(
+    options.travelledDistance ?? Number.POSITIVE_INFINITY,
+    1,
+    DEFERRED_SNAKE_SEGMENT_SPACING
+  );
+  if (segmentVisibility.bodyCount === 0) {
+    if (bodyGroupEl) {
+      bodyGroupEl.style.opacity = "0";
+    }
+    if (tailGroupEl) {
+      tailGroupEl.style.opacity = "0";
+    }
+    return;
+  }
+
   const bodyPoint = {
     x: pose.point.x - pose.tangent.x * DEFERRED_SNAKE_SEGMENT_SPACING,
     y: pose.point.y - pose.tangent.y * DEFERRED_SNAKE_SEGMENT_SPACING
@@ -513,7 +566,7 @@ const renderDeferredSnake = (
     );
   }
 
-  if (tailGroupEl && tailImageEl) {
+  if (tailGroupEl && tailImageEl && segmentVisibility.showTail) {
     setSpritePose(
       tailGroupEl,
       tailImageEl,
@@ -530,6 +583,8 @@ const renderDeferredSnake = (
       TAIL_SIZE.anchorY,
       TAIL_SIZE.rotationOffset
     );
+  } else if (tailGroupEl) {
+    tailGroupEl.style.opacity = "0";
   }
 };
 
@@ -546,6 +601,146 @@ const createDeferredSnakeMarkup = (attributes: string): string => `
     </g>
   </g>
 `;
+
+const hideEagle = () => {
+  if (eagleAnimationFrameId !== null) {
+    cancelAnimationFrame(eagleAnimationFrameId);
+    eagleAnimationFrameId = null;
+  }
+
+  eaglePhase = "hidden";
+  eagleStrokeIndex = null;
+  eagleTargetPoint = null;
+  if (eagleEl) {
+    eagleEl.style.opacity = "0";
+  }
+};
+
+const getEagleStandPoint = (point: Point): Point => ({
+  x: point.x,
+  y: point.y - EAGLE_DOT_OFFSET_Y
+});
+
+const getEaglePose = (
+  now = performance.now()
+): { point: Point; width: number; height: number; href: string } | null => {
+  if (eaglePhase === "hidden" || !eagleTargetPoint) {
+    return null;
+  }
+
+  const standPoint = getEagleStandPoint(eagleTargetPoint);
+  if (eaglePhase === "standing") {
+    return {
+      point: standPoint,
+      width: EAGLE_STAND_SIZE.width,
+      height: EAGLE_STAND_SIZE.height,
+      href: eagleStandSprite
+    };
+  }
+
+  const progress = Math.max(0, Math.min(1, (now - eagleFlightStartedAt) / EAGLE_FLY_MS));
+  const eased = 1 - (1 - progress) * (1 - progress);
+  return {
+    point: {
+      x: standPoint.x,
+      y: -EAGLE_FLY_SIZE.height + (standPoint.y + EAGLE_FLY_SIZE.height) * eased
+    },
+    width: EAGLE_FLY_SIZE.width,
+    height: EAGLE_FLY_SIZE.height,
+    href: eagleFlySprite
+  };
+};
+
+const tickEagleAnimation = (now: number) => {
+  eagleAnimationFrameId = null;
+  if (eaglePhase !== "flying") {
+    return;
+  }
+
+  if (now - eagleFlightStartedAt >= EAGLE_FLY_MS) {
+    eaglePhase = "standing";
+    requestTraceRender();
+    return;
+  }
+
+  requestTraceRender();
+  eagleAnimationFrameId = requestAnimationFrame(tickEagleAnimation);
+};
+
+const syncEagleToState = (state: TracingState) => {
+  const deferredHead = getDeferredHeadState(state);
+  if (!deferredHead?.isDot) {
+    hideEagle();
+    return;
+  }
+
+  if (eagleStrokeIndex !== deferredHead.strokeIndex) {
+    if (eagleAnimationFrameId !== null) {
+      cancelAnimationFrame(eagleAnimationFrameId);
+      eagleAnimationFrameId = null;
+    }
+    eagleStrokeIndex = deferredHead.strokeIndex;
+    eagleTargetPoint = deferredHead.point;
+    eagleFlightStartedAt = performance.now();
+    eaglePhase = "flying";
+    eagleAnimationFrameId = requestAnimationFrame(tickEagleAnimation);
+    return;
+  }
+
+  eagleTargetPoint = deferredHead.point;
+};
+
+const renderEagle = (now = performance.now()) => {
+  if (!eagleEl || !eagleImageEl) {
+    return;
+  }
+
+  const eaglePose = getEaglePose(now);
+  if (!eaglePose) {
+    eagleEl.style.opacity = "0";
+    return;
+  }
+
+  eagleImageEl.setAttribute("href", eaglePose.href);
+  setSpritePose(
+    eagleEl,
+    eagleImageEl,
+    {
+      x: eaglePose.point.x,
+      y: eaglePose.point.y,
+      angle: 0,
+      distance: 0,
+      visible: true
+    },
+    eaglePose.width,
+    eaglePose.height,
+    EAGLE_STAND_SIZE.anchorX,
+    EAGLE_STAND_SIZE.anchorY,
+    0
+  );
+};
+
+const isPointerOnDeferredTarget = (point: Point, state: TracingState): boolean => {
+  const deferredHead = getDeferredHeadState(state);
+  if (!deferredHead) {
+    return false;
+  }
+
+  if (deferredHead.isDot) {
+    if (eaglePhase !== "standing") {
+      return false;
+    }
+    const eaglePose = getEaglePose();
+    if (!eaglePose) {
+      return false;
+    }
+    const hitRadius = Math.max(eaglePose.width, eaglePose.height) * 0.34;
+    return Math.hypot(point.x - eaglePose.point.x, point.y - eaglePose.point.y) <= hitRadius;
+  }
+
+  const hitRadius = Math.max(34, HEAD_SIZE.width * 0.52);
+  return Math.hypot(point.x - deferredHead.point.x, point.y - deferredHead.point.y) <= hitRadius;
+};
 
 const registerCompletedDeferredHeads = (state: TracingState) => {
   state.completedStrokes.forEach((strokeIndex) => {
@@ -827,7 +1022,13 @@ const renderSnake = (now = performance.now()) => {
   }
 
   snakeLayerEl.style.opacity = "1";
-  const bodyCount = isSnakeSlithering ? snakeExitBodyCount : getCurrentBodyCount();
+  const availableBodyCount = isSnakeSlithering ? snakeExitBodyCount : getCurrentBodyCount();
+  const segmentVisibility = getVisibleSnakeSegments(
+    snakeHeadDistance,
+    availableBodyCount,
+    SNAKE_SEGMENT_SPACING
+  );
+  const bodyCount = segmentVisibility.bodyCount;
   const headPose = sampleSnakePoseAtDistance(snakeHeadDistance);
   snakeHeadImageEl.setAttribute("href", now < snakeChewUntil ? snakeHeadAltSprite : snakeHeadSprite);
   setSpritePose(
@@ -872,6 +1073,10 @@ const renderSnake = (now = performance.now()) => {
   );
   const tailImageEl = snakeTailEl.querySelector<SVGImageElement>("image");
   if (!tailImageEl) {
+    return;
+  }
+  if (!segmentVisibility.showTail) {
+    snakeTailEl.style.opacity = "0";
     return;
   }
   setSpritePose(
@@ -1183,6 +1388,7 @@ const resetRoundProgress = () => {
   completedDeferredHeads = [];
   completedDeferredHeadIndices = new Set<number>();
   deferredExitHeads = [];
+  hideEagle();
 
   if (snakeExitAnimationFrameId !== null) {
     cancelAnimationFrame(snakeExitAnimationFrameId);
@@ -1226,6 +1432,8 @@ const renderTraceFrame = () => {
 
   const state = tracingSession.getState();
   registerCompletedDeferredHeads(state);
+  syncEagleToState(state);
+  renderEagle();
   renderDeferredHead(state);
   if (!isSnakeSlithering && !isSnakeExitComplete) {
     renderCompletedDeferredHeads();
@@ -1464,6 +1672,13 @@ const setupScene = (path: WritingPath, width: number, height: number, offsetY: n
       ${deferredTrailHeadMarkup}
     </g>
     ${createDeferredSnakeMarkup('class="writing-app__deferred-head" id="deferred-head"')}
+    <g class="writing-app__eagle" id="dot-eagle">
+      <image
+        id="dot-eagle-image"
+        href="${eagleFlySprite}"
+        preserveAspectRatio="none"
+      ></image>
+    </g>
     <circle class="writing-app__nib" id="demo-nib" cx="0" cy="0" r="15"></circle>
   `;
 
@@ -1486,6 +1701,8 @@ const setupScene = (path: WritingPath, width: number, height: number, offsetY: n
       traceSvg.querySelectorAll<SVGGElement>("[data-deferred-trail-index]")
     ).map((el) => [Number(el.dataset.deferredTrailIndex), el])
   );
+  eagleEl = traceSvg.querySelector<SVGGElement>("#dot-eagle");
+  eagleImageEl = traceSvg.querySelector<SVGImageElement>("#dot-eagle-image");
   demoNibEl = traceSvg.querySelector<SVGCircleElement>("#demo-nib");
 
   traceStrokeLengths = traceStrokeEls.map((el) => {
@@ -1517,8 +1734,8 @@ const setupScene = (path: WritingPath, width: number, height: number, offsetY: n
   completedDeferredHeads = [];
   completedDeferredHeadIndices = new Set<number>();
   deferredExitHeads = [];
+  hideEagle();
   hideCompletedDeferredHeads();
-  renderDeferredHead(initialState);
   resetFruitState();
   updateSuccessVisibility(false);
   requestTraceRender();
@@ -1547,11 +1764,13 @@ const onPointerDown = (event: PointerEvent) => {
   const state = tracingSession.getState();
   const activePreparedStroke = getActivePreparedStroke(state);
 
-  if (isDeferredStrokeActive(state) && !isPointerOnDeferredHead(pointer, state)) {
+  if (isDeferredStrokeActive(state) && !isPointerOnDeferredTarget(pointer, state)) {
     return;
   }
 
-  const started = tracingSession.beginAt(pointer);
+  const started = tracingSession.beginAt(
+    isDeferredStrokeActive(state) && activePreparedStroke?.isDot ? state.cursorPoint : pointer
+  );
   if (!started) {
     return;
   }

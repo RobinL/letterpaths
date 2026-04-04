@@ -325,19 +325,18 @@ body {
   transform-origin: center;
 }
 
-.writing-app__deferred-head--dot [data-deferred-part="head"] image {
-  animation: writing-app-snake-head-wobble 0.9s ease-in-out infinite;
+.writing-app__eagle {
+  pointer-events: none;
+  opacity: 0;
+  overflow: visible;
+  filter: drop-shadow(0 10px 18px rgba(35, 49, 61, 0.28));
+  transform-box: fill-box;
+  transform-origin: center;
 }
 
-@keyframes writing-app-snake-head-wobble {
-  0%,
-  100% {
-    transform: rotate(-8deg) translateY(0);
-  }
-
-  50% {
-    transform: rotate(8deg) translateY(-4px);
-  }
+.writing-app__eagle image {
+  transform-box: fill-box;
+  transform-origin: center;
 }
 
 .writing-app__debug-curve {
