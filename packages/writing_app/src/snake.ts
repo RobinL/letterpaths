@@ -12,6 +12,7 @@ import {
   type WritingPath
 } from "letterpaths";
 import snakeBodySprite from "./assets/snake/body.png";
+import snakeBackgroundImage from "./assets/snake/background.png";
 import snakeHeadAltSprite from "./assets/snake/head_alt.png";
 import snakeHeadSprite from "./assets/snake/head.png";
 import snakeTailSprite from "./assets/snake/tail.png";
@@ -92,7 +93,7 @@ if (!app) {
 }
 
 app.innerHTML = `
-  <div class="writing-app">
+  <div class="writing-app writing-app--snake">
     <main class="writing-app__stage">
       <section class="writing-app__board">
         <header class="writing-app__topbar writing-app__topbar--score">
@@ -176,6 +177,8 @@ app.innerHTML = `
     </main>
   </div>
 `;
+
+app.style.setProperty("--snake-board-image", `url("${snakeBackgroundImage}")`);
 
 const wordLabel = document.querySelector<HTMLHeadingElement>("#word-label");
 const scoreValue = document.querySelector<HTMLSpanElement>("#score-value");
