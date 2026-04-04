@@ -13,6 +13,7 @@ import {
   type WritingPath
 } from "letterpaths";
 import snakeBodySprite from "./assets/snake/body.png";
+import snakeBodyBulgeSprite from "./assets/snake/body_bulge.png";
 import snakeBackgroundImage from "./assets/snake/background.png";
 import eagleFlySprite from "./assets/snake/eagle_fly.png";
 import eagleStandSprite from "./assets/snake/eagle_stand.png";
@@ -44,6 +45,7 @@ const FRUIT_SPACING = 180;
 const SHOW_ME_SPEED_MULTIPLIER = 0.75;
 const SNAKE_SEGMENT_SPACING = 76;
 const SNAKE_GROWTH_DISTANCE = 115;
+const BULGE_BODY_SPRITE_CHANCE = 0.25;
 const SNAKE_MOVE_SOUND_VOLUME = 0.12;
 const SNAKE_MOVE_SOUND_CHANCE = 0.42;
 const MAX_SNAKE_BODY_SEGMENTS = 10;
@@ -65,6 +67,10 @@ const BODY_SIZE = {
   anchorX: 0.5,
   anchorY: 0.5,
   rotationOffset: 0
+} as const;
+const BODY_BULGE_SIZE = {
+  ...BODY_SIZE,
+  height: BODY_SIZE.height * ((209 / 431) / (160 / 435))
 } as const;
 const TAIL_SIZE = {
   width: 55,
@@ -107,6 +113,7 @@ const SNAKE_MOVE_SOUND_SOURCES = [
 type FruitToken = {
   x: number;
   y: number;
+  pathDistance: number;
   emoji: string;
   captured: boolean;
   groupIndex: number;
@@ -981,8 +988,9 @@ const finishDotPickup = () => {
     getActivePreparedStroke(state)?.isDot
   ) {
     tracingSession.beginAt(state.cursorPoint);
-    captureFruitAtPoint(state.cursorPoint);
-    maybePauseAtTracingGroupBoundary(tracingSession.getState());
+    const nextState = tracingSession.getState();
+    captureFruitThroughDistance(getOverallDistanceForState(nextState));
+    maybePauseAtTracingGroupBoundary(nextState);
   }
 
   hideDotTarget();
@@ -1309,13 +1317,12 @@ const createFruitTokens = (
     const count = Math.max(1, Math.round(groupLength / FRUIT_SPACING));
 
     return Array.from({ length: count }, (_, index) => {
-      const point = getPointAtOverallDistance(
-        preparedPath,
-        group.startDistance + (groupLength * (index + 1)) / (count + 1)
-      );
+      const pathDistance = group.startDistance + (groupLength * (index + 1)) / (count + 1);
+      const point = getPointAtOverallDistance(preparedPath, pathDistance);
       return {
         x: point.x,
         y: point.y,
+        pathDistance,
         emoji: FRUIT_EMOJIS[(groupIndex + index) % FRUIT_EMOJIS.length] ?? FRUIT_EMOJIS[0],
         captured: false,
         groupIndex
@@ -1494,15 +1501,17 @@ const renderSnake = (now = performance.now()) => {
     }
 
     const pose = sampleSnakePoseAtDistance(Math.max(0, snakeHeadDistance - gapFromHead));
+    const bodySize =
+      imageEl.getAttribute("href") === snakeBodyBulgeSprite ? BODY_BULGE_SIZE : BODY_SIZE;
     setSpritePose(
       el,
       imageEl,
       pose,
-      BODY_SIZE.width,
-      BODY_SIZE.height,
-      BODY_SIZE.anchorX,
-      BODY_SIZE.anchorY,
-      BODY_SIZE.rotationOffset
+      bodySize.width,
+      bodySize.height,
+      bodySize.anchorX,
+      bodySize.anchorY,
+      bodySize.rotationOffset
     );
   });
 
@@ -1701,17 +1710,15 @@ const startSnakeExit = (point: Point, tangent: Point) => {
   snakeExitAnimationFrameId = requestAnimationFrame(tick);
 };
 
-const captureFruitAtPoint = (point: Point) => {
+const captureFruitThroughDistance = (overallDistance: number) => {
   let changed = false;
-  const captureRadius = Math.max(24, FRUIT_SIZE * 0.55);
 
   fruits.forEach((fruit, index) => {
     if (fruit.captured || fruit.groupIndex >= visibleGroupCount) {
       return;
     }
 
-    const distance = Math.hypot(point.x - fruit.x, point.y - fruit.y);
-    if (distance > captureRadius) {
+    if (overallDistance + 0.5 < fruit.pathDistance) {
       return;
     }
 
@@ -1770,8 +1777,11 @@ const syncSnakeToState = (state: TracingState) => {
     appendSnakePose(state.cursorPoint, headTangent, true);
   }
 
+  if (!isDemoPlaying) {
+    captureFruitThroughDistance(getOverallDistanceForState(state));
+  }
+
   if (!isDemoPlaying && state.isPenDown) {
-    captureFruitAtPoint(state.cursorPoint);
     maybePlaySnakeMoveSound(state);
     if (maybePauseAtTracingGroupBoundary(state)) {
       return;
@@ -2031,13 +2041,15 @@ const setupScene = (path: WritingPath, width: number, height: number, offsetY: n
     .join("");
   const snakeBodyMarkup = Array.from({ length: MAX_SNAKE_BODY_SEGMENTS }, (_, index) => {
     const bodyIndex = MAX_SNAKE_BODY_SEGMENTS - 1 - index;
+    const bodySpriteHref =
+      Math.random() < BULGE_BODY_SPRITE_CHANCE ? snakeBodyBulgeSprite : snakeBodySprite;
     return `
       <g
         class="writing-app__snake-segment writing-app__snake-body"
         data-snake-body-index="${bodyIndex}"
       >
         <image
-          href="${snakeBodySprite}"
+          href="${bodySpriteHref}"
           preserveAspectRatio="none"
         ></image>
       </g>
