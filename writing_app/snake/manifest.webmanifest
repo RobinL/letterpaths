@@ -1,0 +1,26 @@
+{
+  "name": "Letterpaths Snake",
+  "short_name": "Snake",
+  "description": "Trace words by steering the snake around each handwritten letter.",
+  "id": "./",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "landscape",
+  "background_color": "#f4d18a",
+  "theme_color": "#f4d18a",
+  "icons": [
+    {
+      "src": "./pwa-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "./pwa-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
