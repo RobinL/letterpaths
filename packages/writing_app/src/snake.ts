@@ -154,27 +154,28 @@ app.innerHTML = `
             <h1 class="writing-app__word" id="word-label"></h1>
             <div class="writing-app__fruit-progress" id="fruit-progress" aria-hidden="true"></div>
           </div>
-          <div class="writing-app__control-strip">
-            <label class="writing-app__tolerance" for="tolerance-slider">
-              <span class="writing-app__tolerance-label">
-                Tolerance
-                <span class="writing-app__tolerance-value" id="tolerance-value"></span>
-              </span>
-              <input
-                class="writing-app__tolerance-slider"
-                id="tolerance-slider"
-                type="range"
-                min="${MIN_TRACE_TOLERANCE}"
-                max="${MAX_TRACE_TOLERANCE}"
-                step="${TRACE_TOLERANCE_STEP}"
-                value="${DEFAULT_SNAKE_TRACE_TOLERANCE}"
-              />
-            </label>
-          </div>
           <button class="writing-app__button" id="show-me-button" type="button">
-            Show me
+            Demo
           </button>
         </header>
+
+        <div class="writing-app__control-strip writing-app__control-strip--floating">
+          <label class="writing-app__tolerance" for="tolerance-slider">
+            <span class="writing-app__tolerance-label">
+              Tolerance
+              <span class="writing-app__tolerance-value" id="tolerance-value"></span>
+            </span>
+            <input
+              class="writing-app__tolerance-slider"
+              id="tolerance-slider"
+              type="range"
+              min="${MIN_TRACE_TOLERANCE}"
+              max="${MAX_TRACE_TOLERANCE}"
+              step="${TRACE_TOLERANCE_STEP}"
+              value="${DEFAULT_SNAKE_TRACE_TOLERANCE}"
+            />
+          </label>
+        </div>
 
         <svg
           class="writing-app__svg"
@@ -187,9 +188,29 @@ app.innerHTML = `
           <div class="writing-app__success-card">
             <p class="writing-app__success-eyebrow">Snake fed!</p>
             <p class="writing-app__success-copy" id="score-summary"></p>
-            <button class="writing-app__button writing-app__button--next" id="next-word-button" type="button">
-              Next word
-            </button>
+            <form class="writing-app__success-form" id="custom-word-form">
+              <label class="writing-app__success-label" for="custom-word-input">Custom word</label>
+              <input
+                class="writing-app__success-input"
+                id="custom-word-input"
+                type="text"
+                autocomplete="off"
+                autocapitalize="off"
+                spellcheck="false"
+                placeholder="Type a word"
+              />
+              <p class="writing-app__success-error" id="custom-word-error" hidden></p>
+              <div class="writing-app__success-actions">
+                <button class="writing-app__button" type="submit">Play custom word</button>
+                <button
+                  class="writing-app__button writing-app__button--secondary writing-app__button--next"
+                  id="next-word-button"
+                  type="button"
+                >
+                  Next random word
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       </section>
@@ -205,6 +226,9 @@ const scoreSummary = document.querySelector<HTMLParagraphElement>("#score-summar
 const traceSvg = document.querySelector<SVGSVGElement>("#trace-svg");
 const showMeButton = document.querySelector<HTMLButtonElement>("#show-me-button");
 const successOverlay = document.querySelector<HTMLDivElement>("#success-overlay");
+const customWordForm = document.querySelector<HTMLFormElement>("#custom-word-form");
+const customWordInput = document.querySelector<HTMLInputElement>("#custom-word-input");
+const customWordError = document.querySelector<HTMLParagraphElement>("#custom-word-error");
 const nextWordButton = document.querySelector<HTMLButtonElement>("#next-word-button");
 const toleranceSlider = document.querySelector<HTMLInputElement>("#tolerance-slider");
 const toleranceValue = document.querySelector<HTMLSpanElement>("#tolerance-value");
@@ -215,6 +239,9 @@ if (
   !traceSvg ||
   !showMeButton ||
   !successOverlay ||
+  !customWordForm ||
+  !customWordInput ||
+  !customWordError ||
   !nextWordButton ||
   !toleranceSlider ||
   !toleranceValue
@@ -223,6 +250,7 @@ if (
 }
 
 let currentWordIndex = -1;
+let currentWord = "";
 let currentPath: WritingPath | null = null;
 let tracingSession: TracingSession | null = null;
 let activePointerId: number | null = null;
@@ -291,6 +319,18 @@ let nextSnakeMoveSoundDistance = Number.POSITIVE_INFINITY;
 const syncToleranceLabel = () => {
   toleranceValue.textContent = `${currentTraceTolerance}px`;
 };
+
+const clearCustomWordError = () => {
+  customWordError.hidden = true;
+  customWordError.textContent = "";
+};
+
+const setCustomWordError = (message: string) => {
+  customWordError.hidden = false;
+  customWordError.textContent = message;
+};
+
+const normalizeWordInput = (word: string): string => word.trim().replace(/\s+/g, " ").toLowerCase();
 
 const ensureSnakeMoveSoundPlayers = () => {
   if (snakeMoveSoundPlayers) {
@@ -1747,7 +1787,7 @@ const stopDemoAnimation = () => {
 
   isDemoPlaying = false;
   showMeButton.disabled = false;
-  showMeButton.textContent = "Show me";
+  showMeButton.textContent = "Demo";
 
   demoStrokeEls.forEach((el, index) => {
     const length = demoStrokeLengths[index] ?? 0.001;
@@ -1884,7 +1924,7 @@ const playDemo = () => {
 
   isDemoPlaying = true;
   showMeButton.disabled = true;
-  showMeButton.textContent = "Showing...";
+  showMeButton.textContent = "Demo...";
   syncFruitDisplay();
   renderSnake();
 
@@ -1974,18 +2014,6 @@ const setupScene = (path: WritingPath, width: number, height: number, offsetY: n
   const demoPaths = drawableStrokes
     .map((stroke) => `<path class="writing-app__stroke-demo" d="${buildPathD(stroke.curves)}"></path>`)
     .join("");
-  const debugCurveMarkup = drawableStrokes
-    .flatMap((stroke) =>
-      stroke.curves.map(
-        (curve) => `
-          <path
-            class="writing-app__debug-curve"
-            d="M ${curve.p0.x} ${curve.p0.y} C ${curve.p1.x} ${curve.p1.y} ${curve.p2.x} ${curve.p2.y} ${curve.p3.x} ${curve.p3.y}"
-          ></path>
-        `
-      )
-    )
-    .join("");
   const fruitMarkup = fruits
     .map(
       (fruit, index) => `
@@ -2044,7 +2072,6 @@ const setupScene = (path: WritingPath, width: number, height: number, offsetY: n
       y2="${path.guides.baseline + offsetY}"
     ></line>
     ${backgroundPaths}
-    ${debugCurveMarkup}
     ${tracePaths}
     ${demoPaths}
     <text
@@ -2163,18 +2190,39 @@ const setupScene = (path: WritingPath, width: number, height: number, offsetY: n
   requestTraceRender();
 };
 
-const renderWord = (word: string) => {
+const renderWord = (word: string, wordIndex = -1) => {
   stopDemoAnimation();
-  wordLabel.textContent = word;
 
   const layout = buildShiftedWordLayout(word);
+  currentWord = word;
+  currentWordIndex = wordIndex;
+  wordLabel.textContent = word;
+  customWordInput.value = word;
   currentPath = layout.path;
   setupScene(layout.path, layout.width, layout.height, layout.offsetY);
 };
 
+const loadWord = (word: string, wordIndex = -1): boolean => {
+  const normalizedWord = normalizeWordInput(word);
+
+  if (!normalizedWord) {
+    setCustomWordError("Type a word first.");
+    return false;
+  }
+
+  try {
+    renderWord(normalizedWord, wordIndex);
+    clearCustomWordError();
+    return true;
+  } catch {
+    setCustomWordError("Couldn't build that word. Try letters supported by the cursive set.");
+    return false;
+  }
+};
+
 const goToNextWord = () => {
-  currentWordIndex = chooseNextWordIndex(currentWordIndex);
-  renderWord(WORDS[currentWordIndex] ?? WORDS[0]);
+  const nextWordIndex = chooseNextWordIndex(currentWordIndex);
+  void loadWord(WORDS[nextWordIndex] ?? WORDS[0], nextWordIndex);
 };
 
 const onPointerDown = (event: PointerEvent) => {
@@ -2262,14 +2310,21 @@ traceSvg.addEventListener("pointermove", onPointerMove);
 traceSvg.addEventListener("pointerup", onPointerUp);
 traceSvg.addEventListener("pointercancel", onPointerCancel);
 showMeButton.addEventListener("click", playDemo);
+customWordForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  void loadWord(customWordInput.value);
+});
 nextWordButton.addEventListener("click", goToNextWord);
+customWordInput.addEventListener("input", () => {
+  if (!customWordError.hidden) {
+    clearCustomWordError();
+  }
+});
 toleranceSlider.addEventListener("input", () => {
   currentTraceTolerance = Number(toleranceSlider.value);
   syncToleranceLabel();
-  if (currentPath) {
-    const layout = buildShiftedWordLayout(WORDS[currentWordIndex] ?? WORDS[0]);
-    currentPath = layout.path;
-    setupScene(layout.path, layout.width, layout.height, layout.offsetY);
+  if (currentWord) {
+    void loadWord(currentWord, currentWordIndex);
   }
 });
 

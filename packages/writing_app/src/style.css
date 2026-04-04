@@ -51,6 +51,10 @@ body {
   overflow: hidden;
 }
 
+.writing-app--snake {
+  padding: 0;
+}
+
 .writing-app__topbar {
   position: absolute;
   top: 16px;
@@ -64,6 +68,14 @@ body {
   pointer-events: none;
 }
 
+.writing-app--snake .writing-app__topbar {
+  top: 12px;
+  left: 12px;
+  right: 12px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+}
+
 .writing-app__topbar--score {
   grid-template-columns: minmax(0, 1fr) auto minmax(520px, 760px) auto;
 }
@@ -74,8 +86,15 @@ body {
 }
 
 .writing-app--snake .writing-app__control-strip {
-  grid-template-columns: minmax(180px, 240px);
-  justify-self: end;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.writing-app--snake .writing-app__control-strip--floating {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  z-index: 2;
+  width: clamp(220px, 33vw, 420px);
 }
 
 .writing-app--snake .writing-app__eyebrow {
@@ -188,6 +207,12 @@ body {
   pointer-events: auto;
 }
 
+.writing-app--snake .writing-app__tolerance {
+  padding: 10px 12px;
+  border-radius: 18px;
+  background: rgba(255, 252, 244, 0.84);
+}
+
 .writing-app__tolerance-label {
   display: flex;
   align-items: center;
@@ -228,6 +253,9 @@ body {
 }
 
 .writing-app--snake .writing-app__board {
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
   background:
     linear-gradient(180deg, rgba(255, 252, 244, 0.28), rgba(255, 248, 235, 0.52)),
     var(--snake-board-image) center / cover no-repeat,
@@ -452,6 +480,49 @@ body {
   text-align: center;
 }
 
+.writing-app__success-form {
+  display: grid;
+  gap: 12px;
+  text-align: left;
+}
+
+.writing-app__success-label {
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.writing-app__success-input {
+  width: 100%;
+  border: 0;
+  border-radius: 18px;
+  padding: 14px 16px;
+  font: inherit;
+  font-size: 1rem;
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow: inset 0 0 0 2px rgba(35, 49, 61, 0.08);
+}
+
+.writing-app__success-input:focus {
+  outline: 2px solid rgba(242, 109, 79, 0.45);
+  outline-offset: 2px;
+}
+
+.writing-app__success-error {
+  margin: 0;
+  min-height: 1.2em;
+  color: #b03a2e;
+  font-size: 0.92rem;
+  font-weight: 700;
+}
+
+.writing-app__success-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
 .writing-app__success-eyebrow {
   margin: 0 0 18px;
   font-size: clamp(1.6rem, 4vw, 2.2rem);
@@ -500,9 +571,21 @@ body {
   min-width: 180px;
 }
 
+.writing-app__button--secondary {
+  color: var(--ink);
+  background: rgba(255, 252, 244, 0.92);
+  box-shadow:
+    0 10px 20px rgba(35, 49, 61, 0.12),
+    inset 0 0 0 1px rgba(35, 49, 61, 0.08);
+}
+
 @media (max-width: 900px) {
   .writing-app {
     padding: 14px;
+  }
+
+  .writing-app--snake {
+    padding: 0;
   }
 
   .writing-app__topbar {
@@ -514,6 +597,13 @@ body {
 
   .writing-app__topbar--score {
     grid-template-columns: minmax(0, 1fr) auto minmax(420px, 560px) auto;
+  }
+
+  .writing-app--snake .writing-app__topbar {
+    top: 10px;
+    left: 10px;
+    right: 10px;
+    grid-template-columns: minmax(0, 1fr) auto;
   }
 
   .writing-app__board {
@@ -541,6 +631,13 @@ body {
     grid-column: 1 / -1;
     grid-template-columns: 1fr;
     gap: 10px;
+  }
+
+  .writing-app--snake .writing-app__control-strip--floating {
+    left: 10px;
+    right: 10px;
+    bottom: 10px;
+    width: auto;
   }
 
   .writing-app__fruit-progress {
@@ -576,9 +673,17 @@ body {
     border-radius: 24px;
   }
 
+  .writing-app--snake .writing-app__board {
+    border-radius: 0;
+  }
+
   .writing-app__stroke-bg,
   .writing-app__stroke-trace,
   .writing-app__stroke-demo {
     stroke-width: 48;
+  }
+
+  .writing-app__success-actions {
+    grid-template-columns: 1fr;
   }
 }
