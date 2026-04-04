@@ -71,12 +71,12 @@ import{M as bn,a as En,T as vn,f as An,W as It,b as Dn,c as Pn,d as In,e as Ze,A
               <input
                 class="writing-app__success-input"
                 id="custom-word-input"
-                type="text"
+                type="search"
                 autocomplete="off"
                 autocapitalize="off"
                 autocorrect="off"
-                inputmode="text"
-                enterkeyhint="done"
+                inputmode="search"
+                enterkeyhint="search"
                 spellcheck="false"
                 placeholder="Type a word"
               />
