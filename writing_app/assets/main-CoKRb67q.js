@@ -1,4 +1,4 @@
-import{M as Q,a as X,T as z,D as F,b as G,c as J,d as K,e as A,A as Z,W as v,g as N,f as M,h as Y}from"./shared-Dp0xrYiI.js";const R=document.querySelector("#app");if(!R)throw new Error("Missing #app element for writing app.");R.innerHTML=`
+import{M as Q,a as X,T as z,D as F,b as G,c as J,d as K,e as A,A as Z,f as Y,W as v,g as N,h as M}from"./shared-n7GYFNh1.js";const R=document.querySelector("#app");if(!R)throw new Error("Missing #app element for writing app.");R.innerHTML=`
   <div class="writing-app">
     <main class="writing-app__stage">
       <section class="writing-app__board">
