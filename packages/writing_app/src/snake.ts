@@ -39,6 +39,35 @@ import {
   getPointerInSvg
 } from "./shared";
 
+declare global {
+  interface Window {
+    dataLayer?: unknown[];
+    gtag?: (...args: unknown[]) => void;
+  }
+}
+
+const ANALYTICS_MEASUREMENT_ID = "G-94373ZKHEE";
+const ANALYTICS_DISABLED_HOSTS = new Set(["localhost", "127.0.0.1"]);
+
+const initializeAnalytics = () => {
+  if (ANALYTICS_DISABLED_HOSTS.has(window.location.hostname)) {
+    return;
+  }
+
+  window.dataLayer = window.dataLayer || [];
+  window.gtag = function gtag() {
+    window.dataLayer?.push(arguments);
+  };
+
+  window.gtag("js", new Date());
+  window.gtag("config", ANALYTICS_MEASUREMENT_ID);
+
+  const analyticsScript = document.createElement("script");
+  analyticsScript.async = true;
+  analyticsScript.src = `https://www.googletagmanager.com/gtag/js?id=${ANALYTICS_MEASUREMENT_ID}`;
+  document.head.append(analyticsScript);
+};
+
 const registerSnakeServiceWorker = () => {
   if (!import.meta.env.PROD || !("serviceWorker" in navigator)) {
     return;
@@ -165,6 +194,7 @@ if (!app) {
   throw new Error("Missing #app element for snake app.");
 }
 
+initializeAnalytics();
 registerSnakeServiceWorker();
 
 app.innerHTML = `
