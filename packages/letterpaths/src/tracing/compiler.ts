@@ -1,4 +1,4 @@
-import type { Point, WritingPath, LetterGuides } from "../types";
+import type { Point, WritingPath, LetterGuides, WritingPathSegment } from "../types";
 
 export type TracingSample = {
   x: number;
@@ -13,8 +13,17 @@ export type PreparedStroke = {
   isDot: boolean;
 };
 
+export type PreparedTracingBoundary = {
+  overallDistance: number;
+  point: Point;
+  previousSegment?: WritingPathSegment;
+  nextSegment?: WritingPathSegment;
+  turnAngleDegrees: number;
+};
+
 export type PreparedTracingPath = {
   strokes: PreparedStroke[];
+  boundaries: PreparedTracingBoundary[];
   guides: LetterGuides;
   bounds: { minX: number; maxX: number; minY: number; maxY: number };
 };
@@ -33,16 +42,47 @@ export function compileTracingPath(
   opts: CompileOptions = {}
 ): PreparedTracingPath {
   const sampleRate = opts.sampleRate ?? 2;
+  const boundaries: PreparedTracingBoundary[] = [];
+  let strokeOffset = 0;
+  const strokes: PreparedStroke[] = [];
 
-  const strokes: PreparedStroke[] = path.strokes
+  path.strokes
     .filter((stroke) => stroke.type !== "lift")
-    .map((stroke) => {
+    .forEach((stroke) => {
       const samples: TracingSample[] = [];
       let totalLength = 0;
+      let distanceBeforeCurve = 0;
 
       // Calculate total length of all curves in stroke
       for (const curve of stroke.curves) {
         totalLength += curve.length();
+      }
+
+      for (let curveIndex = 0; curveIndex < stroke.curves.length - 1; curveIndex += 1) {
+        const curve = stroke.curves[curveIndex];
+        const nextCurve = stroke.curves[curveIndex + 1];
+        if (!curve || !nextCurve) {
+          continue;
+        }
+
+        const curveLength = curve.length();
+        const previousSegment = stroke.curveSegments?.[curveIndex];
+        const nextSegment = stroke.curveSegments?.[curveIndex + 1];
+        const incomingTangent = normalizeVector(curve.getTangentAt(1));
+        const outgoingTangent = normalizeVector(nextCurve.getTangentAt(0));
+        const directionDot = clampDot(
+          incomingTangent.x * outgoingTangent.x + incomingTangent.y * outgoingTangent.y
+        );
+
+        boundaries.push({
+          overallDistance: strokeOffset + distanceBeforeCurve + curveLength,
+          point: { x: curve.p3.x, y: curve.p3.y },
+          previousSegment,
+          nextSegment,
+          turnAngleDegrees: Math.acos(directionDot) * (180 / Math.PI)
+        });
+
+        distanceBeforeCurve += curveLength;
       }
 
       // Handle zero-length strokes (dots)
@@ -58,7 +98,9 @@ export function compileTracingPath(
             distanceAlongStroke: 0
           });
         }
-        return { samples, totalLength, isDot };
+        strokes.push({ samples, totalLength, isDot });
+        strokeOffset += totalLength;
+        return;
       }
 
       // Sample points at regular intervals
@@ -74,11 +116,13 @@ export function compileTracingPath(
         });
       }
 
-      return { samples, totalLength, isDot };
+      strokes.push({ samples, totalLength, isDot });
+      strokeOffset += totalLength;
     });
 
   return {
     strokes,
+    boundaries,
     guides: path.guides,
     bounds: path.bounds
   };
@@ -119,4 +163,8 @@ function normalizeVector(v: Point): Point {
   const len = Math.hypot(v.x, v.y);
   if (len === 0) return { x: 1, y: 0 };
   return { x: v.x / len, y: v.y / len };
+}
+
+function clampDot(value: number): number {
+  return Math.max(-1, Math.min(1, value));
 }

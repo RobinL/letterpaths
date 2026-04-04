@@ -264,6 +264,13 @@ type PreparedTracingPath = {
     totalLength: number;
     isDot: boolean;
   }>;
+  boundaries: Array<{
+    overallDistance: number;
+    point: Point;
+    previousSegment?: WritingPathSegment;
+    nextSegment?: WritingPathSegment;
+    turnAngleDegrees: number;
+  }>;
   guides: LetterGuides;
   bounds: { minX: number; maxX: number; minY: number; maxY: number };
 };
@@ -278,9 +285,83 @@ Example prepared tracing data:
     totalLength: 407.14,
     sampleCount: 35,
     isDot: false
+  },
+  firstBoundary: {
+    overallDistance: 221.6,
+    previousSegment: "descender",
+    nextSegment: "ascender",
+    turnAngleDegrees: 179.8
   }
 }
 ```
+
+`boundaries` marks authored curve boundaries inside the flattened tracing path. This is useful when you want to place waypoints or detect true retrace points at semantic turning points rather than at arbitrary sample positions.
+
+### Retrace group analysis
+
+This is optional and intended for more advanced behaviors such as waypoint placement, segment-aware collectibles, or other game logic layered on top of tracing.
+
+Use `analyzeTracingGroups()` when you want to split a tracing path into contiguous groups, for example to place collectibles only up to the next retrace point.
+
+```ts
+import {
+  analyzeTracingGroups,
+  buildHandwritingPath,
+  compileTracingPath
+} from "letterpaths";
+
+const path = buildHandwritingPath("p", { style: "cursive" });
+const prepared = compileTracingPath(path);
+const analysis = analyzeTracingGroups(prepared, {
+  retraceTurnAngleThreshold: 150,
+  minOverlapLength: 60
+});
+```
+
+`analysis.groups` gives you contiguous path ranges split at confirmed retrace points.
+
+It returns:
+
+```ts
+type TracingGroup = {
+  index: number;
+  startDistance: number;
+  endDistance: number;
+  startPoint: Point;
+  endPoint: Point;
+  kind: "base" | "retrace";
+  matchedEarlierDistance?: number;
+};
+```
+
+Example:
+
+```ts
+{
+  totalLength: 2255.87,
+  groups: [
+    {
+      index: 0,
+      startDistance: 0,
+      endDistance: 706.24,
+      startPoint: { x: 12.51, y: 320.37 },
+      endPoint: { x: 0.93, y: 1026.38 },
+      kind: "base"
+    },
+    {
+      index: 1,
+      startDistance: 706.24,
+      endDistance: 2255.87,
+      startPoint: { x: 0.93, y: 1026.38 },
+      endPoint: { x: 5.79, y: 655.76 },
+      kind: "retrace",
+      matchedEarlierDistance: 609.96
+    }
+  ]
+}
+```
+
+`analyzeTracingGroups()` looks for authored segment boundaries with a strong turn angle, then confirms that the following path substantially overlaps the earlier path. This avoids splitting at ordinary cusps like `v` or `w`, while still detecting true retracing such as a downstroke followed by an upstroke over the same corridor.
 
 `TracingSession` is a small state machine:
 
@@ -340,6 +421,16 @@ Useful session methods:
 Tracing options:
 
 - `sampleRate?: number`
+
+Retrace group analysis options:
+
+- `proximityThreshold?: number`
+- `minOverlapLength?: number`
+- `minPathSeparation?: number`
+- `requireOpposingDirection?: boolean`
+- `oppositeDirectionDotThreshold?: number`
+- `retraceTurnAngleThreshold?: number`
+- `boundaryLookbackDistance?: number`
 
 Session options:
 
@@ -443,6 +534,7 @@ Most users only need these:
 - `buildHandwritingPath`
 - `compileAnimation`
 - `compileTracingPath`
+- `analyzeTracingGroups`
 - `TracingSession`
 
 For lower-level control, the package also exports:

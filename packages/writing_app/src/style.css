@@ -262,6 +262,32 @@ body {
   transform: scale(0.72);
 }
 
+.writing-app__fruit--hidden {
+  opacity: 0;
+  transform: scale(0.7);
+}
+
+.writing-app__boundary-star {
+  font-size: 40px;
+  pointer-events: none;
+  user-select: none;
+  filter: drop-shadow(0 4px 8px rgba(35, 49, 61, 0.18));
+}
+
+.writing-app__boundary-star--hidden {
+  opacity: 0;
+}
+
+.writing-app__debug-curve {
+  fill: none;
+  stroke: rgba(35, 49, 61, 0.35);
+  stroke-width: 5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+
 .writing-app__overlay {
   position: absolute;
   inset: 0;

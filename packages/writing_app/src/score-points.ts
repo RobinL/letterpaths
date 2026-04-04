@@ -2,10 +2,11 @@ import "./style.css";
 import {
   AnimationPlayer,
   TracingSession,
+  analyzeTracingGroups,
   compileTracingPath,
   type Point,
   type PreparedTracingPath,
-  type PreparedStroke,
+  type TracingGroup,
   type TracingSample,
   type WritingPath
 } from "letterpaths";
@@ -37,6 +38,12 @@ type FruitToken = {
   y: number;
   emoji: string;
   captured: boolean;
+  groupIndex: number;
+};
+
+type WaypointMarker = {
+  x: number;
+  y: number;
 };
 
 const app = document.querySelector<HTMLDivElement>("#app");
@@ -183,6 +190,11 @@ let currentFruitSize = DEFAULT_FRUIT_SIZE;
 let currentFruitSpacing = DEFAULT_FRUIT_SPACING;
 let fruits: FruitToken[] = [];
 let fruitEls: SVGTextElement[] = [];
+let tracingGroups: TracingGroup[] = [];
+let waypointMarkers: WaypointMarker[] = [];
+let currentWaypointIndex: number | null = null;
+let visibleGroupCount = 1;
+let waypointEl: SVGTextElement | null = null;
 let score = 0;
 
 const syncToleranceLabel = () => {
@@ -195,12 +207,13 @@ const syncFruitControlLabels = () => {
 };
 
 const syncScoreDisplay = () => {
+  const visibleFruitCount = fruits.filter((fruit) => fruit.groupIndex < visibleGroupCount).length;
   scoreValue.textContent = `${score}`;
-  scoreTotal.textContent = `${fruits.length}`;
+  scoreTotal.textContent = `${visibleFruitCount}`;
   scoreSummary.textContent =
-    fruits.length === 0
+    visibleFruitCount === 0
       ? "No fruit on this round."
-      : `You collected ${score} of ${fruits.length} fruit.`;
+      : `You collected ${score} of ${visibleFruitCount} fruit.`;
 };
 
 const updateSuccessVisibility = (isVisible: boolean) => {
@@ -266,39 +279,50 @@ const getPointAtOverallDistance = (
   return { x: 0, y: 0 };
 };
 
-const createFruitTokens = (preparedPath: PreparedTracingPath): FruitToken[] => {
-  const totalLength = preparedPath.strokes.reduce(
-    (sum, stroke) => sum + stroke.totalLength,
-    0
-  );
-  if (totalLength <= 0) {
-    return [];
-  }
+const createFruitTokens = (
+  preparedPath: PreparedTracingPath,
+  groups: TracingGroup[]
+): FruitToken[] => {
+  return groups.flatMap((group, groupIndex) => {
+    const groupLength = group.endDistance - group.startDistance;
+    if (groupLength <= 0) {
+      return [];
+    }
 
-  const count = Math.max(1, Math.round(totalLength / currentFruitSpacing));
+    const count = Math.max(1, Math.round(groupLength / currentFruitSpacing));
 
-  return Array.from({ length: count }, (_, index) => {
-    const point = getPointAtOverallDistance(
-      preparedPath,
-      (totalLength * (index + 1)) / (count + 1)
-    );
-    return {
-      x: point.x,
-      y: point.y,
-      emoji: FRUIT_EMOJIS[index % FRUIT_EMOJIS.length] ?? FRUIT_EMOJIS[0],
-      captured: false
-    };
+    return Array.from({ length: count }, (_, index) => {
+      const point = getPointAtOverallDistance(
+        preparedPath,
+        group.startDistance + (groupLength * (index + 1)) / (count + 1)
+      );
+      return {
+        x: point.x,
+        y: point.y,
+        emoji: FRUIT_EMOJIS[(groupIndex + index) % FRUIT_EMOJIS.length] ?? FRUIT_EMOJIS[0],
+        captured: false,
+        groupIndex
+      };
+    });
   });
 };
 
 const resetFruitState = () => {
   score = 0;
+  visibleGroupCount = tracingGroups.length > 0 ? 1 : 0;
+  currentWaypointIndex = waypointMarkers.length > 0 ? 0 : null;
   fruits.forEach((fruit) => {
     fruit.captured = false;
   });
   fruitEls.forEach((el) => {
     el.classList.remove("writing-app__fruit--captured");
+    const fruit = fruits[Number(el.dataset.fruitIndex)];
+    el.classList.toggle(
+      "writing-app__fruit--hidden",
+      fruit ? fruit.groupIndex >= visibleGroupCount : true
+    );
   });
+  updateWaypointMarker();
   syncScoreDisplay();
 };
 
@@ -307,7 +331,7 @@ const captureFruitAtPoint = (point: Point) => {
   const captureRadius = Math.max(24, currentFruitSize * 0.55);
 
   fruits.forEach((fruit, index) => {
-    if (fruit.captured) {
+    if (fruit.captured || fruit.groupIndex >= visibleGroupCount) {
       return;
     }
 
@@ -325,6 +349,60 @@ const captureFruitAtPoint = (point: Point) => {
   if (changed) {
     syncScoreDisplay();
   }
+};
+
+const updateWaypointMarker = () => {
+  if (!waypointEl) {
+    return;
+  }
+
+  const marker =
+    currentWaypointIndex !== null ? waypointMarkers[currentWaypointIndex] : undefined;
+
+  if (!marker) {
+    waypointEl.classList.add("writing-app__boundary-star--hidden");
+    return;
+  }
+
+  waypointEl.classList.remove("writing-app__boundary-star--hidden");
+  waypointEl.setAttribute("x", `${marker.x}`);
+  waypointEl.setAttribute("y", `${marker.y}`);
+};
+
+const unlockNextGroupIfReached = (point: Point) => {
+  if (currentWaypointIndex === null) {
+    return;
+  }
+
+  const marker = waypointMarkers[currentWaypointIndex];
+  if (!marker) {
+    currentWaypointIndex = null;
+    updateWaypointMarker();
+    return;
+  }
+
+  const distance = Math.hypot(point.x - marker.x, point.y - marker.y);
+  const waypointRadius = Math.max(26, currentFruitSize * 0.6);
+  if (distance > waypointRadius) {
+    return;
+  }
+
+  visibleGroupCount = Math.min(visibleGroupCount + 1, tracingGroups.length);
+  fruitEls.forEach((el) => {
+    const fruit = fruits[Number(el.dataset.fruitIndex)];
+    el.classList.toggle(
+      "writing-app__fruit--hidden",
+      fruit ? fruit.groupIndex >= visibleGroupCount : true
+    );
+  });
+
+  currentWaypointIndex += 1;
+  if (currentWaypointIndex >= waypointMarkers.length) {
+    currentWaypointIndex = null;
+  }
+
+  updateWaypointMarker();
+  syncScoreDisplay();
 };
 
 const stopDemoAnimation = () => {
@@ -408,6 +486,7 @@ const renderTraceFrame = () => {
 
   if (!isDemoPlaying) {
     captureFruitAtPoint(state.cursorPoint);
+    unlockNextGroupIfReached(state.cursorPoint);
   }
 
   updateSuccessVisibility(state.status === "complete");
@@ -474,12 +553,21 @@ const playDemo = () => {
 
 const setupScene = (path: WritingPath, width: number, height: number, offsetY: number) => {
   const preparedPath = compileTracingPath(path);
+  const groupAnalysis = analyzeTracingGroups(preparedPath);
+  tracingGroups = groupAnalysis.groups;
+  waypointMarkers = tracingGroups.slice(1).map((group) => ({
+    x: group.startPoint.x,
+    y: group.startPoint.y
+  }));
+  currentWaypointIndex = waypointMarkers.length > 0 ? 0 : null;
+  visibleGroupCount = tracingGroups.length > 0 ? 1 : 0;
+
   tracingSession = new TracingSession(preparedPath, {
     startTolerance: currentTraceTolerance,
     hitTolerance: currentTraceTolerance
   });
   activePointerId = null;
-  fruits = createFruitTokens(preparedPath);
+  fruits = createFruitTokens(preparedPath, tracingGroups);
 
   const drawableStrokes = path.strokes.filter((stroke) => stroke.type !== "lift");
   const backgroundPaths = drawableStrokes
@@ -490,6 +578,18 @@ const setupScene = (path: WritingPath, width: number, height: number, offsetY: n
     .join("");
   const demoPaths = drawableStrokes
     .map((stroke) => `<path class="writing-app__stroke-demo" d="${buildPathD(stroke.curves)}"></path>`)
+    .join("");
+  const debugCurveMarkup = drawableStrokes
+    .flatMap((stroke) =>
+      stroke.curves.map(
+        (curve) => `
+          <path
+            class="writing-app__debug-curve"
+            d="M ${curve.p0.x} ${curve.p0.y} C ${curve.p1.x} ${curve.p1.y} ${curve.p2.x} ${curve.p2.y} ${curve.p3.x} ${curve.p3.y}"
+          ></path>
+        `
+      )
+    )
     .join("");
   const fruitMarkup = fruits
     .map(
@@ -525,9 +625,18 @@ const setupScene = (path: WritingPath, width: number, height: number, offsetY: n
       y2="${path.guides.baseline + offsetY}"
     ></line>
     ${backgroundPaths}
+    ${debugCurveMarkup}
     ${fruitMarkup}
     ${tracePaths}
     ${demoPaths}
+    <text
+      class="writing-app__boundary-star"
+      id="waypoint-star"
+      x="0"
+      y="0"
+      text-anchor="middle"
+      dominant-baseline="middle"
+    >⭐</text>
     <circle class="writing-app__nib" id="demo-nib" cx="0" cy="0" r="15"></circle>
     <g class="writing-app__cursor" id="trace-cursor">
       <circle class="writing-app__cursor-bg" cx="0" cy="0" r="34"></circle>
@@ -542,6 +651,7 @@ const setupScene = (path: WritingPath, width: number, height: number, offsetY: n
     traceSvg.querySelectorAll<SVGPathElement>(".writing-app__stroke-demo")
   );
   fruitEls = Array.from(traceSvg.querySelectorAll<SVGTextElement>(".writing-app__fruit"));
+  waypointEl = traceSvg.querySelector<SVGTextElement>("#waypoint-star");
   traceCursorEl = traceSvg.querySelector<SVGGElement>("#trace-cursor");
   demoNibEl = traceSvg.querySelector<SVGCircleElement>("#demo-nib");
 
