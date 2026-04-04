@@ -252,14 +252,19 @@ body {
   font-size: 44px;
   pointer-events: none;
   user-select: none;
-  transition: opacity 0.18s ease, transform 0.18s ease;
+  transition:
+    opacity 0.6s ease,
+    transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
   transform-box: fill-box;
   transform-origin: center;
 }
 
 .writing-app__fruit--captured {
-  opacity: 0.22;
-  transform: scale(0.72);
+  opacity: 0;
+  transform:
+    translate(var(--fruit-fly-x, 0px), var(--fruit-fly-y, -180px))
+    rotate(var(--fruit-fly-rotate, 0deg))
+    scale(0.5);
 }
 
 .writing-app__fruit--hidden {
@@ -276,6 +281,23 @@ body {
 
 .writing-app__boundary-star--hidden {
   opacity: 0;
+}
+
+.writing-app__snake {
+  pointer-events: none;
+  transition: opacity 0.18s ease;
+}
+
+.writing-app__snake-segment {
+  pointer-events: none;
+  overflow: visible;
+  filter: drop-shadow(0 8px 12px rgba(35, 49, 61, 0.18));
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.writing-app__snake-head {
+  filter: drop-shadow(0 12px 16px rgba(35, 49, 61, 0.2));
 }
 
 .writing-app__debug-curve {
