@@ -2,6 +2,7 @@ import {
   CubicBezier,
   buildHandwritingPath,
   lettersByVariantId,
+  type BuildHandwritingOptions,
   type Point,
   type WritingPath
 } from "letterpaths";
@@ -29,6 +30,11 @@ export type ShiftedWordLayout = {
   height: number;
   offsetY: number;
 };
+
+export type ShiftedWordLayoutOptions = Pick<
+  BuildHandwritingOptions,
+  "keepInitialLeadIn" | "keepFinalLeadOut"
+>;
 
 export const chooseNextWordIndex = (previousIndex: number): number => {
   if (WORDS.length <= 1) {
@@ -79,12 +85,17 @@ export const shiftWritingPath = (path: WritingPath, dx: number, dy: number): Wri
   }
 });
 
-export const buildShiftedWordLayout = (word: string): ShiftedWordLayout => {
+export const buildShiftedWordLayout = (
+  word: string,
+  options: ShiftedWordLayoutOptions = {}
+): ShiftedWordLayout => {
   const writingPath = buildHandwritingPath(word, {
     style: "cursive",
     targetGuides: TARGET_GUIDES,
     joinSpacing: JOIN_SPACING,
-    letters: lettersByVariantId
+    letters: lettersByVariantId,
+    keepInitialLeadIn: options.keepInitialLeadIn,
+    keepFinalLeadOut: options.keepFinalLeadOut
   });
 
   if (writingPath.strokes.length === 0) {

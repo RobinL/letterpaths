@@ -29,6 +29,8 @@ export type JoinCursiveOptions = {
   targetGuides?: LetterGuides;
   joinSpacing?: JoinSpacingOptions;
   wordSpacing?: number;
+  keepInitialLeadIn?: boolean;
+  keepFinalLeadOut?: boolean;
 };
 
 export type BuildHandwritingOptions = JoinCursiveOptions & {

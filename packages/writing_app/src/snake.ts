@@ -28,6 +28,9 @@ import snakeHeadSprite from "./assets/snake/head.png";
 import snakeTailSprite from "./assets/snake/tail.png";
 import {
   DEMO_PAUSE_MS,
+  MAX_TRACE_TOLERANCE,
+  MIN_TRACE_TOLERANCE,
+  TRACE_TOLERANCE_STEP,
   WORDS,
   buildPathD,
   buildShiftedWordLayout,
@@ -35,8 +38,19 @@ import {
   getPointerInSvg
 } from "./shared";
 
+const registerSnakeServiceWorker = () => {
+  if (!import.meta.env.PROD || !("serviceWorker" in navigator)) {
+    return;
+  }
+
+  const scope = `${import.meta.env.BASE_URL}snake/`;
+  void navigator.serviceWorker.register(`${scope}sw.js`, { scope }).catch((error: unknown) => {
+    console.error("Failed to register snake service worker.", error);
+  });
+};
+
 const FRUIT_EMOJIS = ["🍎", "🍐", "🍊", "🍓", "🍇", "🍒", "🍉", "🥝"] as const;
-const SNAKE_TRACE_TOLERANCE = 150;
+const DEFAULT_SNAKE_TRACE_TOLERANCE = 150;
 const FRUIT_SIZE = 44;
 const FRUIT_SPACING = 180;
 const SHOW_ME_SPEED_MULTIPLIER = 0.75;
@@ -47,7 +61,7 @@ const SNAKE_MOVE_SOUND_VOLUME = 0.12;
 const SNAKE_MOVE_SOUND_CHANCE = 0.42;
 const MAX_SNAKE_BODY_SEGMENTS = 10;
 const SNAKE_EXIT_MARGIN = 260;
-const SNAKE_EXIT_SPEED = 340;
+const SNAKE_EXIT_SPEED = 510;
 const SNAKE_CHEW_MS = 220;
 const SNAKE_RETRACTION_SPEED = 700;
 const SNAKE_RETRACTION_HIDE_GAP = 6;
@@ -148,6 +162,8 @@ if (!app) {
   throw new Error("Missing #app element for snake app.");
 }
 
+registerSnakeServiceWorker();
+
 app.innerHTML = `
   <div class="writing-app writing-app--snake">
     <main class="writing-app__stage">
@@ -157,9 +173,52 @@ app.innerHTML = `
             <p class="writing-app__eyebrow">Drag the snake around the letters.</p>
             <h1 class="writing-app__word" id="word-label"></h1>
           </div>
-          <button class="writing-app__button" id="show-me-button" type="button">
-            Demo
-          </button>
+          <div class="writing-app__topbar-actions">
+            <button class="writing-app__button" id="show-me-button" type="button">
+              Demo
+            </button>
+            <details class="writing-app__settings" id="settings-menu">
+              <summary
+                class="writing-app__icon-button"
+                id="settings-button"
+                aria-label="Settings"
+                title="Settings"
+              >⚙</summary>
+              <div class="writing-app__settings-panel">
+                <label class="writing-app__settings-field" for="tolerance-slider">
+                  <span class="writing-app__settings-label">
+                    Tolerance
+                    <span class="writing-app__tolerance-value" id="tolerance-value"></span>
+                  </span>
+                  <input
+                    class="writing-app__tolerance-slider"
+                    id="tolerance-slider"
+                    type="range"
+                    min="${MIN_TRACE_TOLERANCE}"
+                    max="${MAX_TRACE_TOLERANCE}"
+                    step="${TRACE_TOLERANCE_STEP}"
+                    value="${DEFAULT_SNAKE_TRACE_TOLERANCE}"
+                  />
+                </label>
+                <label class="writing-app__settings-toggle" for="include-initial-lead-in">
+                  <input
+                    id="include-initial-lead-in"
+                    type="checkbox"
+                    checked
+                  />
+                  <span>Initial lead-in</span>
+                </label>
+                <label class="writing-app__settings-toggle" for="include-final-lead-out">
+                  <input
+                    id="include-final-lead-out"
+                    type="checkbox"
+                    checked
+                  />
+                  <span>Final lead-out</span>
+                </label>
+              </div>
+            </details>
+          </div>
         </header>
 
         <svg
@@ -209,6 +268,11 @@ const wordLabel = document.querySelector<HTMLHeadingElement>("#word-label");
 const scoreSummary = document.querySelector<HTMLParagraphElement>("#score-summary");
 const traceSvg = document.querySelector<SVGSVGElement>("#trace-svg");
 const showMeButton = document.querySelector<HTMLButtonElement>("#show-me-button");
+const settingsMenu = document.querySelector<HTMLDetailsElement>("#settings-menu");
+const toleranceSlider = document.querySelector<HTMLInputElement>("#tolerance-slider");
+const toleranceValue = document.querySelector<HTMLSpanElement>("#tolerance-value");
+const includeInitialLeadInInput = document.querySelector<HTMLInputElement>("#include-initial-lead-in");
+const includeFinalLeadOutInput = document.querySelector<HTMLInputElement>("#include-final-lead-out");
 const successOverlay = document.querySelector<HTMLDivElement>("#success-overlay");
 const customWordForm = document.querySelector<HTMLFormElement>("#custom-word-form");
 const customWordInput = document.querySelector<HTMLInputElement>("#custom-word-input");
@@ -219,6 +283,11 @@ if (
   !scoreSummary ||
   !traceSvg ||
   !showMeButton ||
+  !settingsMenu ||
+  !toleranceSlider ||
+  !toleranceValue ||
+  !includeInitialLeadInInput ||
+  !includeFinalLeadOutInput ||
   !successOverlay ||
   !customWordForm ||
   !customWordInput ||
@@ -242,6 +311,9 @@ let demoStrokeLengths: number[] = [];
 let demoNibEl: SVGCircleElement | null = null;
 let demoAnimationFrameId: number | null = null;
 let isDemoPlaying = false;
+let currentTraceTolerance = DEFAULT_SNAKE_TRACE_TOLERANCE;
+let includeInitialLeadIn = true;
+let includeFinalLeadOut = true;
 let fruits: FruitToken[] = [];
 let fruitEls: SVGTextElement[] = [];
 let tracingGroups: TracingGroup[] = [];
@@ -294,6 +366,17 @@ let activeSnakeMoveSounds: HTMLAudioElement[] = [];
 let snakeMoveSoundsWarmed = false;
 let snakeMoveSoundGroupIndex = -1;
 let nextSnakeMoveSoundDistance = Number.POSITIVE_INFINITY;
+
+const syncToleranceLabel = () => {
+  toleranceValue.textContent = `${currentTraceTolerance}px`;
+};
+
+const rerenderCurrentWord = () => {
+  if (!currentWord) {
+    return;
+  }
+  renderWord(currentWord, currentWordIndex);
+};
 
 const clearCustomWordError = () => {
   customWordError.hidden = true;
@@ -2006,8 +2089,8 @@ const setupScene = (path: WritingPath, width: number, height: number, offsetY: n
   visibleGroupCount = tracingGroups.length > 0 ? 1 : 0;
 
   tracingSession = new TracingSession(preparedPath, {
-    startTolerance: SNAKE_TRACE_TOLERANCE,
-    hitTolerance: SNAKE_TRACE_TOLERANCE
+    startTolerance: currentTraceTolerance,
+    hitTolerance: currentTraceTolerance
   });
   activePointerId = null;
   fruits = createFruitTokens(preparedPath, tracingGroups);
@@ -2203,7 +2286,10 @@ const setupScene = (path: WritingPath, width: number, height: number, offsetY: n
 const renderWord = (word: string, wordIndex = -1) => {
   stopDemoAnimation();
 
-  const layout = buildShiftedWordLayout(word);
+  const layout = buildShiftedWordLayout(word, {
+    keepInitialLeadIn: includeInitialLeadIn,
+    keepFinalLeadOut: includeFinalLeadOut
+  });
   currentWord = word;
   currentWordIndex = wordIndex;
   wordLabel.textContent = word;
@@ -2260,7 +2346,7 @@ const onPointerDown = (event: PointerEvent) => {
 
   if (isDeferredStrokeActive(state) && activePreparedStroke?.isDot) {
     event.preventDefault();
-    startDotPickupAnimation();
+    finishDotPickup();
     return;
   }
 
@@ -2330,6 +2416,19 @@ traceSvg.addEventListener("pointermove", onPointerMove);
 traceSvg.addEventListener("pointerup", onPointerUp);
 traceSvg.addEventListener("pointercancel", onPointerCancel);
 showMeButton.addEventListener("click", playDemo);
+toleranceSlider.addEventListener("input", () => {
+  currentTraceTolerance = Number(toleranceSlider.value);
+  syncToleranceLabel();
+  rerenderCurrentWord();
+});
+includeInitialLeadInInput.addEventListener("change", () => {
+  includeInitialLeadIn = includeInitialLeadInInput.checked;
+  rerenderCurrentWord();
+});
+includeFinalLeadOutInput.addEventListener("change", () => {
+  includeFinalLeadOut = includeFinalLeadOutInput.checked;
+  rerenderCurrentWord();
+});
 customWordForm.addEventListener("submit", (event) => {
   event.preventDefault();
   void loadWord(customWordInput.value);
@@ -2340,5 +2439,21 @@ customWordInput.addEventListener("input", () => {
     clearCustomWordError();
   }
 });
+document.addEventListener("pointerdown", (event) => {
+  if (!settingsMenu.open) {
+    return;
+  }
+  const target = event.target;
+  if (target instanceof Node && settingsMenu.contains(target)) {
+    return;
+  }
+  settingsMenu.open = false;
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") {
+    settingsMenu.open = false;
+  }
+});
+syncToleranceLabel();
 syncNextWordButtonLabel();
 goToNextWord();

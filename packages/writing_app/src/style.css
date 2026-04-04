@@ -76,6 +76,14 @@ body {
   gap: 12px;
 }
 
+.writing-app__topbar-actions {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  pointer-events: auto;
+}
+
 .writing-app__topbar--score {
   grid-template-columns: minmax(0, 1fr) auto minmax(520px, 760px) auto;
 }
@@ -381,20 +389,18 @@ body {
 .writing-app__snake-segment {
   pointer-events: none;
   overflow: visible;
-  filter: drop-shadow(0 8px 12px rgba(35, 49, 61, 0.18));
   transform-box: fill-box;
   transform-origin: center;
 }
 
 .writing-app__snake-head {
-  filter: drop-shadow(0 12px 16px rgba(35, 49, 61, 0.2));
+  filter: none;
 }
 
 .writing-app__deferred-head {
   pointer-events: none;
   opacity: 0;
   overflow: visible;
-  filter: drop-shadow(0 12px 18px rgba(35, 49, 61, 0.24));
   transform-box: fill-box;
   transform-origin: center;
 }
@@ -408,7 +414,6 @@ body {
   pointer-events: none;
   opacity: 0;
   overflow: visible;
-  filter: drop-shadow(0 10px 14px rgba(35, 49, 61, 0.22));
   transform-box: fill-box;
   transform-origin: center;
 }
@@ -426,7 +431,6 @@ body {
   pointer-events: none;
   opacity: 0;
   overflow: visible;
-  filter: drop-shadow(0 10px 18px rgba(35, 49, 61, 0.28));
   transform-box: fill-box;
   transform-origin: center;
 }
@@ -579,6 +583,83 @@ body {
     inset 0 0 0 1px rgba(35, 49, 61, 0.08);
 }
 
+.writing-app__icon-button {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 999px;
+  background: rgba(255, 252, 244, 0.92);
+  box-shadow:
+    0 10px 20px rgba(35, 49, 61, 0.14),
+    inset 0 0 0 1px rgba(35, 49, 61, 0.08);
+  color: var(--ink);
+  font-size: 1.2rem;
+  line-height: 1;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+.writing-app__icon-button::-webkit-details-marker {
+  display: none;
+}
+
+.writing-app__settings {
+  position: relative;
+  pointer-events: auto;
+}
+
+.writing-app__settings-panel {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  display: grid;
+  gap: 12px;
+  min-width: min(82vw, 280px);
+  padding: 14px;
+  border-radius: 20px;
+  background: rgba(255, 252, 244, 0.96);
+  box-shadow:
+    0 18px 34px rgba(35, 49, 61, 0.18),
+    inset 0 0 0 1px rgba(35, 49, 61, 0.06);
+}
+
+.writing-app__settings:not([open]) .writing-app__settings-panel {
+  display: none;
+}
+
+.writing-app__settings-field {
+  display: grid;
+  gap: 8px;
+}
+
+.writing-app__settings-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.writing-app__settings-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.writing-app__settings-toggle input {
+  margin: 0;
+  inline-size: 16px;
+  block-size: 16px;
+  accent-color: var(--accent);
+}
+
 @media (max-width: 900px) {
   .writing-app {
     padding: 14px;
@@ -613,6 +694,11 @@ body {
   .writing-app__button {
     padding: 14px 22px;
   }
+
+  .writing-app__icon-button {
+    width: 42px;
+    height: 42px;
+  }
 }
 
 @media (max-width: 720px) {
@@ -638,6 +724,10 @@ body {
     right: 10px;
     bottom: 10px;
     width: auto;
+  }
+
+  .writing-app__topbar-actions {
+    gap: 6px;
   }
 
   .writing-app__fruit-progress {
@@ -666,6 +756,11 @@ body {
   .writing-app__button {
     padding: 13px 18px;
     font-size: 1rem;
+  }
+
+  .writing-app__settings-panel {
+    min-width: min(88vw, 260px);
+    padding: 12px;
   }
 
   .writing-app__board {

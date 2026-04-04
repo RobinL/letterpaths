@@ -1,5 +1,5 @@
 import type { BezierStep, Curve, JoinMetric, Point, WritingPath } from "../types";
-import type { CursiveExitVariant } from "../data";
+import { defaultCursiveEntryVariant, type CursiveExitVariant } from "../data";
 import {
   buildJoinCurve,
   buildStepsFromDeferredStrokes,
@@ -58,6 +58,8 @@ export function joinCursiveWord(
   let prevExitVariant: CursiveExitVariant | null = null;
   let prevRightSidebearing = 0;
   let prevChar: string | null = null;
+  const keepInitialLeadIn = options.keepInitialLeadIn ?? false;
+  const keepFinalLeadOut = options.keepFinalLeadOut ?? false;
 
   for (let charIndex = 0; charIndex < text.length; charIndex += 1) {
     const rawChar = text[charIndex] ?? "";
@@ -72,7 +74,11 @@ export function joinCursiveWord(
     }
 
     const char = rawChar.toLowerCase();
-    const entryVariant = getEntryVariantForExitVariant(prevExitVariant);
+    const isFirstDrawableLetter = prevExitCurve === null;
+    const entryVariant =
+      keepInitialLeadIn && isFirstDrawableLetter
+        ? defaultCursiveEntryVariant
+        : getEntryVariantForExitVariant(prevExitVariant);
     const letter = findCursiveLetter(letterMap, char, entryVariant);
     if (!letter) {
       flushDeferredWordSteps();
@@ -100,7 +106,13 @@ export function joinCursiveWord(
     const filteredMainStrokes = mainStrokes
       .map((stroke) => ({
         ...stroke,
-        curves: filterCurvesBySegment(stroke.curves, false, prevExitCurve !== null, !isLast, false)
+        curves: filterCurvesBySegment(
+          stroke.curves,
+          keepInitialLeadIn && isFirstDrawableLetter,
+          prevExitCurve !== null || (keepInitialLeadIn && isFirstDrawableLetter),
+          !isLast || keepFinalLeadOut,
+          keepFinalLeadOut && isLast
+        )
       }))
       .filter((stroke) => stroke.curves.length > 0);
 
