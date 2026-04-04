@@ -57,11 +57,15 @@ body {
   left: 18px;
   right: 18px;
   z-index: 2;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 340px) auto;
+  align-items: start;
   gap: 20px;
   pointer-events: none;
+}
+
+.writing-app__topbar--score {
+  grid-template-columns: minmax(0, 1fr) auto minmax(520px, 760px) auto;
 }
 
 .writing-app__title {
@@ -83,6 +87,72 @@ body {
   line-height: 0.95;
   letter-spacing: 0.02em;
   text-transform: lowercase;
+}
+
+.writing-app__score-card {
+  display: grid;
+  gap: 4px;
+  align-self: center;
+  padding: 12px 16px;
+  border-radius: 20px;
+  background: rgba(255, 252, 244, 0.88);
+  box-shadow: 0 12px 24px rgba(35, 49, 61, 0.08);
+  pointer-events: auto;
+}
+
+.writing-app__score-label {
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.writing-app__score-value {
+  font-size: clamp(1.2rem, 2vw, 1.6rem);
+  font-weight: 800;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.writing-app__control-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(150px, 1fr));
+  gap: 14px;
+  align-self: center;
+  pointer-events: auto;
+}
+
+.writing-app__tolerance {
+  display: grid;
+  gap: 8px;
+  align-self: center;
+  padding: 12px 16px;
+  border-radius: 20px;
+  background: rgba(255, 252, 244, 0.88);
+  box-shadow: 0 12px 24px rgba(35, 49, 61, 0.08);
+  pointer-events: auto;
+}
+
+.writing-app__tolerance-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.writing-app__tolerance-value {
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.writing-app__tolerance-slider {
+  width: 100%;
+  margin: 0;
+  accent-color: var(--accent);
 }
 
 .writing-app__stage {
@@ -178,6 +248,20 @@ body {
   transition: opacity 0.18s ease;
 }
 
+.writing-app__fruit {
+  font-size: 44px;
+  pointer-events: none;
+  user-select: none;
+  transition: opacity 0.18s ease, transform 0.18s ease;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.writing-app__fruit--captured {
+  opacity: 0.22;
+  transform: scale(0.72);
+}
+
 .writing-app__overlay {
   position: absolute;
   inset: 0;
@@ -205,6 +289,12 @@ body {
   margin: 0 0 18px;
   font-size: clamp(1.6rem, 4vw, 2.2rem);
   font-weight: 700;
+}
+
+.writing-app__success-copy {
+  margin: 0 0 18px;
+  color: var(--muted);
+  font-size: 1rem;
 }
 
 .writing-app__button {
@@ -252,6 +342,11 @@ body {
     top: 14px;
     left: 14px;
     right: 14px;
+    grid-template-columns: minmax(0, 1fr) minmax(180px, 280px) auto;
+  }
+
+  .writing-app__topbar--score {
+    grid-template-columns: minmax(0, 1fr) auto minmax(420px, 560px) auto;
   }
 
   .writing-app__board {
@@ -265,7 +360,20 @@ body {
 
 @media (max-width: 720px) {
   .writing-app__topbar {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
     gap: 12px;
+  }
+
+  .writing-app__topbar--score {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+  }
+
+  .writing-app__control-strip {
+    grid-column: 1 / -1;
+    grid-template-columns: 1fr;
+    gap: 10px;
   }
 
   .writing-app__word {
@@ -274,6 +382,15 @@ body {
 
   .writing-app__eyebrow {
     font-size: 0.8rem;
+  }
+
+  .writing-app__tolerance {
+    grid-column: 1 / -1;
+    padding: 10px 14px;
+  }
+
+  .writing-app__score-card {
+    padding: 10px 14px;
   }
 
   .writing-app__button {

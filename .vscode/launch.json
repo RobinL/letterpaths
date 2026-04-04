@@ -1,0 +1,23 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug letterpaths scratch",
+            "type": "node",
+            "request": "launch",
+            "cwd": "${workspaceFolder}/packages/letterpaths",
+            "runtimeExecutable": "pnpm",
+            "runtimeArgs": [
+                "exec",
+                "tsx"
+            ],
+            "args": [
+                "${workspaceFolder}/packages/letterpaths/scratch.ts"
+            ],
+            "console": "integratedTerminal",
+            "skipFiles": [
+                "<node_internals>/**"
+            ]
+        }
+    ]
+}
