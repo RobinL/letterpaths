@@ -18,6 +18,7 @@ import snakeBackgroundImage from "./assets/snake/background.png";
 import eagleFlySprite from "./assets/snake/eagle_fly.png";
 import eagleStandSprite from "./assets/snake/eagle_stand.png";
 import snakeHeadAltSprite from "./assets/snake/head_alt.png";
+import chompSound from "./assets/snake/chomp.mp3";
 import sandMoving1Sound from "./assets/snake/sand_moving_1.mp3";
 import sandMoving2Sound from "./assets/snake/sand_moving_2.mp3";
 import sandMoving3Sound from "./assets/snake/sand_moving_3.mp3";
@@ -57,6 +58,7 @@ const SHOW_ME_SPEED_MULTIPLIER = 0.75;
 const SNAKE_SEGMENT_SPACING = 76;
 const SNAKE_GROWTH_DISTANCE = 115;
 const BULGE_BODY_SPRITE_CHANCE = 0.25;
+const SNAKE_CHOMP_SOUND_VOLUME = 0.3;
 const SNAKE_MOVE_SOUND_VOLUME = 0.12;
 const SNAKE_MOVE_SOUND_CHANCE = 0.42;
 const MAX_SNAKE_BODY_SEGMENTS = 10;
@@ -232,14 +234,17 @@ app.innerHTML = `
           <div class="writing-app__success-card">
             <p class="writing-app__success-eyebrow">Snake fed!</p>
             <p class="writing-app__success-copy" id="score-summary"></p>
-            <form class="writing-app__success-form" id="custom-word-form">
+            <form class="writing-app__success-form" id="custom-word-form" autocomplete="off">
               <label class="writing-app__success-label" for="custom-word-input">Custom word</label>
               <input
                 class="writing-app__success-input"
                 id="custom-word-input"
-                type="text"
+                type="search"
                 autocomplete="off"
                 autocapitalize="off"
+                autocorrect="off"
+                inputmode="search"
+                enterkeyhint="search"
                 spellcheck="false"
                 placeholder="Type a word"
               />
@@ -299,6 +304,7 @@ if (
 
 let currentWordIndex = -1;
 let currentWord = "";
+let customWordPrefillMode: "current" | "nextQueued" = "current";
 let currentPath: WritingPath | null = null;
 let tracingSession: TracingSession | null = null;
 let activePointerId: number | null = null;
@@ -361,6 +367,9 @@ let dotTargetPoint: Point | null = null;
 let dotTargetPhaseStartedAt = 0;
 let queuedTurnTangent: Point | null = null;
 let isAwaitingSegmentRestart = false;
+let snakeChompSoundPlayer: HTMLAudioElement | null = null;
+let activeSnakeChompSounds: HTMLAudioElement[] = [];
+let snakeChompSoundWarmed = false;
 let snakeMoveSoundPlayers: HTMLAudioElement[] | null = null;
 let activeSnakeMoveSounds: HTMLAudioElement[] = [];
 let snakeMoveSoundsWarmed = false;
@@ -412,6 +421,14 @@ const syncNextWordButtonLabel = () => {
     nextUrlWordIndex < urlWordSequence.length ? "Next queued word" : "Next random word";
 };
 
+const getCustomWordPrefillValue = (currentWordValue: string): string => {
+  if (customWordPrefillMode === "nextQueued") {
+    return urlWordSequence[nextUrlWordIndex] ?? currentWordValue;
+  }
+
+  return currentWordValue;
+};
+
 const getNextUrlWord = (): string | null => {
   if (nextUrlWordIndex >= urlWordSequence.length) {
     return null;
@@ -436,6 +453,26 @@ const ensureSnakeMoveSoundPlayers = () => {
   return snakeMoveSoundPlayers;
 };
 
+const ensureSnakeChompSoundPlayer = () => {
+  if (snakeChompSoundPlayer) {
+    return snakeChompSoundPlayer;
+  }
+
+  snakeChompSoundPlayer = new Audio(chompSound);
+  snakeChompSoundPlayer.preload = "auto";
+  snakeChompSoundPlayer.volume = SNAKE_CHOMP_SOUND_VOLUME;
+  return snakeChompSoundPlayer;
+};
+
+const warmSnakeChompSound = () => {
+  if (snakeChompSoundWarmed) {
+    return;
+  }
+
+  ensureSnakeChompSoundPlayer().load();
+  snakeChompSoundWarmed = true;
+};
+
 const warmSnakeMoveSounds = () => {
   if (snakeMoveSoundsWarmed) {
     return;
@@ -445,6 +482,27 @@ const warmSnakeMoveSounds = () => {
     audio.load();
   });
   snakeMoveSoundsWarmed = true;
+};
+
+const playSnakeChompSound = () => {
+  const template = ensureSnakeChompSoundPlayer();
+  const src = template.currentSrc || template.src;
+  if (!src) {
+    return;
+  }
+
+  const player = new Audio(src);
+  player.preload = "auto";
+  player.currentTime = 0;
+  player.volume = SNAKE_CHOMP_SOUND_VOLUME;
+  activeSnakeChompSounds.push(player);
+  player.addEventListener("ended", () => {
+    activeSnakeChompSounds = activeSnakeChompSounds.filter((audio) => audio !== player);
+  });
+  player.addEventListener("error", () => {
+    activeSnakeChompSounds = activeSnakeChompSounds.filter((audio) => audio !== player);
+  });
+  void player.play().catch(() => { });
 };
 
 const playRandomSnakeMoveSound = () => {
@@ -789,6 +847,16 @@ const getDeferredHeadState = (
     isDot: getActivePreparedStroke(state)?.isDot === true
   };
 };
+
+const isDotStrokeAnimating = (
+  strokeIndex: number,
+  state: Pick<TracingState, "activeStrokeIndex">
+): boolean =>
+  strokeIndex === state.activeStrokeIndex &&
+  strokeIndex === dotTargetStrokeIndex &&
+  getActivePreparedStroke(state)?.isDot === true &&
+  dotTargetPhase !== "hidden" &&
+  dotTargetPhase !== "waiting";
 
 const renderDeferredHead = (state: TracingState) => {
   if (!deferredHeadEl) {
@@ -1815,6 +1883,7 @@ const captureFruitThroughDistance = (overallDistance: number) => {
 
   if (changed) {
     snakeChewUntil = performance.now() + SNAKE_CHEW_MS;
+    playSnakeChompSound();
     syncFruitDisplay();
     renderSnake();
   }
@@ -1981,7 +2050,7 @@ const renderTraceFrame = () => {
 
   traceStrokeEls.forEach((el, index) => {
     const length = traceStrokeLengths[index] ?? 0;
-    if (completed.has(index)) {
+    if (completed.has(index) || isDotStrokeAnimating(index, state)) {
       el.style.strokeDashoffset = "0";
       return;
     }
@@ -2293,7 +2362,7 @@ const renderWord = (word: string, wordIndex = -1) => {
   currentWord = word;
   currentWordIndex = wordIndex;
   wordLabel.textContent = word;
-  customWordInput.value = word;
+  customWordInput.value = getCustomWordPrefillValue(word);
   currentPath = layout.path;
   setupScene(layout.path, layout.width, layout.height, layout.offsetY);
 };
@@ -2319,6 +2388,7 @@ const loadWord = (word: string, wordIndex = -1): boolean => {
 const goToNextWord = () => {
   let nextUrlWord = getNextUrlWord();
   while (nextUrlWord) {
+    customWordPrefillMode = "nextQueued";
     if (loadWord(nextUrlWord)) {
       syncNextWordButtonLabel();
       return;
@@ -2326,6 +2396,7 @@ const goToNextWord = () => {
     nextUrlWord = getNextUrlWord();
   }
 
+  customWordPrefillMode = "current";
   const nextWordIndex = chooseNextWordIndex(currentWordIndex);
   void loadWord(WORDS[nextWordIndex] ?? WORDS[0], nextWordIndex);
   syncNextWordButtonLabel();
@@ -2346,7 +2417,7 @@ const onPointerDown = (event: PointerEvent) => {
 
   if (isDeferredStrokeActive(state) && activePreparedStroke?.isDot) {
     event.preventDefault();
-    finishDotPickup();
+    startDotPickupAnimation();
     return;
   }
 
@@ -2359,6 +2430,7 @@ const onPointerDown = (event: PointerEvent) => {
   isAwaitingSegmentRestart = false;
   activePointerId = event.pointerId;
   activePointerPosition = pointer;
+  warmSnakeChompSound();
   warmSnakeMoveSounds();
   if (snakeRetractionDistance > 0.5) {
     beginSnakeUnretractFromCurrentState();
@@ -2431,6 +2503,7 @@ includeFinalLeadOutInput.addEventListener("change", () => {
 });
 customWordForm.addEventListener("submit", (event) => {
   event.preventDefault();
+  customWordPrefillMode = "current";
   void loadWord(customWordInput.value);
 });
 nextWordButton.addEventListener("click", goToNextWord);
