@@ -1,5 +1,5 @@
 import type { Point } from "../types";
-import type { PreparedTracingPath, TracingSample } from "./compiler";
+import type { PreparedTracingPath } from "./compiler";
 
 export type TracingStatus = "idle" | "tracing" | "await_pen_up" | "complete";
 
@@ -80,47 +80,25 @@ export class TracingSession {
   beginAt(point: Point): boolean {
     const { status, cursorPoint } = this.state;
 
-    console.log("[TracingSession.beginAt] Called", {
-      pointerPoint: point,
-      pointerX: point.x,
-      pointerY: point.y,
-      cursorPoint,
-      cursorX: cursorPoint.x,
-      cursorY: cursorPoint.y,
-      currentStatus: status,
-      activeStrokeIndex: this.state.activeStrokeIndex,
-      currentSampleIndex: this.currentSampleIndex,
-      isPenDown: this.state.isPenDown
-    });
-
     // Can only begin if idle or awaiting pen up
     if (status !== "idle" && status !== "await_pen_up") {
-      console.log("[TracingSession.beginAt] REJECTED: Invalid status", { status });
       return false;
     }
 
     // Check if pointer is close enough to cursor
     const distance = Math.hypot(point.x - cursorPoint.x, point.y - cursorPoint.y);
-    console.log("[TracingSession.beginAt] Distance check", {
-      distance,
-      startTolerance: this.startTolerance,
-      passes: distance <= this.startTolerance
-    });
 
     if (distance > this.startTolerance) {
-      console.log("[TracingSession.beginAt] REJECTED: Too far from cursor");
       return false;
     }
 
     // Handle dots - auto-complete immediately
     const activeStroke = this.path.strokes[this.state.activeStrokeIndex];
     if (activeStroke?.isDot) {
-      console.log("[TracingSession.beginAt] Auto-completing dot stroke");
       this.completeCurrentStroke();
       return true;
     }
 
-    console.log("[TracingSession.beginAt] SUCCESS: Transitioning to tracing");
     this.state = {
       ...this.state,
       status: "tracing",
@@ -134,20 +112,12 @@ export class TracingSession {
    * Called on pointermove. Advances the cursor along the path toward the pointer.
    */
   update(pointer: Point): void {
-    console.log("[TracingSession.update] Called", {
-      pointer,
-      currentStatus: this.state.status,
-      currentSampleIndex: this.currentSampleIndex
-    });
-
     if (this.state.status !== "tracing") {
-      console.log("[TracingSession.update] IGNORED: Not in tracing state");
       return;
     }
 
     const activeStroke = this.path.strokes[this.state.activeStrokeIndex];
     if (!activeStroke) {
-      console.log("[TracingSession.update] IGNORED: No active stroke");
       return;
     }
 
@@ -177,20 +147,8 @@ export class TracingSession {
       }
     }
 
-    console.log("[TracingSession.update] Search result", {
-      currentIdx,
-      maxIdx,
-      bestIdx,
-      bestCost,
-      bestDist,
-      hitTolerance: this.hitTolerance,
-      withinTolerance: bestDist <= this.hitTolerance,
-      samplesMoved: bestIdx - currentIdx
-    });
-
     // Only advance if the best sample is within hit tolerance (leash radius)
     if (bestDist > this.hitTolerance) {
-      console.log("[TracingSession.update] IGNORED: Best sample outside hit tolerance (leash)");
       return;
     }
 
@@ -210,7 +168,6 @@ export class TracingSession {
 
     // Check if we reached the end of the stroke
     if (bestIdx >= samples.length - 1) {
-      console.log("[TracingSession.update] Reached end of stroke, completing");
       this.completeCurrentStroke();
     }
   }
@@ -219,11 +176,6 @@ export class TracingSession {
    * Called on pointerup.
    */
   end(): void {
-    console.log("[TracingSession.end] Called", {
-      currentStatus: this.state.status,
-      isPenDown: this.state.isPenDown
-    });
-
     // If we're mid-trace, transition back to idle so user can resume
     // If we're in await_pen_up or complete, leave status unchanged
     const newStatus = this.state.status === "tracing" ? "idle" : this.state.status;
@@ -233,34 +185,22 @@ export class TracingSession {
       status: newStatus,
       isPenDown: false
     };
-
-    console.log("[TracingSession.end] After update", {
-      newStatus: this.state.status,
-      isPenDown: this.state.isPenDown
-    });
   }
 
   /**
    * Reset the session to initial state.
    */
   reset(): void {
-    console.log("[TracingSession.reset] Resetting session");
     this.currentSampleIndex = 0;
     this.state = this.buildInitialState();
   }
 
   private completeCurrentStroke(): void {
-    console.log("[TracingSession.completeCurrentStroke] Called", {
-      currentStrokeIndex: this.state.activeStrokeIndex,
-      totalStrokes: this.path.strokes.length
-    });
-
     const completedStrokes = [...this.state.completedStrokes, this.state.activeStrokeIndex];
     const nextStrokeIndex = this.state.activeStrokeIndex + 1;
 
     // Check if all strokes are complete
     if (nextStrokeIndex >= this.path.strokes.length) {
-      console.log("[TracingSession.completeCurrentStroke] All strokes complete");
       this.state = {
         ...this.state,
         status: "complete",
@@ -275,12 +215,6 @@ export class TracingSession {
     const nextStroke = this.path.strokes[nextStrokeIndex];
     const nextSample = nextStroke?.samples[0];
 
-    console.log("[TracingSession.completeCurrentStroke] Moving to next stroke", {
-      nextStrokeIndex,
-      nextStrokeIsDot: nextStroke?.isDot,
-      nextCursorPoint: nextSample ? { x: nextSample.x, y: nextSample.y } : null
-    });
-
     this.currentSampleIndex = 0;
     this.state = {
       ...this.state,
@@ -292,11 +226,5 @@ export class TracingSession {
       cursorTangent: nextSample?.tangent ?? this.state.cursorTangent,
       isPenDown: false
     };
-
-    console.log("[TracingSession.completeCurrentStroke] New state", {
-      status: this.state.status,
-      activeStrokeIndex: this.state.activeStrokeIndex,
-      cursorPoint: this.state.cursorPoint
-    });
   }
 }

@@ -36,6 +36,22 @@ importers:
         specifier: ^5.3.0
         version: 5.9.3
 
+  packages/writing_app:
+    dependencies:
+      letterpaths:
+        specifier: workspace:*
+        version: link:../letterpaths
+    devDependencies:
+      '@types/node':
+        specifier: ^20.11.0
+        version: 20.19.29
+      typescript:
+        specifier: ^5.3.0
+        version: 5.9.3
+      vite:
+        specifier: ^5.1.0
+        version: 5.4.21(@types/node@20.19.29)
+
 packages:
 
   '@esbuild/aix-ppc64@0.21.5':
