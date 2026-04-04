@@ -28,9 +28,6 @@ import snakeHeadSprite from "./assets/snake/head.png";
 import snakeTailSprite from "./assets/snake/tail.png";
 import {
   DEMO_PAUSE_MS,
-  MAX_TRACE_TOLERANCE,
-  MIN_TRACE_TOLERANCE,
-  TRACE_TOLERANCE_STEP,
   WORDS,
   buildPathD,
   buildShiftedWordLayout,
@@ -39,7 +36,7 @@ import {
 } from "./shared";
 
 const FRUIT_EMOJIS = ["🍎", "🍐", "🍊", "🍓", "🍇", "🍒", "🍉", "🥝"] as const;
-const DEFAULT_SNAKE_TRACE_TOLERANCE = 240;
+const SNAKE_TRACE_TOLERANCE = 150;
 const FRUIT_SIZE = 44;
 const FRUIT_SPACING = 180;
 const SHOW_ME_SPEED_MULTIPLIER = 0.75;
@@ -157,32 +154,13 @@ app.innerHTML = `
       <section class="writing-app__board">
         <header class="writing-app__topbar">
           <div class="writing-app__title">
-            <p class="writing-app__eyebrow">Instructions: Drag the snake around the letters</p>
+            <p class="writing-app__eyebrow">Drag the snake around the letters.</p>
             <h1 class="writing-app__word" id="word-label"></h1>
-            <div class="writing-app__fruit-progress" id="fruit-progress" aria-hidden="true"></div>
           </div>
           <button class="writing-app__button" id="show-me-button" type="button">
             Demo
           </button>
         </header>
-
-        <div class="writing-app__control-strip writing-app__control-strip--floating">
-          <label class="writing-app__tolerance" for="tolerance-slider">
-            <span class="writing-app__tolerance-label">
-              Tolerance
-              <span class="writing-app__tolerance-value" id="tolerance-value"></span>
-            </span>
-            <input
-              class="writing-app__tolerance-slider"
-              id="tolerance-slider"
-              type="range"
-              min="${MIN_TRACE_TOLERANCE}"
-              max="${MAX_TRACE_TOLERANCE}"
-              step="${TRACE_TOLERANCE_STEP}"
-              value="${DEFAULT_SNAKE_TRACE_TOLERANCE}"
-            />
-          </label>
-        </div>
 
         <svg
           class="writing-app__svg"
@@ -228,7 +206,6 @@ app.innerHTML = `
 app.style.setProperty("--snake-board-image", `url("${snakeBackgroundImage}")`);
 
 const wordLabel = document.querySelector<HTMLHeadingElement>("#word-label");
-const fruitProgressEl = document.querySelector<HTMLDivElement>("#fruit-progress");
 const scoreSummary = document.querySelector<HTMLParagraphElement>("#score-summary");
 const traceSvg = document.querySelector<SVGSVGElement>("#trace-svg");
 const showMeButton = document.querySelector<HTMLButtonElement>("#show-me-button");
@@ -237,11 +214,8 @@ const customWordForm = document.querySelector<HTMLFormElement>("#custom-word-for
 const customWordInput = document.querySelector<HTMLInputElement>("#custom-word-input");
 const customWordError = document.querySelector<HTMLParagraphElement>("#custom-word-error");
 const nextWordButton = document.querySelector<HTMLButtonElement>("#next-word-button");
-const toleranceSlider = document.querySelector<HTMLInputElement>("#tolerance-slider");
-const toleranceValue = document.querySelector<HTMLSpanElement>("#tolerance-value");
 if (
   !wordLabel ||
-  !fruitProgressEl ||
   !scoreSummary ||
   !traceSvg ||
   !showMeButton ||
@@ -249,9 +223,7 @@ if (
   !customWordForm ||
   !customWordInput ||
   !customWordError ||
-  !nextWordButton ||
-  !toleranceSlider ||
-  !toleranceValue
+  !nextWordButton
 ) {
   throw new Error("Missing elements for snake app.");
 }
@@ -270,10 +242,8 @@ let demoStrokeLengths: number[] = [];
 let demoNibEl: SVGCircleElement | null = null;
 let demoAnimationFrameId: number | null = null;
 let isDemoPlaying = false;
-let currentTraceTolerance = DEFAULT_SNAKE_TRACE_TOLERANCE;
 let fruits: FruitToken[] = [];
 let fruitEls: SVGTextElement[] = [];
-let progressFruitEls: HTMLSpanElement[] = [];
 let tracingGroups: TracingGroup[] = [];
 let waypointMarkers: WaypointMarker[] = [];
 let currentWaypointIndex: number | null = null;
@@ -297,6 +267,8 @@ let eagleEl: SVGGElement | null = null;
 let eagleImageEl: SVGImageElement | null = null;
 let snakeTrail: SnakePose[] = [];
 let snakeHeadDistance = 0;
+let snakeHeadAngle = 0;
+let parkedBoundaryDistance: number | null = null;
 let snakeChewUntil = 0;
 let snakeRetractionDistance = 0;
 let snakeRetractionTarget = 0;
@@ -323,10 +295,6 @@ let snakeMoveSoundsWarmed = false;
 let snakeMoveSoundGroupIndex = -1;
 let nextSnakeMoveSoundDistance = Number.POSITIVE_INFINITY;
 
-const syncToleranceLabel = () => {
-  toleranceValue.textContent = `${currentTraceTolerance}px`;
-};
-
 const clearCustomWordError = () => {
   customWordError.hidden = true;
   customWordError.textContent = "";
@@ -338,6 +306,38 @@ const setCustomWordError = (message: string) => {
 };
 
 const normalizeWordInput = (word: string): string => word.trim().replace(/\s+/g, " ").toLowerCase();
+
+const getUrlWordSequence = (): string[] => {
+  const params = new URLSearchParams(window.location.search);
+
+  return Array.from(params.entries())
+    .flatMap(([key, value]) => {
+      if (key !== "word" && key !== "words") {
+        return [];
+      }
+      return value.split(",");
+    })
+    .map(normalizeWordInput)
+    .filter((word) => word.length > 0);
+};
+
+const urlWordSequence = getUrlWordSequence();
+let nextUrlWordIndex = 0;
+
+const syncNextWordButtonLabel = () => {
+  nextWordButton.textContent =
+    nextUrlWordIndex < urlWordSequence.length ? "Next queued word" : "Next random word";
+};
+
+const getNextUrlWord = (): string | null => {
+  if (nextUrlWordIndex >= urlWordSequence.length) {
+    return null;
+  }
+
+  const nextWord = urlWordSequence[nextUrlWordIndex];
+  nextUrlWordIndex += 1;
+  return nextWord ?? null;
+};
 
 const ensureSnakeMoveSoundPlayers = () => {
   if (snakeMoveSoundPlayers) {
@@ -383,7 +383,7 @@ const playRandomSnakeMoveSound = () => {
   player.addEventListener("error", () => {
     activeSnakeMoveSounds = activeSnakeMoveSounds.filter((audio) => audio !== player);
   });
-  void player.play().catch(() => {});
+  void player.play().catch(() => { });
 };
 
 const resetSnakeMoveSoundProgress = () => {
@@ -441,15 +441,6 @@ const syncFruitDisplay = () => {
     el.classList.toggle("writing-app__fruit--captured", Boolean(fruit?.captured));
     el.classList.toggle("writing-app__fruit--hidden", shouldHide);
   });
-
-  progressFruitEls.forEach((el, index) => {
-    const fruit = fruits[index];
-    const shouldHide = hideFruit || !fruit || fruit.groupIndex >= visibleGroupCount;
-    el.classList.toggle("writing-app__fruit-progress-item--captured", Boolean(fruit?.captured));
-    el.classList.toggle("writing-app__fruit-progress-item--hidden", shouldHide);
-  });
-
-  fruitProgressEl.classList.toggle("writing-app__fruit-progress--hidden", hideFruit || fruits.length === 0);
   scoreSummary.textContent = fruits.length === 0 ? "Nice tracing." : "All the fruit is collected.";
 };
 
@@ -1292,8 +1283,10 @@ const maybePauseAtTracingGroupBoundary = (state: TracingState): boolean => {
   isAwaitingSegmentRestart = true;
   snakeUnretractStartHeadDistance = null;
   snakeUnretractStartRetraction = 0;
+  parkedBoundaryDistance = currentGroup.endDistance;
   queuedTurnTangent = getGroupStartTangent(currentGroupIndex + 1);
   if (queuedTurnTangent) {
+    snakeHeadAngle = toAngle(queuedTurnTangent);
     appendSnakePose(currentGroup.endPoint, queuedTurnTangent, true);
   }
 
@@ -1475,7 +1468,10 @@ const renderSnake = (now = performance.now()) => {
   setSpritePose(
     snakeHeadEl,
     snakeHeadImageEl,
-    headPose,
+    {
+      ...headPose,
+      angle: snakeHeadAngle
+    },
     HEAD_SIZE.width,
     HEAD_SIZE.height,
     HEAD_SIZE.anchorX,
@@ -1539,11 +1535,12 @@ const renderSnake = (now = performance.now()) => {
 
 const resetSnakeTrail = (point: Point, tangent: Point, visible = true) => {
   const direction = normalizeVector(tangent);
+  snakeHeadAngle = toAngle(direction);
   snakeTrail = [
     {
       x: point.x,
       y: point.y,
-      angle: toAngle(direction),
+      angle: snakeHeadAngle,
       distance: 0,
       visible
     }
@@ -1554,6 +1551,7 @@ const resetSnakeTrail = (point: Point, tangent: Point, visible = true) => {
   snakeRetractionTarget = 0;
   snakeUnretractStartHeadDistance = null;
   snakeUnretractStartRetraction = 0;
+  parkedBoundaryDistance = null;
   queuedTurnTangent = null;
   isAwaitingSegmentRestart = false;
   isSnakeExitComplete = false;
@@ -1570,6 +1568,7 @@ const resetSnakeTrail = (point: Point, tangent: Point, visible = true) => {
 const appendSnakePose = (point: Point, tangent: Point, visible: boolean) => {
   const direction = normalizeVector(tangent);
   const angle = toAngle(direction);
+  snakeHeadAngle = angle;
   const lastPose = snakeTrail[snakeTrail.length - 1];
 
   if (!lastPose) {
@@ -1649,6 +1648,7 @@ const startSnakeExit = (point: Point, tangent: Point) => {
   snakeRetractionTarget = 0;
   snakeUnretractStartHeadDistance = null;
   snakeUnretractStartRetraction = 0;
+  parkedBoundaryDistance = null;
   queuedTurnTangent = null;
   isAwaitingSegmentRestart = false;
   const direction = normalizeVector(tangent);
@@ -1756,12 +1756,16 @@ const updateWaypointMarker = () => {
 };
 
 const syncSnakeToState = (state: TracingState) => {
-  const shouldUseQueuedTurn =
-    queuedTurnTangent !== null && (!state.isPenDown || state.activeStrokeProgress < 0.12);
-  if (queuedTurnTangent && !shouldUseQueuedTurn) {
-    queuedTurnTangent = null;
+  if (parkedBoundaryDistance !== null) {
+    const overallDistance = getOverallDistanceForState(state);
+    if (overallDistance + 0.5 < parkedBoundaryDistance) {
+      renderSnake();
+      return;
+    }
+    parkedBoundaryDistance = null;
   }
 
+  const shouldUseQueuedTurn = queuedTurnTangent !== null && (isAwaitingSegmentRestart || state.isPenDown);
   const headTangent = shouldUseQueuedTurn && queuedTurnTangent ? queuedTurnTangent : state.cursorTangent;
 
   if (isDeferredStrokeActive(state)) {
@@ -1775,6 +1779,11 @@ const syncSnakeToState = (state: TracingState) => {
     }
   } else {
     appendSnakePose(state.cursorPoint, headTangent, true);
+  }
+
+  // Keep the queued turn active until the restarted segment has been written into the trail.
+  if (queuedTurnTangent && state.isPenDown && !isAwaitingSegmentRestart) {
+    queuedTurnTangent = null;
   }
 
   if (!isDemoPlaying) {
@@ -1843,6 +1852,7 @@ const resetRoundProgress = () => {
   snakeRetractionTarget = 0;
   snakeUnretractStartHeadDistance = null;
   snakeUnretractStartRetraction = 0;
+  parkedBoundaryDistance = null;
   queuedTurnTangent = null;
   isAwaitingSegmentRestart = false;
   const state = tracingSession?.getState();
@@ -1900,7 +1910,7 @@ const renderTraceFrame = () => {
     el.style.strokeDashoffset = `${length}`;
   });
 
-  if (!isDemoPlaying && !isSnakeSlithering && !isSnakeExitComplete) {
+  if (!isDemoPlaying && !isSnakeSlithering && !isSnakeExitComplete && !isAwaitingSegmentRestart) {
     syncSnakeToState(state);
   } else {
     renderSnake();
@@ -1996,23 +2006,11 @@ const setupScene = (path: WritingPath, width: number, height: number, offsetY: n
   visibleGroupCount = tracingGroups.length > 0 ? 1 : 0;
 
   tracingSession = new TracingSession(preparedPath, {
-    startTolerance: currentTraceTolerance,
-    hitTolerance: currentTraceTolerance
+    startTolerance: SNAKE_TRACE_TOLERANCE,
+    hitTolerance: SNAKE_TRACE_TOLERANCE
   });
   activePointerId = null;
   fruits = createFruitTokens(preparedPath, tracingGroups);
-  fruitProgressEl.innerHTML = fruits
-    .map(
-      (fruit, index) => `
-        <span class="writing-app__fruit-progress-item" data-fruit-progress-index="${index}">
-          ${fruit.emoji}
-        </span>
-      `
-    )
-    .join("");
-  progressFruitEls = Array.from(
-    fruitProgressEl.querySelectorAll<HTMLSpanElement>(".writing-app__fruit-progress-item")
-  );
 
   const drawableStrokes = drawablePathStrokes;
   const backgroundPaths = drawableStrokes
@@ -2233,8 +2231,18 @@ const loadWord = (word: string, wordIndex = -1): boolean => {
 };
 
 const goToNextWord = () => {
+  let nextUrlWord = getNextUrlWord();
+  while (nextUrlWord) {
+    if (loadWord(nextUrlWord)) {
+      syncNextWordButtonLabel();
+      return;
+    }
+    nextUrlWord = getNextUrlWord();
+  }
+
   const nextWordIndex = chooseNextWordIndex(currentWordIndex);
   void loadWord(WORDS[nextWordIndex] ?? WORDS[0], nextWordIndex);
+  syncNextWordButtonLabel();
 };
 
 const onPointerDown = (event: PointerEvent) => {
@@ -2332,13 +2340,5 @@ customWordInput.addEventListener("input", () => {
     clearCustomWordError();
   }
 });
-toleranceSlider.addEventListener("input", () => {
-  currentTraceTolerance = Number(toleranceSlider.value);
-  syncToleranceLabel();
-  if (currentWord) {
-    void loadWord(currentWord, currentWordIndex);
-  }
-});
-
-syncToleranceLabel();
+syncNextWordButtonLabel();
 goToNextWord();
