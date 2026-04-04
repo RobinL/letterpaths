@@ -35,14 +35,9 @@ import {
 } from "./shared";
 
 const FRUIT_EMOJIS = ["🍎", "🍐", "🍊", "🍓", "🍇", "🍒", "🍉", "🥝"] as const;
-const DEFAULT_FRUIT_SIZE = 44;
-const MIN_FRUIT_SIZE = 24;
-const MAX_FRUIT_SIZE = 72;
-const FRUIT_SIZE_STEP = 2;
-const DEFAULT_FRUIT_SPACING = 220;
-const MIN_FRUIT_SPACING = 100;
-const MAX_FRUIT_SPACING = 420;
-const FRUIT_SPACING_STEP = 10;
+const FRUIT_SIZE = 44;
+const FRUIT_SPACING = 180;
+const SHOW_ME_SPEED_MULTIPLIER = 0.75;
 const SNAKE_SEGMENT_SPACING = 76;
 const SNAKE_GROWTH_DISTANCE = 115;
 const MAX_SNAKE_BODY_SEGMENTS = 34;
@@ -139,14 +134,11 @@ app.innerHTML = `
   <div class="writing-app writing-app--snake">
     <main class="writing-app__stage">
       <section class="writing-app__board">
-        <header class="writing-app__topbar writing-app__topbar--score">
+        <header class="writing-app__topbar">
           <div class="writing-app__title">
-            <p class="writing-app__eyebrow">Feed the snake</p>
+            <p class="writing-app__eyebrow">Instructions: Drag the snake around the letters</p>
             <h1 class="writing-app__word" id="word-label"></h1>
-          </div>
-          <div class="writing-app__score-card" aria-live="polite">
-            <span class="writing-app__score-label">Score</span>
-            <span class="writing-app__score-value"><span id="score-value">0</span>/<span id="score-total">0</span></span>
+            <div class="writing-app__fruit-progress" id="fruit-progress" aria-hidden="true"></div>
           </div>
           <div class="writing-app__control-strip">
             <label class="writing-app__tolerance" for="tolerance-slider">
@@ -162,36 +154,6 @@ app.innerHTML = `
                 max="${MAX_TRACE_TOLERANCE}"
                 step="${TRACE_TOLERANCE_STEP}"
                 value="${DEFAULT_TRACE_TOLERANCE}"
-              />
-            </label>
-            <label class="writing-app__tolerance" for="fruit-size-slider">
-              <span class="writing-app__tolerance-label">
-                Fruit size
-                <span class="writing-app__tolerance-value" id="fruit-size-value"></span>
-              </span>
-              <input
-                class="writing-app__tolerance-slider"
-                id="fruit-size-slider"
-                type="range"
-                min="${MIN_FRUIT_SIZE}"
-                max="${MAX_FRUIT_SIZE}"
-                step="${FRUIT_SIZE_STEP}"
-                value="${DEFAULT_FRUIT_SIZE}"
-              />
-            </label>
-            <label class="writing-app__tolerance" for="fruit-spacing-slider">
-              <span class="writing-app__tolerance-label">
-                Fruit spacing
-                <span class="writing-app__tolerance-value" id="fruit-spacing-value"></span>
-              </span>
-              <input
-                class="writing-app__tolerance-slider"
-                id="fruit-spacing-slider"
-                type="range"
-                min="${MIN_FRUIT_SPACING}"
-                max="${MAX_FRUIT_SPACING}"
-                step="${FRUIT_SPACING_STEP}"
-                value="${DEFAULT_FRUIT_SPACING}"
               />
             </label>
           </div>
@@ -224,8 +186,7 @@ app.innerHTML = `
 app.style.setProperty("--snake-board-image", `url("${snakeBackgroundImage}")`);
 
 const wordLabel = document.querySelector<HTMLHeadingElement>("#word-label");
-const scoreValue = document.querySelector<HTMLSpanElement>("#score-value");
-const scoreTotal = document.querySelector<HTMLSpanElement>("#score-total");
+const fruitProgressEl = document.querySelector<HTMLDivElement>("#fruit-progress");
 const scoreSummary = document.querySelector<HTMLParagraphElement>("#score-summary");
 const traceSvg = document.querySelector<SVGSVGElement>("#trace-svg");
 const showMeButton = document.querySelector<HTMLButtonElement>("#show-me-button");
@@ -233,26 +194,16 @@ const successOverlay = document.querySelector<HTMLDivElement>("#success-overlay"
 const nextWordButton = document.querySelector<HTMLButtonElement>("#next-word-button");
 const toleranceSlider = document.querySelector<HTMLInputElement>("#tolerance-slider");
 const toleranceValue = document.querySelector<HTMLSpanElement>("#tolerance-value");
-const fruitSizeSlider = document.querySelector<HTMLInputElement>("#fruit-size-slider");
-const fruitSizeValue = document.querySelector<HTMLSpanElement>("#fruit-size-value");
-const fruitSpacingSlider = document.querySelector<HTMLInputElement>("#fruit-spacing-slider");
-const fruitSpacingValue = document.querySelector<HTMLSpanElement>("#fruit-spacing-value");
-
 if (
   !wordLabel ||
-  !scoreValue ||
-  !scoreTotal ||
+  !fruitProgressEl ||
   !scoreSummary ||
   !traceSvg ||
   !showMeButton ||
   !successOverlay ||
   !nextWordButton ||
   !toleranceSlider ||
-  !toleranceValue ||
-  !fruitSizeSlider ||
-  !fruitSizeValue ||
-  !fruitSpacingSlider ||
-  !fruitSpacingValue
+  !toleranceValue
 ) {
   throw new Error("Missing elements for snake app.");
 }
@@ -270,16 +221,14 @@ let demoNibEl: SVGCircleElement | null = null;
 let demoAnimationFrameId: number | null = null;
 let isDemoPlaying = false;
 let currentTraceTolerance = DEFAULT_TRACE_TOLERANCE;
-let currentFruitSize = DEFAULT_FRUIT_SIZE;
-let currentFruitSpacing = DEFAULT_FRUIT_SPACING;
 let fruits: FruitToken[] = [];
 let fruitEls: SVGTextElement[] = [];
+let progressFruitEls: HTMLSpanElement[] = [];
 let tracingGroups: TracingGroup[] = [];
 let waypointMarkers: WaypointMarker[] = [];
 let currentWaypointIndex: number | null = null;
 let visibleGroupCount = 1;
 let waypointEl: SVGTextElement | null = null;
-let score = 0;
 let currentSceneWidth = 1600;
 let currentSceneHeight = 900;
 let currentPathLength = 0;
@@ -316,19 +265,25 @@ const syncToleranceLabel = () => {
   toleranceValue.textContent = `${currentTraceTolerance}px`;
 };
 
-const syncFruitControlLabels = () => {
-  fruitSizeValue.textContent = `${currentFruitSize}px`;
-  fruitSpacingValue.textContent = `${currentFruitSpacing}px`;
-};
+const syncFruitDisplay = () => {
+  const hideFruit = isDemoPlaying;
 
-const syncScoreDisplay = () => {
-  const visibleFruitCount = fruits.filter((fruit) => fruit.groupIndex < visibleGroupCount).length;
-  scoreValue.textContent = `${score}`;
-  scoreTotal.textContent = `${visibleFruitCount}`;
-  scoreSummary.textContent =
-    visibleFruitCount === 0
-      ? "No fruit on this round."
-      : `The snake ate ${score} of ${visibleFruitCount} fruit.`;
+  fruitEls.forEach((el) => {
+    const fruit = fruits[Number(el.dataset.fruitIndex)];
+    const shouldHide = hideFruit || !fruit || fruit.captured || fruit.groupIndex >= visibleGroupCount;
+    el.classList.toggle("writing-app__fruit--captured", Boolean(fruit?.captured));
+    el.classList.toggle("writing-app__fruit--hidden", shouldHide);
+  });
+
+  progressFruitEls.forEach((el, index) => {
+    const fruit = fruits[index];
+    const shouldHide = hideFruit || !fruit || fruit.groupIndex >= visibleGroupCount;
+    el.classList.toggle("writing-app__fruit-progress-item--captured", Boolean(fruit?.captured));
+    el.classList.toggle("writing-app__fruit-progress-item--hidden", shouldHide);
+  });
+
+  fruitProgressEl.classList.toggle("writing-app__fruit-progress--hidden", hideFruit || fruits.length === 0);
+  scoreSummary.textContent = fruits.length === 0 ? "Nice tracing." : "All the fruit is collected.";
 };
 
 const updateSuccessVisibility = (isVisible: boolean) => {
@@ -919,31 +874,6 @@ const hideCompletedDeferredHeads = () => {
   });
 };
 
-const applyFruitFlight = (el: SVGTextElement, fruit: FruitToken) => {
-  const centerX = currentSceneWidth / 2;
-  const centerY = currentSceneHeight / 2;
-  let directionX = fruit.x - centerX;
-  let directionY = fruit.y - centerY;
-
-  if (directionX === 0 && directionY === 0) {
-    directionX = 0.35;
-    directionY = -1;
-  }
-
-  const length = Math.hypot(directionX, directionY) || 1;
-  const unitX = directionX / length;
-  const unitY = directionY / length;
-  const extraDistance = Math.max(currentSceneWidth, currentSceneHeight) * 0.8;
-  const targetX = fruit.x + unitX * extraDistance;
-  const targetY = fruit.y + unitY * extraDistance;
-  const clampedTargetX = Math.min(currentSceneWidth + 160, Math.max(-160, targetX));
-  const clampedTargetY = Math.min(currentSceneHeight + 160, Math.max(-160, targetY));
-
-  el.style.setProperty("--fruit-fly-x", `${(clampedTargetX - fruit.x).toFixed(2)}px`);
-  el.style.setProperty("--fruit-fly-y", `${(clampedTargetY - fruit.y).toFixed(2)}px`);
-  el.style.setProperty("--fruit-fly-rotate", `${(unitX * 28).toFixed(2)}deg`);
-};
-
 const interpolateSamplePoint = (
   samples: TracingSample[],
   distanceAlongStroke: number
@@ -1013,7 +943,7 @@ const createFruitTokens = (
       return [];
     }
 
-    const count = Math.max(1, Math.round(groupLength / currentFruitSpacing));
+    const count = Math.max(1, Math.round(groupLength / FRUIT_SPACING));
 
     return Array.from({ length: count }, (_, index) => {
       const point = getPointAtOverallDistance(
@@ -1032,7 +962,6 @@ const createFruitTokens = (
 };
 
 const resetFruitState = () => {
-  score = 0;
   visibleGroupCount = tracingGroups.length > 0 ? 1 : 0;
   currentWaypointIndex = waypointMarkers.length > 0 ? 0 : null;
   fruits.forEach((fruit) => {
@@ -1041,19 +970,12 @@ const resetFruitState = () => {
   fruitEls.forEach((el) => {
     el.style.transition = "none";
     el.classList.remove("writing-app__fruit--captured");
-    el.style.removeProperty("--fruit-fly-x");
-    el.style.removeProperty("--fruit-fly-y");
-    el.style.removeProperty("--fruit-fly-rotate");
-    const fruit = fruits[Number(el.dataset.fruitIndex)];
-    el.classList.toggle(
-      "writing-app__fruit--hidden",
-      fruit ? fruit.groupIndex >= visibleGroupCount : true
-    );
+    el.classList.remove("writing-app__fruit--hidden");
     void el.getBoundingClientRect();
     el.style.removeProperty("transition");
   });
   updateWaypointMarker();
-  syncScoreDisplay();
+  syncFruitDisplay();
 };
 
 const getCurrentBodyCount = () => {
@@ -1379,7 +1301,7 @@ const startSnakeExit = (point: Point, tangent: Point) => {
 
 const captureFruitAtPoint = (point: Point) => {
   let changed = false;
-  const captureRadius = Math.max(24, currentFruitSize * 0.55);
+  const captureRadius = Math.max(24, FRUIT_SIZE * 0.55);
 
   fruits.forEach((fruit, index) => {
     if (fruit.captured || fruit.groupIndex >= visibleGroupCount) {
@@ -1392,10 +1314,8 @@ const captureFruitAtPoint = (point: Point) => {
     }
 
     fruit.captured = true;
-    score += 1;
     const fruitEl = fruitEls[index];
     if (fruitEl) {
-      applyFruitFlight(fruitEl, fruit);
       fruitEl.classList.add("writing-app__fruit--captured");
     }
     changed = true;
@@ -1403,7 +1323,7 @@ const captureFruitAtPoint = (point: Point) => {
 
   if (changed) {
     snakeChewUntil = performance.now() + SNAKE_CHEW_MS;
-    syncScoreDisplay();
+    syncFruitDisplay();
     renderSnake();
   }
 };
@@ -1439,27 +1359,19 @@ const unlockNextGroupIfReached = (point: Point) => {
   }
 
   const distance = Math.hypot(point.x - marker.x, point.y - marker.y);
-  const waypointRadius = Math.max(26, currentFruitSize * 0.6);
+  const waypointRadius = Math.max(26, FRUIT_SIZE * 0.6);
   if (distance > waypointRadius) {
     return;
   }
 
   visibleGroupCount = Math.min(visibleGroupCount + 1, tracingGroups.length);
-  fruitEls.forEach((el) => {
-    const fruit = fruits[Number(el.dataset.fruitIndex)];
-    el.classList.toggle(
-      "writing-app__fruit--hidden",
-      fruit ? fruit.groupIndex >= visibleGroupCount : true
-    );
-  });
-
   currentWaypointIndex += 1;
   if (currentWaypointIndex >= waypointMarkers.length) {
     currentWaypointIndex = null;
   }
 
   updateWaypointMarker();
-  syncScoreDisplay();
+  syncFruitDisplay();
 };
 
 const syncSnakeToState = (state: TracingState) => {
@@ -1502,6 +1414,7 @@ const stopDemoAnimation = () => {
     demoNibEl.style.opacity = "0";
   }
 
+  syncFruitDisplay();
   renderSnake();
   requestTraceRender();
 };
@@ -1609,14 +1522,15 @@ const playDemo = () => {
   stopDemoAnimation();
 
   const player = new AnimationPlayer(currentPath, {
-    speed: 1.7,
-    penUpSpeed: 2.1,
+    speed: 1.7 * SHOW_ME_SPEED_MULTIPLIER,
+    penUpSpeed: 2.1 * SHOW_ME_SPEED_MULTIPLIER,
     deferredDelayMs: 150
   });
 
   isDemoPlaying = true;
   showMeButton.disabled = true;
   showMeButton.textContent = "Showing...";
+  syncFruitDisplay();
   renderSnake();
 
   const startedAt = performance.now();
@@ -1682,6 +1596,18 @@ const setupScene = (path: WritingPath, width: number, height: number, offsetY: n
   });
   activePointerId = null;
   fruits = createFruitTokens(preparedPath, tracingGroups);
+  fruitProgressEl.innerHTML = fruits
+    .map(
+      (fruit, index) => `
+        <span class="writing-app__fruit-progress-item" data-fruit-progress-index="${index}">
+          ${fruit.emoji}
+        </span>
+      `
+    )
+    .join("");
+  progressFruitEls = Array.from(
+    fruitProgressEl.querySelectorAll<HTMLSpanElement>(".writing-app__fruit-progress-item")
+  );
 
   const drawableStrokes = drawablePathStrokes;
   const backgroundPaths = drawableStrokes
@@ -1713,7 +1639,7 @@ const setupScene = (path: WritingPath, width: number, height: number, offsetY: n
           data-fruit-index="${index}"
           x="${fruit.x}"
           y="${fruit.y}"
-          style="font-size: ${currentFruitSize}px"
+          style="font-size: ${FRUIT_SIZE}px"
           text-anchor="middle"
           dominant-baseline="middle"
         >${fruit.emoji}</text>
@@ -1973,25 +1899,6 @@ toleranceSlider.addEventListener("input", () => {
     setupScene(layout.path, layout.width, layout.height, layout.offsetY);
   }
 });
-fruitSizeSlider.addEventListener("input", () => {
-  currentFruitSize = Number(fruitSizeSlider.value);
-  syncFruitControlLabels();
-  if (currentPath) {
-    const layout = buildShiftedWordLayout(WORDS[currentWordIndex] ?? WORDS[0]);
-    currentPath = layout.path;
-    setupScene(layout.path, layout.width, layout.height, layout.offsetY);
-  }
-});
-fruitSpacingSlider.addEventListener("input", () => {
-  currentFruitSpacing = Number(fruitSpacingSlider.value);
-  syncFruitControlLabels();
-  if (currentPath) {
-    const layout = buildShiftedWordLayout(WORDS[currentWordIndex] ?? WORDS[0]);
-    currentPath = layout.path;
-    setupScene(layout.path, layout.width, layout.height, layout.offsetY);
-  }
-});
 
 syncToleranceLabel();
-syncFruitControlLabels();
 goToNextWord();
