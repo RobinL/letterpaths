@@ -98,6 +98,7 @@ const EAGLE_FLY_MS = 700;
 const EAGLE_STAND_MS = 260;
 const EAGLE_FLY_AWAY_MS = 800;
 const EAGLE_DOT_OFFSET_Y = 18;
+const DOT_TARGET_HIT_RADIUS_MULTIPLIER = 0.72;
 const EAGLE_FLY_SIZE = {
   width: 200,
   height: 106,
@@ -764,6 +765,16 @@ const getOverallDistanceForState = (
 const isDeferredStrokeActive = (state: Pick<TracingState, "activeStrokeIndex">): boolean =>
   getActiveDrawableStroke(state)?.deferred === true;
 
+const hasOnlyDeferredStrokesRemaining = (
+  state: Pick<TracingState, "activeStrokeIndex" | "status">
+): boolean => {
+  if (state.status === "complete" || !isDeferredStrokeActive(state)) {
+    return false;
+  }
+
+  return drawablePathStrokes.slice(state.activeStrokeIndex).every((stroke) => stroke?.deferred === true);
+};
+
 const getVisibleSnakeSegments = (
   travelledDistance: number,
   maxBodyCount: number,
@@ -832,8 +843,6 @@ const getDeferredHeadState = (
 ): { strokeIndex: number; point: Point; tangent: Point; isDot: boolean } | null => {
   if (
     isDemoPlaying ||
-    isSnakeSlithering ||
-    isSnakeExitComplete ||
     state.status === "complete" ||
     !isDeferredStrokeActive(state)
   ) {
@@ -1268,7 +1277,8 @@ const isPointerOnDeferredTarget = (point: Point, state: TracingState): boolean =
     if (!scene) {
       return false;
     }
-    const hitRadius = Math.max(DOT_SNAKE_SIZE.width, DOT_SNAKE_SIZE.height) * 0.36;
+    const hitRadius =
+      Math.max(DOT_SNAKE_SIZE.width, DOT_SNAKE_SIZE.height) * DOT_TARGET_HIT_RADIUS_MULTIPLIER;
     return Math.hypot(point.x - scene.snakePoint.x, point.y - scene.snakePoint.y) <= hitRadius;
   }
 
@@ -2049,9 +2059,7 @@ const renderTraceFrame = () => {
   syncDotTargetToState(state);
   renderDotTarget();
   renderDeferredHead(state);
-  if (!isSnakeSlithering && !isSnakeExitComplete) {
-    renderCompletedDeferredHeads();
-  }
+  renderCompletedDeferredHeads();
   const completed = new Set(state.completedStrokes);
 
   traceStrokeEls.forEach((el, index) => {
@@ -2072,6 +2080,11 @@ const renderTraceFrame = () => {
     syncSnakeToState(state);
   } else {
     renderSnake();
+  }
+
+  if (!isDemoPlaying && !isSnakeSlithering && !isSnakeExitComplete && hasOnlyDeferredStrokesRemaining(state)) {
+    const exitPose = getSnakeExitPose(state);
+    startSnakeExit(exitPose.point, exitPose.tangent);
   }
 
   if (state.status === "complete") {
