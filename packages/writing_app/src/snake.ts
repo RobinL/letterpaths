@@ -1116,11 +1116,9 @@ const getDotTargetScene = (
   };
 };
 
-const finishDotPickup = () => {
+const completeActiveDotStroke = () => {
   const state = tracingSession?.getState();
   if (!tracingSession || !state) {
-    hideDotTarget();
-    requestTraceRender();
     return;
   }
 
@@ -1134,6 +1132,10 @@ const finishDotPickup = () => {
     captureFruitThroughDistance(getOverallDistanceForState(nextState));
     maybePauseAtTracingGroupBoundary(nextState);
   }
+};
+
+const finishDotPickup = () => {
+  completeActiveDotStroke();
 
   hideDotTarget();
   requestTraceRender();
@@ -1165,6 +1167,7 @@ const startDotPickupAnimation = () => {
     return;
   }
 
+  completeActiveDotStroke();
   dotTargetPhase = "eagle_in";
   dotTargetPhaseStartedAt = performance.now();
   if (dotTargetAnimationFrameId !== null) {
@@ -1177,6 +1180,9 @@ const startDotPickupAnimation = () => {
 const syncDotTargetToState = (state: TracingState) => {
   const deferredHead = getDeferredHeadState(state);
   if (!deferredHead?.isDot) {
+    if (dotTargetPhase !== "hidden" && dotTargetPhase !== "waiting") {
+      return;
+    }
     hideDotTarget();
     return;
   }
