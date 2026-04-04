@@ -6,6 +6,7 @@ import {
   compileTracingPath,
   type Point,
   type PreparedTracingPath,
+  type PreparedStroke,
   type TracingGroup,
   type TracingSample,
   type TracingState,
@@ -84,6 +85,7 @@ type SnakePose = {
   y: number;
   angle: number;
   distance: number;
+  visible: boolean;
 };
 
 const app = document.querySelector<HTMLDivElement>("#app");
@@ -240,6 +242,7 @@ let score = 0;
 let currentSceneWidth = 1600;
 let currentSceneHeight = 900;
 let currentPathLength = 0;
+let preparedTracingPath: PreparedTracingPath | null = null;
 let snakeLayerEl: SVGGElement | null = null;
 let snakeHeadEl: SVGGElement | null = null;
 let snakeHeadImageEl: SVGImageElement | null = null;
@@ -289,6 +292,41 @@ const normalizeVector = (vector: Point): Point => {
 };
 
 const toAngle = (vector: Point): number => Math.atan2(vector.y, vector.x) * (180 / Math.PI);
+
+const pointFromAngle = (angle: number): Point => {
+  const radians = (angle * Math.PI) / 180;
+  return {
+    x: Math.cos(radians),
+    y: Math.sin(radians)
+  };
+};
+
+const getActivePreparedStroke = (state: Pick<TracingState, "activeStrokeIndex">): PreparedStroke | null => {
+  return preparedTracingPath?.strokes[state.activeStrokeIndex] ?? null;
+};
+
+const shouldHideSnakeForState = (state: TracingState): boolean => {
+  const activeStroke = getActivePreparedStroke(state);
+  return state.status === "await_pen_up" || activeStroke?.isDot === true;
+};
+
+const getSnakeExitPose = (state: TracingState): { point: Point; tangent: Point } => {
+  const activeStroke = getActivePreparedStroke(state);
+  if (activeStroke?.isDot) {
+    const lastPose = [...snakeTrail].reverse().find((pose) => pose.visible);
+    if (lastPose) {
+      return {
+        point: { x: lastPose.x, y: lastPose.y },
+        tangent: pointFromAngle(lastPose.angle)
+      };
+    }
+  }
+
+  return {
+    point: state.cursorPoint,
+    tangent: state.cursorTangent
+  };
+};
 
 const applyFruitFlight = (el: SVGTextElement, fruit: FruitToken) => {
   const centerX = currentSceneWidth / 2;
@@ -453,7 +491,7 @@ const setSpritePose = (
     "transform",
     `translate(${pose.x.toFixed(2)} ${pose.y.toFixed(2)}) rotate(${(pose.angle + rotationOffset).toFixed(2)})`
   );
-  groupEl.style.opacity = "1";
+  groupEl.style.opacity = pose.visible ? "1" : "0";
 };
 
 const sampleSnakePoseAtDistance = (targetDistance: number): SnakePose => {
@@ -461,7 +499,8 @@ const sampleSnakePoseAtDistance = (targetDistance: number): SnakePose => {
     x: 0,
     y: 0,
     angle: 0,
-    distance: 0
+    distance: 0,
+    visible: true
   };
 
   if (snakeTrail.length <= 1 || targetDistance <= 0) {
@@ -489,7 +528,8 @@ const sampleSnakePoseAtDistance = (targetDistance: number): SnakePose => {
       x,
       y,
       angle: toAngle({ x: current.x - previous.x, y: current.y - previous.y }),
-      distance: targetDistance
+      distance: targetDistance,
+      visible: current.visible
     };
   }
 
@@ -578,14 +618,15 @@ const renderSnake = (now = performance.now()) => {
   );
 };
 
-const resetSnakeTrail = (point: Point, tangent: Point) => {
+const resetSnakeTrail = (point: Point, tangent: Point, visible = true) => {
   const direction = normalizeVector(tangent);
   snakeTrail = [
     {
       x: point.x,
       y: point.y,
       angle: toAngle(direction),
-      distance: 0
+      distance: 0,
+      visible
     }
   ];
   snakeHeadDistance = 0;
@@ -600,24 +641,35 @@ const resetSnakeTrail = (point: Point, tangent: Point) => {
   renderSnake();
 };
 
-const appendSnakePose = (point: Point, tangent: Point) => {
+const appendSnakePose = (point: Point, tangent: Point, visible: boolean) => {
   const direction = normalizeVector(tangent);
   const angle = toAngle(direction);
   const lastPose = snakeTrail[snakeTrail.length - 1];
 
   if (!lastPose) {
-    resetSnakeTrail(point, direction);
+    resetSnakeTrail(point, direction, visible);
     return;
   }
 
   const step = Math.hypot(point.x - lastPose.x, point.y - lastPose.y);
   if (step < 0.5) {
-    snakeTrail[snakeTrail.length - 1] = {
-      ...lastPose,
-      x: point.x,
-      y: point.y,
-      angle
-    };
+    if (lastPose.visible === visible) {
+      snakeTrail[snakeTrail.length - 1] = {
+        ...lastPose,
+        x: point.x,
+        y: point.y,
+        angle
+      };
+    } else {
+      snakeTrail.push({
+        x: point.x,
+        y: point.y,
+        angle,
+        distance: lastPose.distance + 0.001,
+        visible
+      });
+      snakeHeadDistance = lastPose.distance + 0.001;
+    }
     renderSnake();
     return;
   }
@@ -627,7 +679,8 @@ const appendSnakePose = (point: Point, tangent: Point) => {
     x: point.x,
     y: point.y,
     angle,
-    distance: snakeHeadDistance
+    distance: snakeHeadDistance,
+    visible
   });
   renderSnake();
 };
@@ -679,7 +732,8 @@ const startSnakeExit = (point: Point, tangent: Point) => {
         x: point.x + direction.x * travelled,
         y: point.y + direction.y * travelled
       },
-      direction
+      direction,
+      true
     );
 
     if (travelled >= totalTravelDistance) {
@@ -783,7 +837,8 @@ const unlockNextGroupIfReached = (point: Point) => {
 };
 
 const syncSnakeToState = (state: TracingState) => {
-  appendSnakePose(state.cursorPoint, state.cursorTangent);
+  appendSnakePose(state.cursorPoint, state.cursorTangent, !shouldHideSnakeForState(state));
+
   if (!isDemoPlaying) {
     captureFruitAtPoint(state.cursorPoint);
     unlockNextGroupIfReached(state.cursorPoint);
@@ -835,7 +890,7 @@ const resetRoundProgress = () => {
 
   const state = tracingSession?.getState();
   if (state) {
-    resetSnakeTrail(state.cursorPoint, state.cursorTangent);
+    resetSnakeTrail(state.cursorPoint, state.cursorTangent, !shouldHideSnakeForState(state));
   } else {
     hideSnakeSprites();
   }
@@ -886,7 +941,8 @@ const renderTraceFrame = () => {
 
   if (state.status === "complete") {
     if (!isDemoPlaying && !isSnakeSlithering && !isSnakeExitComplete) {
-      startSnakeExit(state.cursorPoint, state.cursorTangent);
+      const exitPose = getSnakeExitPose(state);
+      startSnakeExit(exitPose.point, exitPose.tangent);
     }
     updateSuccessVisibility(isSnakeExitComplete);
     return;
@@ -959,6 +1015,7 @@ const setupScene = (path: WritingPath, width: number, height: number, offsetY: n
   currentSceneWidth = width;
   currentSceneHeight = height;
   const preparedPath = compileTracingPath(path);
+  preparedTracingPath = preparedPath;
   currentPathLength = preparedPath.strokes.reduce((total, stroke) => total + stroke.totalLength, 0);
   const groupAnalysis = analyzeTracingGroups(preparedPath);
   tracingGroups = groupAnalysis.groups;
