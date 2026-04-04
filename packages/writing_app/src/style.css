@@ -78,6 +78,18 @@ body {
   justify-self: end;
 }
 
+.writing-app--snake .writing-app__eyebrow {
+  margin-bottom: 8px;
+  color: #000;
+  font-size: 1.12rem;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.writing-app--snake .writing-app__word {
+  display: none;
+}
+
 .writing-app__eyebrow {
   margin: 0 0 4px;
   color: var(--muted);

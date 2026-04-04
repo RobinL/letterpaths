@@ -17,13 +17,16 @@ import snakeBackgroundImage from "./assets/snake/background.png";
 import eagleFlySprite from "./assets/snake/eagle_fly.png";
 import eagleStandSprite from "./assets/snake/eagle_stand.png";
 import snakeHeadAltSprite from "./assets/snake/head_alt.png";
+import sandMoving1Sound from "./assets/snake/sand_moving_1.mp3";
+import sandMoving2Sound from "./assets/snake/sand_moving_2.mp3";
+import sandMoving3Sound from "./assets/snake/sand_moving_3.mp3";
+import sandMoving4Sound from "./assets/snake/sand_moving_4.mp3";
 import snakeFacingCameraAngrySprite from "./assets/snake/snake_facing_camera_angry.png";
 import snakeFacingCameraHappySprite from "./assets/snake/snake_facing_camera_happy.png";
 import snakeHeadSprite from "./assets/snake/head.png";
 import snakeTailSprite from "./assets/snake/tail.png";
 import {
   DEMO_PAUSE_MS,
-  DEFAULT_TRACE_TOLERANCE,
   MAX_TRACE_TOLERANCE,
   MIN_TRACE_TOLERANCE,
   TRACE_TOLERANCE_STEP,
@@ -35,15 +38,20 @@ import {
 } from "./shared";
 
 const FRUIT_EMOJIS = ["🍎", "🍐", "🍊", "🍓", "🍇", "🍒", "🍉", "🥝"] as const;
+const DEFAULT_SNAKE_TRACE_TOLERANCE = 240;
 const FRUIT_SIZE = 44;
 const FRUIT_SPACING = 180;
 const SHOW_ME_SPEED_MULTIPLIER = 0.75;
 const SNAKE_SEGMENT_SPACING = 76;
 const SNAKE_GROWTH_DISTANCE = 115;
-const MAX_SNAKE_BODY_SEGMENTS = 34;
+const SNAKE_MOVE_SOUND_VOLUME = 0.12;
+const SNAKE_MOVE_SOUND_CHANCE = 0.42;
+const MAX_SNAKE_BODY_SEGMENTS = 10;
 const SNAKE_EXIT_MARGIN = 260;
 const SNAKE_EXIT_SPEED = 340;
 const SNAKE_CHEW_MS = 220;
+const SNAKE_RETRACTION_SPEED = 700;
+const SNAKE_RETRACTION_HIDE_GAP = 6;
 const HEAD_SIZE = {
   width: 97.5,
   height: 60,
@@ -89,6 +97,12 @@ const EAGLE_STAND_SIZE = {
   anchorX: 0.5,
   anchorY: 1
 } as const;
+const SNAKE_MOVE_SOUND_SOURCES = [
+  sandMoving1Sound,
+  sandMoving2Sound,
+  sandMoving3Sound,
+  sandMoving4Sound
+] as const;
 
 type FruitToken = {
   x: number;
@@ -153,7 +167,7 @@ app.innerHTML = `
                 min="${MIN_TRACE_TOLERANCE}"
                 max="${MAX_TRACE_TOLERANCE}"
                 step="${TRACE_TOLERANCE_STEP}"
-                value="${DEFAULT_TRACE_TOLERANCE}"
+                value="${DEFAULT_SNAKE_TRACE_TOLERANCE}"
               />
             </label>
           </div>
@@ -212,6 +226,7 @@ let currentWordIndex = -1;
 let currentPath: WritingPath | null = null;
 let tracingSession: TracingSession | null = null;
 let activePointerId: number | null = null;
+let activePointerPosition: Point | null = null;
 let traceRenderQueued = false;
 let traceStrokeEls: SVGPathElement[] = [];
 let traceStrokeLengths: number[] = [];
@@ -220,7 +235,7 @@ let demoStrokeLengths: number[] = [];
 let demoNibEl: SVGCircleElement | null = null;
 let demoAnimationFrameId: number | null = null;
 let isDemoPlaying = false;
-let currentTraceTolerance = DEFAULT_TRACE_TOLERANCE;
+let currentTraceTolerance = DEFAULT_SNAKE_TRACE_TOLERANCE;
 let fruits: FruitToken[] = [];
 let fruitEls: SVGTextElement[] = [];
 let progressFruitEls: HTMLSpanElement[] = [];
@@ -248,6 +263,11 @@ let eagleImageEl: SVGImageElement | null = null;
 let snakeTrail: SnakePose[] = [];
 let snakeHeadDistance = 0;
 let snakeChewUntil = 0;
+let snakeRetractionDistance = 0;
+let snakeRetractionTarget = 0;
+let snakeRetractionAnimationFrameId: number | null = null;
+let snakeUnretractStartHeadDistance: number | null = null;
+let snakeUnretractStartRetraction = 0;
 let snakeExitAnimationFrameId: number | null = null;
 let dotTargetAnimationFrameId: number | null = null;
 let isSnakeSlithering = false;
@@ -260,9 +280,109 @@ let dotTargetPhase: DotTargetPhase = "hidden";
 let dotTargetStrokeIndex: number | null = null;
 let dotTargetPoint: Point | null = null;
 let dotTargetPhaseStartedAt = 0;
+let queuedTurnTangent: Point | null = null;
+let isAwaitingSegmentRestart = false;
+let snakeMoveSoundPlayers: HTMLAudioElement[] | null = null;
+let activeSnakeMoveSounds: HTMLAudioElement[] = [];
+let snakeMoveSoundsWarmed = false;
+let snakeMoveSoundGroupIndex = -1;
+let nextSnakeMoveSoundDistance = Number.POSITIVE_INFINITY;
 
 const syncToleranceLabel = () => {
   toleranceValue.textContent = `${currentTraceTolerance}px`;
+};
+
+const ensureSnakeMoveSoundPlayers = () => {
+  if (snakeMoveSoundPlayers) {
+    return snakeMoveSoundPlayers;
+  }
+
+  snakeMoveSoundPlayers = SNAKE_MOVE_SOUND_SOURCES.map((src) => {
+    const audio = new Audio(src);
+    audio.preload = "auto";
+    audio.volume = SNAKE_MOVE_SOUND_VOLUME;
+    return audio;
+  });
+  return snakeMoveSoundPlayers;
+};
+
+const warmSnakeMoveSounds = () => {
+  if (snakeMoveSoundsWarmed) {
+    return;
+  }
+
+  ensureSnakeMoveSoundPlayers().forEach((audio) => {
+    audio.load();
+  });
+  snakeMoveSoundsWarmed = true;
+};
+
+const playRandomSnakeMoveSound = () => {
+  const players = ensureSnakeMoveSoundPlayers();
+  const template = players[Math.floor(Math.random() * players.length)];
+  const src = template?.currentSrc || template?.src;
+  if (!src) {
+    return;
+  }
+
+  const player = new Audio(src);
+  player.preload = "auto";
+  player.currentTime = 0;
+  player.volume = SNAKE_MOVE_SOUND_VOLUME;
+  activeSnakeMoveSounds.push(player);
+  player.addEventListener("ended", () => {
+    activeSnakeMoveSounds = activeSnakeMoveSounds.filter((audio) => audio !== player);
+  });
+  player.addEventListener("error", () => {
+    activeSnakeMoveSounds = activeSnakeMoveSounds.filter((audio) => audio !== player);
+  });
+  void player.play().catch(() => {});
+};
+
+const resetSnakeMoveSoundProgress = () => {
+  const groupIndex = visibleGroupCount > 0 ? visibleGroupCount - 1 : -1;
+  const group = groupIndex >= 0 ? tracingGroups[groupIndex] : null;
+
+  snakeMoveSoundGroupIndex = groupIndex;
+  nextSnakeMoveSoundDistance = group
+    ? group.startDistance + SNAKE_SEGMENT_SPACING
+    : Number.POSITIVE_INFINITY;
+};
+
+const maybePlaySnakeMoveSound = (
+  state: Pick<TracingState, "status" | "activeStrokeIndex" | "activeStrokeProgress" | "isPenDown">
+) => {
+  if (!state.isPenDown || isDemoPlaying || isSnakeSlithering || isSnakeExitComplete || isAwaitingSegmentRestart) {
+    return;
+  }
+
+  const groupIndex = visibleGroupCount > 0 ? visibleGroupCount - 1 : -1;
+  const group = groupIndex >= 0 ? tracingGroups[groupIndex] : null;
+  if (!group) {
+    nextSnakeMoveSoundDistance = Number.POSITIVE_INFINITY;
+    snakeMoveSoundGroupIndex = groupIndex;
+    return;
+  }
+
+  if (groupIndex !== snakeMoveSoundGroupIndex) {
+    resetSnakeMoveSoundProgress();
+  }
+
+  const overallDistance = getOverallDistanceForState(state);
+  let shouldPlay = false;
+  while (
+    overallDistance >= nextSnakeMoveSoundDistance &&
+    nextSnakeMoveSoundDistance <= group.endDistance
+  ) {
+    if (Math.random() < SNAKE_MOVE_SOUND_CHANCE) {
+      shouldPlay = true;
+    }
+    nextSnakeMoveSoundDistance += SNAKE_SEGMENT_SPACING;
+  }
+
+  if (shouldPlay) {
+    playRandomSnakeMoveSound();
+  }
 };
 
 const syncFruitDisplay = () => {
@@ -312,6 +432,122 @@ const pointFromAngle = (angle: number): Point => {
   };
 };
 
+const cancelSnakeRetractionAnimation = () => {
+  if (snakeRetractionAnimationFrameId !== null) {
+    cancelAnimationFrame(snakeRetractionAnimationFrameId);
+    snakeRetractionAnimationFrameId = null;
+  }
+};
+
+const animateSnakeRetraction = () => {
+  cancelSnakeRetractionAnimation();
+
+  if (Math.abs(snakeRetractionDistance - snakeRetractionTarget) < 0.5) {
+    snakeRetractionDistance = snakeRetractionTarget;
+    renderSnake();
+    return;
+  }
+
+  let previousTimestamp: number | null = null;
+
+  const tick = (timestamp: number) => {
+    if (previousTimestamp === null) {
+      previousTimestamp = timestamp;
+      snakeRetractionAnimationFrameId = requestAnimationFrame(tick);
+      return;
+    }
+
+    const elapsedSeconds = Math.max(0, timestamp - previousTimestamp) / 1000;
+    previousTimestamp = timestamp;
+    const maxStep = elapsedSeconds * SNAKE_RETRACTION_SPEED;
+    const delta = snakeRetractionTarget - snakeRetractionDistance;
+
+    if (Math.abs(delta) <= maxStep) {
+      snakeRetractionDistance = snakeRetractionTarget;
+      snakeRetractionAnimationFrameId = null;
+      renderSnake();
+      maybeResumeContinuousDrag();
+      return;
+    }
+
+    snakeRetractionDistance += Math.sign(delta) * maxStep;
+    renderSnake();
+    snakeRetractionAnimationFrameId = requestAnimationFrame(tick);
+  };
+
+  snakeRetractionAnimationFrameId = requestAnimationFrame(tick);
+};
+
+const setSnakeRetractionTarget = (target: number) => {
+  const clampedTarget = Math.max(0, target);
+  if (Math.abs(clampedTarget - snakeRetractionTarget) < 0.5) {
+    return;
+  }
+
+  snakeRetractionTarget = clampedTarget;
+  animateSnakeRetraction();
+};
+
+const beginSnakeUnretractFromCurrentState = () => {
+  cancelSnakeRetractionAnimation();
+  snakeRetractionTarget = snakeRetractionDistance;
+  snakeUnretractStartHeadDistance = snakeHeadDistance;
+  snakeUnretractStartRetraction = snakeRetractionDistance;
+};
+
+const maybeResumeContinuousDrag = () => {
+  if (
+    !isAwaitingSegmentRestart ||
+    activePointerId === null ||
+    !activePointerPosition ||
+    !tracingSession ||
+    snakeRetractionDistance > 0.5
+  ) {
+    return false;
+  }
+
+  const resumeState = tracingSession.getState();
+  const started = tracingSession.beginAt(resumeState.cursorPoint);
+  if (!started) {
+    return false;
+  }
+
+  isAwaitingSegmentRestart = false;
+  snakeUnretractStartHeadDistance = snakeHeadDistance;
+  snakeUnretractStartRetraction = snakeRetractionDistance;
+
+  tracingSession.update(activePointerPosition);
+  requestTraceRender();
+  return true;
+};
+
+const syncSnakeUnretractionFromMovement = () => {
+  if (snakeUnretractStartHeadDistance === null) {
+    return;
+  }
+
+  const travelledSinceRestart = Math.max(0, snakeHeadDistance - snakeUnretractStartHeadDistance);
+  const nextRetraction = Math.max(0, snakeUnretractStartRetraction - travelledSinceRestart);
+  if (Math.abs(nextRetraction - snakeRetractionDistance) < 0.5) {
+    if (nextRetraction <= 0.5) {
+      snakeRetractionDistance = 0;
+      snakeRetractionTarget = 0;
+      snakeUnretractStartHeadDistance = null;
+      snakeUnretractStartRetraction = 0;
+    }
+    return;
+  }
+
+  snakeRetractionDistance = nextRetraction;
+  snakeRetractionTarget = nextRetraction;
+  if (nextRetraction <= 0.5) {
+    snakeRetractionDistance = 0;
+    snakeRetractionTarget = 0;
+    snakeUnretractStartHeadDistance = null;
+    snakeUnretractStartRetraction = 0;
+  }
+};
+
 const getActivePreparedStroke = (state: Pick<TracingState, "activeStrokeIndex">): PreparedStroke | null => {
   return preparedTracingPath?.strokes[state.activeStrokeIndex] ?? null;
 };
@@ -325,6 +561,25 @@ const getActiveDrawableStroke = (
 const getActiveStrokeTravelDistance = (state: Pick<TracingState, "activeStrokeIndex" | "activeStrokeProgress">): number => {
   const stroke = preparedTracingPath?.strokes[state.activeStrokeIndex];
   return (stroke?.totalLength ?? 0) * state.activeStrokeProgress;
+};
+
+const getOverallDistanceForState = (
+  state: Pick<TracingState, "status" | "activeStrokeIndex" | "activeStrokeProgress">
+): number => {
+  if (!preparedTracingPath) {
+    return 0;
+  }
+
+  if (state.status === "complete") {
+    return currentPathLength;
+  }
+
+  let total = 0;
+  for (let index = 0; index < state.activeStrokeIndex; index += 1) {
+    total += preparedTracingPath.strokes[index]?.totalLength ?? 0;
+  }
+
+  return total + getActiveStrokeTravelDistance(state);
 };
 
 const isDeferredStrokeActive = (state: Pick<TracingState, "activeStrokeIndex">): boolean =>
@@ -687,7 +942,7 @@ const finishDotPickup = () => {
   ) {
     tracingSession.beginAt(state.cursorPoint);
     captureFruitAtPoint(state.cursorPoint);
-    unlockNextGroupIfReached(state.cursorPoint);
+    maybePauseAtTracingGroupBoundary(tracingSession.getState());
   }
 
   hideDotTarget();
@@ -933,6 +1188,74 @@ const getPointAtOverallDistance = (
   return { x: 0, y: 0 };
 };
 
+const getGroupStartTangent = (groupIndex: number): Point | null => {
+  const group = tracingGroups[groupIndex];
+  if (!group || !preparedTracingPath) {
+    return null;
+  }
+
+  const sampleDistance = Math.min(group.endDistance, group.startDistance + 24);
+  const samplePoint = getPointAtOverallDistance(preparedTracingPath, sampleDistance);
+  const tangent = normalizeVector({
+    x: samplePoint.x - group.startPoint.x,
+    y: samplePoint.y - group.startPoint.y
+  });
+
+  if (Math.hypot(tangent.x, tangent.y) > 0.001) {
+    return tangent;
+  }
+
+  return normalizeVector({
+    x: group.endPoint.x - group.startPoint.x,
+    y: group.endPoint.y - group.startPoint.y
+  });
+};
+
+const advanceToNextTracingGroup = () => {
+  visibleGroupCount = Math.min(visibleGroupCount + 1, tracingGroups.length);
+  currentWaypointIndex = visibleGroupCount - 1 < waypointMarkers.length ? visibleGroupCount - 1 : null;
+  updateWaypointMarker();
+  syncFruitDisplay();
+  resetSnakeMoveSoundProgress();
+};
+
+const maybePauseAtTracingGroupBoundary = (state: TracingState): boolean => {
+  if (
+    isDemoPlaying ||
+    isSnakeSlithering ||
+    isSnakeExitComplete ||
+    isAwaitingSegmentRestart ||
+    tracingGroups.length <= visibleGroupCount
+  ) {
+    return false;
+  }
+
+  const currentGroupIndex = visibleGroupCount - 1;
+  const currentGroup = tracingGroups[currentGroupIndex];
+  if (!currentGroup) {
+    return false;
+  }
+
+  const overallDistance = getOverallDistanceForState(state);
+  if (overallDistance < currentGroup.endDistance - 8) {
+    return false;
+  }
+
+  isAwaitingSegmentRestart = true;
+  snakeUnretractStartHeadDistance = null;
+  snakeUnretractStartRetraction = 0;
+  queuedTurnTangent = getGroupStartTangent(currentGroupIndex + 1);
+  if (queuedTurnTangent) {
+    appendSnakePose(currentGroup.endPoint, queuedTurnTangent, true);
+  }
+
+  advanceToNextTracingGroup();
+  tracingSession?.end();
+  syncSnakeRetractionToState();
+  requestTraceRender();
+  return true;
+};
+
 const createFruitTokens = (
   preparedPath: PreparedTracingPath,
   groups: TracingGroup[]
@@ -984,6 +1307,26 @@ const getCurrentBodyCount = () => {
     Math.min(MAX_SNAKE_BODY_SEGMENTS, Math.floor(currentPathLength / SNAKE_GROWTH_DISTANCE))
   );
   return Math.min(maxByPath, 1 + Math.floor(snakeHeadDistance / SNAKE_GROWTH_DISTANCE));
+};
+
+const syncSnakeRetractionToState = () => {
+  if (isDemoPlaying || isSnakeSlithering || isSnakeExitComplete) {
+    snakeUnretractStartHeadDistance = null;
+    snakeUnretractStartRetraction = 0;
+    return;
+  }
+
+  if (!isAwaitingSegmentRestart) {
+    return;
+  }
+
+  const availableBodyCount = getVisibleSnakeSegments(
+    snakeHeadDistance,
+    getCurrentBodyCount(),
+    SNAKE_SEGMENT_SPACING
+  ).bodyCount;
+
+  setSnakeRetractionTarget((availableBodyCount + 1) * SNAKE_SEGMENT_SPACING);
 };
 
 const setSpritePose = (
@@ -1073,6 +1416,7 @@ const renderSnake = (now = performance.now()) => {
 
   snakeLayerEl.style.opacity = "1";
   const availableBodyCount = isSnakeSlithering ? snakeExitBodyCount : getCurrentBodyCount();
+  const retractionDistance = isSnakeSlithering ? 0 : snakeRetractionDistance;
   const segmentVisibility = getVisibleSnakeSegments(
     snakeHeadDistance,
     availableBodyCount,
@@ -1103,9 +1447,13 @@ const renderSnake = (now = performance.now()) => {
       return;
     }
 
-    const pose = sampleSnakePoseAtDistance(
-      Math.max(0, snakeHeadDistance - (index + 1) * SNAKE_SEGMENT_SPACING)
-    );
+    const gapFromHead = Math.max(0, (index + 1) * SNAKE_SEGMENT_SPACING - retractionDistance);
+    if (gapFromHead <= SNAKE_RETRACTION_HIDE_GAP) {
+      el.style.opacity = "0";
+      return;
+    }
+
+    const pose = sampleSnakePoseAtDistance(Math.max(0, snakeHeadDistance - gapFromHead));
     setSpritePose(
       el,
       imageEl,
@@ -1118,17 +1466,16 @@ const renderSnake = (now = performance.now()) => {
     );
   });
 
-  const tailPose = sampleSnakePoseAtDistance(
-    Math.max(0, snakeHeadDistance - (bodyCount + 1) * SNAKE_SEGMENT_SPACING)
-  );
   const tailImageEl = snakeTailEl.querySelector<SVGImageElement>("image");
   if (!tailImageEl) {
     return;
   }
-  if (!segmentVisibility.showTail) {
+  const tailGapFromHead = Math.max(0, (bodyCount + 1) * SNAKE_SEGMENT_SPACING - retractionDistance);
+  if (!segmentVisibility.showTail || tailGapFromHead <= SNAKE_RETRACTION_HIDE_GAP) {
     snakeTailEl.style.opacity = "0";
     return;
   }
+  const tailPose = sampleSnakePoseAtDistance(Math.max(0, snakeHeadDistance - tailGapFromHead));
   setSpritePose(
     snakeTailEl,
     tailImageEl,
@@ -1154,9 +1501,16 @@ const resetSnakeTrail = (point: Point, tangent: Point, visible = true) => {
   ];
   snakeHeadDistance = 0;
   snakeChewUntil = 0;
+  snakeRetractionDistance = 0;
+  snakeRetractionTarget = 0;
+  snakeUnretractStartHeadDistance = null;
+  snakeUnretractStartRetraction = 0;
+  queuedTurnTangent = null;
+  isAwaitingSegmentRestart = false;
   isSnakeExitComplete = false;
   isSnakeSlithering = false;
   snakeExitBodyCount = 0;
+  cancelSnakeRetractionAnimation();
   if (snakeExitAnimationFrameId !== null) {
     cancelAnimationFrame(snakeExitAnimationFrameId);
     snakeExitAnimationFrameId = null;
@@ -1205,6 +1559,7 @@ const appendSnakePose = (point: Point, tangent: Point, visible: boolean) => {
     distance: snakeHeadDistance,
     visible
   });
+  syncSnakeUnretractionFromMovement();
   renderSnake();
 };
 
@@ -1240,6 +1595,13 @@ const startSnakeExit = (point: Point, tangent: Point) => {
     return;
   }
 
+  cancelSnakeRetractionAnimation();
+  snakeRetractionDistance = 0;
+  snakeRetractionTarget = 0;
+  snakeUnretractStartHeadDistance = null;
+  snakeUnretractStartRetraction = 0;
+  queuedTurnTangent = null;
+  isAwaitingSegmentRestart = false;
   const direction = normalizeVector(tangent);
   const exitStartTime = performance.now();
   snakeExitBodyCount = getCurrentBodyCount();
@@ -1346,35 +1708,15 @@ const updateWaypointMarker = () => {
   waypointEl.setAttribute("y", `${marker.y}`);
 };
 
-const unlockNextGroupIfReached = (point: Point) => {
-  if (currentWaypointIndex === null) {
-    return;
-  }
-
-  const marker = waypointMarkers[currentWaypointIndex];
-  if (!marker) {
-    currentWaypointIndex = null;
-    updateWaypointMarker();
-    return;
-  }
-
-  const distance = Math.hypot(point.x - marker.x, point.y - marker.y);
-  const waypointRadius = Math.max(26, FRUIT_SIZE * 0.6);
-  if (distance > waypointRadius) {
-    return;
-  }
-
-  visibleGroupCount = Math.min(visibleGroupCount + 1, tracingGroups.length);
-  currentWaypointIndex += 1;
-  if (currentWaypointIndex >= waypointMarkers.length) {
-    currentWaypointIndex = null;
-  }
-
-  updateWaypointMarker();
-  syncFruitDisplay();
-};
-
 const syncSnakeToState = (state: TracingState) => {
+  const shouldUseQueuedTurn =
+    queuedTurnTangent !== null && (!state.isPenDown || state.activeStrokeProgress < 0.12);
+  if (queuedTurnTangent && !shouldUseQueuedTurn) {
+    queuedTurnTangent = null;
+  }
+
+  const headTangent = shouldUseQueuedTurn && queuedTurnTangent ? queuedTurnTangent : state.cursorTangent;
+
   if (isDeferredStrokeActive(state)) {
     const parkedPose = getParkedSnakePose(state);
     const lastPose = snakeTrail[snakeTrail.length - 1];
@@ -1385,12 +1727,15 @@ const syncSnakeToState = (state: TracingState) => {
       appendSnakePose(parkedPose.point, parkedPose.tangent, true);
     }
   } else {
-    appendSnakePose(state.cursorPoint, state.cursorTangent, true);
+    appendSnakePose(state.cursorPoint, headTangent, true);
   }
 
   if (!isDemoPlaying && state.isPenDown) {
     captureFruitAtPoint(state.cursorPoint);
-    unlockNextGroupIfReached(state.cursorPoint);
+    maybePlaySnakeMoveSound(state);
+    if (maybePauseAtTracingGroupBoundary(state)) {
+      return;
+    }
   }
 };
 
@@ -1422,6 +1767,7 @@ const stopDemoAnimation = () => {
 const resetRoundProgress = () => {
   tracingSession?.reset();
   activePointerId = null;
+  activePointerPosition = null;
   updateSuccessVisibility(false);
   isSnakeExitComplete = false;
   isSnakeSlithering = false;
@@ -1442,6 +1788,13 @@ const resetRoundProgress = () => {
     el.style.strokeDashoffset = `${length}`;
   });
 
+  cancelSnakeRetractionAnimation();
+  snakeRetractionDistance = 0;
+  snakeRetractionTarget = 0;
+  snakeUnretractStartHeadDistance = null;
+  snakeUnretractStartRetraction = 0;
+  queuedTurnTangent = null;
+  isAwaitingSegmentRestart = false;
   const state = tracingSession?.getState();
   if (state) {
     resetSnakeTrail(state.cursorPoint, state.cursorTangent, true);
@@ -1451,6 +1804,7 @@ const resetRoundProgress = () => {
   hideCompletedDeferredHeads();
 
   resetFruitState();
+  resetSnakeMoveSoundProgress();
   requestTraceRender();
 };
 
@@ -1472,6 +1826,7 @@ const renderTraceFrame = () => {
   }
 
   const state = tracingSession.getState();
+  syncSnakeRetractionToState();
   registerCompletedDeferredHeads(state);
   syncDotTargetToState(state);
   renderDotTarget();
@@ -1647,10 +2002,11 @@ const setupScene = (path: WritingPath, width: number, height: number, offsetY: n
     )
     .join("");
   const snakeBodyMarkup = Array.from({ length: MAX_SNAKE_BODY_SEGMENTS }, (_, index) => {
+    const bodyIndex = MAX_SNAKE_BODY_SEGMENTS - 1 - index;
     return `
       <g
         class="writing-app__snake-segment writing-app__snake-body"
-        data-snake-body-index="${index}"
+        data-snake-body-index="${bodyIndex}"
       >
         <image
           href="${snakeBodySprite}"
@@ -1699,7 +2055,6 @@ const setupScene = (path: WritingPath, width: number, height: number, offsetY: n
       text-anchor="middle"
       dominant-baseline="middle"
     >⭐</text>
-    ${fruitMarkup}
     <g class="writing-app__snake" id="trace-snake">
       <g
         class="writing-app__snake-segment writing-app__snake-tail"
@@ -1722,6 +2077,7 @@ const setupScene = (path: WritingPath, width: number, height: number, offsetY: n
         ></image>
       </g>
     </g>
+    ${fruitMarkup}
     <g class="writing-app__deferred-heads" id="deferred-trail-heads">
       ${deferredTrailHeadMarkup}
     </g>
@@ -1755,7 +2111,9 @@ const setupScene = (path: WritingPath, width: number, height: number, offsetY: n
   snakeHeadEl = traceSvg.querySelector<SVGGElement>("#snake-head");
   snakeHeadImageEl = traceSvg.querySelector<SVGImageElement>("#snake-head-image");
   snakeTailEl = traceSvg.querySelector<SVGGElement>("#snake-tail");
-  snakeBodyEls = Array.from(traceSvg.querySelectorAll<SVGGElement>(".writing-app__snake-body"));
+  snakeBodyEls = Array.from(traceSvg.querySelectorAll<SVGGElement>(".writing-app__snake-body")).sort(
+    (a, b) => Number(a.dataset.snakeBodyIndex) - Number(b.dataset.snakeBodyIndex)
+  );
   deferredHeadEl = traceSvg.querySelector<SVGGElement>("#deferred-head");
   deferredTrailHeadEls = new Map(
     Array.from(
@@ -1800,6 +2158,7 @@ const setupScene = (path: WritingPath, width: number, height: number, offsetY: n
   hideDotTarget();
   hideCompletedDeferredHeads();
   resetFruitState();
+  resetSnakeMoveSoundProgress();
   updateSuccessVisibility(false);
   requestTraceRender();
 };
@@ -1843,7 +2202,13 @@ const onPointerDown = (event: PointerEvent) => {
   }
 
   event.preventDefault();
+  isAwaitingSegmentRestart = false;
   activePointerId = event.pointerId;
+  activePointerPosition = pointer;
+  warmSnakeMoveSounds();
+  if (snakeRetractionDistance > 0.5) {
+    beginSnakeUnretractFromCurrentState();
+  }
   traceSvg.setPointerCapture(event.pointerId);
   requestTraceRender();
 };
@@ -1854,7 +2219,13 @@ const onPointerMove = (event: PointerEvent) => {
   }
 
   event.preventDefault();
-  tracingSession.update(getPointerInSvg(traceSvg, event));
+  activePointerPosition = getPointerInSvg(traceSvg, event);
+  if (isAwaitingSegmentRestart) {
+    maybeResumeContinuousDrag();
+    requestTraceRender();
+    return;
+  }
+  tracingSession.update(activePointerPosition);
   requestTraceRender();
 };
 
@@ -1868,6 +2239,7 @@ const onPointerUp = (event: PointerEvent) => {
     traceSvg.releasePointerCapture(event.pointerId);
   }
   activePointerId = null;
+  activePointerPosition = null;
   requestTraceRender();
 };
 
@@ -1881,6 +2253,7 @@ const onPointerCancel = (event: PointerEvent) => {
     traceSvg.releasePointerCapture(event.pointerId);
   }
   activePointerId = null;
+  activePointerPosition = null;
   requestTraceRender();
 };
 
