@@ -10,7 +10,8 @@ export default defineConfig(({ command }) => ({
       input: {
         main: path.resolve(__dirname, "index.html"),
         scorePoints: path.resolve(__dirname, "score_points/index.html"),
-        snake: path.resolve(__dirname, "snake/index.html")
+        snake: path.resolve(__dirname, "snake/index.html"),
+        trains: path.resolve(__dirname, "trains/index.html")
       }
     }
   },
