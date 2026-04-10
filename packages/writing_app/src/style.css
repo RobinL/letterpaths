@@ -13,6 +13,7 @@
   --sky: #7ab4ff;
   --sky-soft: rgba(122, 180, 255, 0.22);
   --trace-bg: #d6dce6;
+  --trace-next: #c2cad7;
   --trace-done: #4a90e2;
   --trace-demo: #f26d4f;
   --line: rgba(35, 49, 61, 0.12);
@@ -312,6 +313,15 @@ body {
 .writing-app__stroke-bg {
   stroke: var(--trace-bg);
   stroke-opacity: 0.9;
+}
+
+.writing-app__stroke-next {
+  fill: none;
+  stroke: var(--trace-done);
+  stroke-width: 54;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-opacity: 0.3;
 }
 
 .writing-app__stroke-trace {
@@ -773,6 +783,7 @@ body {
   }
 
   .writing-app__stroke-bg,
+  .writing-app__stroke-next,
   .writing-app__stroke-trace,
   .writing-app__stroke-demo {
     stroke-width: 48;

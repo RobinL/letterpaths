@@ -343,6 +343,7 @@ let activePointerPosition: Point | null = null;
 let traceRenderQueued = false;
 let traceStrokeEls: SVGPathElement[] = [];
 let traceStrokeLengths: number[] = [];
+let nextSectionEl: SVGPathElement | null = null;
 let demoStrokeEls: SVGPathElement[] = [];
 let demoStrokeLengths: number[] = [];
 let demoNibEl: SVGCircleElement | null = null;
@@ -1414,6 +1415,86 @@ const getPointAtOverallDistance = (
   return { x: 0, y: 0 };
 };
 
+const buildPathDFromOverallDistanceRange = (
+  preparedPath: PreparedTracingPath,
+  startDistance: number,
+  endDistance: number
+): string => {
+  if (endDistance <= startDistance) {
+    return "";
+  }
+
+  const commands: string[] = [];
+  let strokeOffset = 0;
+
+  preparedPath.strokes.forEach((stroke) => {
+    const strokeStart = strokeOffset;
+    const strokeEnd = strokeOffset + stroke.totalLength;
+    strokeOffset = strokeEnd;
+
+    if (endDistance < strokeStart || startDistance > strokeEnd) {
+      return;
+    }
+
+    const localStart = Math.max(0, startDistance - strokeStart);
+    const localEnd = Math.min(stroke.totalLength, endDistance - strokeStart);
+    if (localEnd < localStart || stroke.samples.length === 0) {
+      return;
+    }
+
+    const points: Point[] = [
+      interpolateSamplePoint(stroke.samples, localStart),
+      ...stroke.samples
+        .filter(
+          (sample) =>
+            sample.distanceAlongStroke > localStart && sample.distanceAlongStroke < localEnd
+        )
+        .map((sample) => ({ x: sample.x, y: sample.y })),
+      interpolateSamplePoint(stroke.samples, localEnd)
+    ];
+
+    const dedupedPoints = points.filter((point, index) => {
+      const previous = points[index - 1];
+      return !previous || Math.hypot(point.x - previous.x, point.y - previous.y) > 0.01;
+    });
+
+    if (dedupedPoints.length === 0) {
+      return;
+    }
+
+    const [firstPoint, ...remainingPoints] = dedupedPoints;
+    commands.push(`M ${firstPoint.x} ${firstPoint.y}`);
+    remainingPoints.forEach((point) => {
+      commands.push(`L ${point.x} ${point.y}`);
+    });
+  });
+
+  return commands.join(" ");
+};
+
+const syncNextSectionHighlight = () => {
+  if (!nextSectionEl || !preparedTracingPath) {
+    return;
+  }
+
+  const currentGroup = tracingGroups[visibleGroupCount - 1];
+  if (!currentGroup) {
+    nextSectionEl.setAttribute("d", "");
+    nextSectionEl.style.opacity = "0";
+    return;
+  }
+
+  nextSectionEl.setAttribute(
+    "d",
+    buildPathDFromOverallDistanceRange(
+      preparedTracingPath,
+      currentGroup.startDistance,
+      currentGroup.endDistance
+    )
+  );
+  nextSectionEl.style.opacity = "1";
+};
+
 const getGroupStartTangent = (groupIndex: number): Point | null => {
   const group = tracingGroups[groupIndex];
   if (!group || !preparedTracingPath) {
@@ -2080,6 +2161,7 @@ const renderTraceFrame = () => {
   renderDotTarget();
   renderDeferredHead(state);
   renderCompletedDeferredHeads();
+  syncNextSectionHighlight();
   const completed = new Set(state.completedStrokes);
 
   traceStrokeEls.forEach((el, index) => {
@@ -2199,8 +2281,11 @@ const setupScene = (path: WritingPath, width: number, height: number, offsetY: n
   fruits = createFruitTokens(preparedPath, tracingGroups);
 
   const drawableStrokes = drawablePathStrokes;
-  const backgroundPaths = drawableStrokes
-    .map((stroke) => `<path class="writing-app__stroke-bg" d="${buildPathD(stroke.curves)}"></path>`)
+  const backgroundPaths = tracingGroups
+    .map(
+      (group) =>
+        `<path class="writing-app__stroke-bg" d="${buildPathDFromOverallDistanceRange(preparedPath, group.startDistance, group.endDistance)}"></path>`
+    )
     .join("");
   const tracePaths = drawableStrokes
     .map((stroke) => `<path class="writing-app__stroke-trace" d="${buildPathD(stroke.curves)}"></path>`)
@@ -2269,6 +2354,7 @@ const setupScene = (path: WritingPath, width: number, height: number, offsetY: n
     ></line>
     ${backgroundPaths}
     ${tracePaths}
+    <path class="writing-app__stroke-next" id="next-section-stroke" d=""></path>
     ${demoPaths}
     <text
       class="writing-app__boundary-star"
@@ -2325,6 +2411,7 @@ const setupScene = (path: WritingPath, width: number, height: number, offsetY: n
   traceStrokeEls = Array.from(
     traceSvg.querySelectorAll<SVGPathElement>(".writing-app__stroke-trace")
   );
+  nextSectionEl = traceSvg.querySelector<SVGPathElement>("#next-section-stroke");
   demoStrokeEls = Array.from(
     traceSvg.querySelectorAll<SVGPathElement>(".writing-app__stroke-demo")
   );
@@ -2373,6 +2460,7 @@ const setupScene = (path: WritingPath, width: number, height: number, offsetY: n
     demoNibEl.style.opacity = "0";
   }
 
+  syncNextSectionHighlight();
   const initialState = tracingSession.getState();
   resetSnakeTrail(initialState.cursorPoint, initialState.cursorTangent);
   completedDeferredHeads = [];
