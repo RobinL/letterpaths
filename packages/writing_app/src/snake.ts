@@ -795,16 +795,6 @@ const getOverallDistanceForState = (
 const isDeferredStrokeActive = (state: Pick<TracingState, "activeStrokeIndex">): boolean =>
   getActiveDrawableStroke(state)?.deferred === true;
 
-const hasOnlyDeferredStrokesRemaining = (
-  state: Pick<TracingState, "activeStrokeIndex" | "status">
-): boolean => {
-  if (state.status === "complete" || !isDeferredStrokeActive(state)) {
-    return false;
-  }
-
-  return drawablePathStrokes.slice(state.activeStrokeIndex).every((stroke) => stroke?.deferred === true);
-};
-
 const getVisibleSnakeSegments = (
   travelledDistance: number,
   maxBodyCount: number,
@@ -2110,11 +2100,6 @@ const renderTraceFrame = () => {
     syncSnakeToState(state);
   } else {
     renderSnake();
-  }
-
-  if (!isDemoPlaying && !isSnakeSlithering && !isSnakeExitComplete && hasOnlyDeferredStrokesRemaining(state)) {
-    const exitPose = getSnakeExitPose(state);
-    startSnakeExit(exitPose.point, exitPose.tangent);
   }
 
   if (state.status === "complete") {
