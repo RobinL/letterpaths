@@ -1470,24 +1470,179 @@ const buildPathDFromOverallDistanceRange = (
   return commands.join(" ");
 };
 
-const getSectionArrowDistanceRange = (
-  group: TracingGroup,
-  preferredLength: number
-): { startDistance: number; endDistance: number } | null => {
-  const groupLength = group.endDistance - group.startDistance;
-  if (groupLength <= 1) {
-    return null;
+type PoseAtDistanceBias = "forward" | "backward" | "center";
+
+const getPoseAtOverallDistance = (
+  preparedPath: PreparedTracingPath,
+  targetDistance: number,
+  bias: PoseAtDistanceBias = "center"
+): { point: Point; tangent: Point } => {
+  const totalLength = preparedPath.strokes.reduce((sum, stroke) => sum + stroke.totalLength, 0);
+  const clampedDistance = Math.max(0, Math.min(targetDistance, totalLength));
+  const point = getPointAtOverallDistance(preparedPath, clampedDistance);
+  const delta = Math.min(8, Math.max(2, totalLength / 200));
+
+  let fromDistance = Math.max(0, clampedDistance - delta);
+  let toDistance = Math.min(totalLength, clampedDistance + delta);
+
+  if (bias === "forward") {
+    fromDistance = clampedDistance;
+  } else if (bias === "backward") {
+    toDistance = clampedDistance;
   }
 
-  const arrowLength = Math.min(preferredLength, groupLength * 0.75);
-  if (arrowLength <= 1) {
-    return null;
+  if (Math.abs(toDistance - fromDistance) < 0.001) {
+    if (clampedDistance <= delta) {
+      toDistance = Math.min(totalLength, clampedDistance + delta);
+    } else {
+      fromDistance = Math.max(0, clampedDistance - delta);
+    }
   }
+
+  const fromPoint = getPointAtOverallDistance(preparedPath, fromDistance);
+  const toPoint = getPointAtOverallDistance(preparedPath, toDistance);
 
   return {
-    startDistance: group.startDistance,
-    endDistance: group.startDistance + arrowLength
+    point,
+    tangent: normalizeVector({
+      x: toPoint.x - fromPoint.x,
+      y: toPoint.y - fromPoint.y
+    })
   };
+};
+
+const offsetPosePoint = (pose: { point: Point; tangent: Point }, lateralOffset: number): Point => {
+  const normal = { x: -pose.tangent.y, y: pose.tangent.x };
+  return {
+    x: pose.point.x + normal.x * lateralOffset,
+    y: pose.point.y + normal.y * lateralOffset
+  };
+};
+
+const buildOffsetPathPointsFromOverallDistanceRange = (
+  preparedPath: PreparedTracingPath,
+  startDistance: number,
+  endDistance: number,
+  lateralOffset: number
+): Point[] => {
+  if (endDistance <= startDistance) {
+    return [];
+  }
+
+  const distances = [startDistance];
+  let strokeOffset = 0;
+
+  preparedPath.strokes.forEach((stroke) => {
+    const strokeStart = strokeOffset;
+    const strokeEnd = strokeOffset + stroke.totalLength;
+    strokeOffset = strokeEnd;
+
+    if (endDistance < strokeStart || startDistance > strokeEnd) {
+      return;
+    }
+
+    stroke.samples.forEach((sample) => {
+      const overallDistance = strokeStart + sample.distanceAlongStroke;
+      if (overallDistance > startDistance && overallDistance < endDistance) {
+        distances.push(overallDistance);
+      }
+    });
+  });
+
+  distances.push(endDistance);
+
+  return distances
+    .map((distance, index) => {
+      const bias =
+        index === 0 ? "forward" : index === distances.length - 1 ? "backward" : "center";
+      return offsetPosePoint(getPoseAtOverallDistance(preparedPath, distance, bias), lateralOffset);
+    })
+    .filter((point, index, points) => {
+      const previous = points[index - 1];
+      return !previous || Math.hypot(point.x - previous.x, point.y - previous.y) > 0.01;
+    });
+};
+
+const appendPolylineCommands = (commands: string[], points: Point[], moveToFirst = false) => {
+  if (points.length === 0) {
+    return;
+  }
+
+  const [firstPoint, ...remainingPoints] = points;
+  commands.push(`${moveToFirst ? "M" : "L"} ${firstPoint.x} ${firstPoint.y}`);
+  remainingPoints.forEach((point) => {
+    commands.push(`L ${point.x} ${point.y}`);
+  });
+};
+
+const getGroupEndTangent = (groupIndex: number): Point | null => {
+  const group = tracingGroups[groupIndex];
+  if (!group || !preparedTracingPath) {
+    return null;
+  }
+
+  const sampleDistance = Math.max(group.startDistance, group.endDistance - 24);
+  const samplePoint = getPointAtOverallDistance(preparedTracingPath, sampleDistance);
+  const tangent = normalizeVector({
+    x: group.endPoint.x - samplePoint.x,
+    y: group.endPoint.y - samplePoint.y
+  });
+
+  if (Math.hypot(tangent.x, tangent.y) > 0.001) {
+    return tangent;
+  }
+
+  return normalizeVector({
+    x: group.endPoint.x - group.startPoint.x,
+    y: group.endPoint.y - group.startPoint.y
+  });
+};
+
+const toLocalPoint = (
+  origin: Point,
+  direction: Point,
+  normal: Point,
+  along: number,
+  across: number
+): Point => ({
+  x: origin.x + direction.x * along + normal.x * across,
+  y: origin.y + direction.y * along + normal.y * across
+});
+
+const buildRetraceArrowPath = (
+  turnPoint: Point,
+  startPoint: Point,
+  endPoint: Point,
+  turnDirection: Point,
+  laneNormal: Point,
+  radius: number
+): string[] => {
+  const circleKappa = 0.5522847498;
+  const apex = {
+    x: turnPoint.x + turnDirection.x * radius,
+    y: turnPoint.y + turnDirection.y * radius
+  };
+  const control1 = {
+    x: startPoint.x + turnDirection.x * radius * circleKappa,
+    y: startPoint.y + turnDirection.y * radius * circleKappa
+  };
+  const control2 = {
+    x: apex.x + laneNormal.x * radius * circleKappa,
+    y: apex.y + laneNormal.y * radius * circleKappa
+  };
+  const control3 = {
+    x: apex.x - laneNormal.x * radius * circleKappa,
+    y: apex.y - laneNormal.y * radius * circleKappa
+  };
+  const control4 = {
+    x: endPoint.x + turnDirection.x * radius * circleKappa,
+    y: endPoint.y + turnDirection.y * radius * circleKappa
+  };
+
+  return [
+    `C ${control1.x} ${control1.y} ${control2.x} ${control2.y} ${apex.x} ${apex.y}`,
+    `C ${control3.x} ${control3.y} ${control4.x} ${control4.y} ${endPoint.x} ${endPoint.y}`
+  ];
 };
 
 const syncNextSectionHighlight = () => {
@@ -2294,20 +2449,60 @@ const setupScene = (path: WritingPath, width: number, height: number, offsetY: n
     )
     .join("");
   const sectionArrowMarkup = tracingGroups
-    .map((group) => {
-      const range = getSectionArrowDistanceRange(group, sectionArrowLength);
-      if (!range) {
+    .map((group, index) => {
+      if (group.kind !== "retrace" || index === 0) {
         return "";
       }
 
-      const d = buildPathDFromOverallDistanceRange(
-        preparedPath,
-        range.startDistance,
-        range.endDistance
-      );
-      if (!d) {
+      const previousGroup = tracingGroups[index - 1];
+      const incomingTangent = getGroupEndTangent(index - 1);
+      const outgoingTangent = getGroupStartTangent(index);
+      if (!previousGroup || !incomingTangent || !outgoingTangent) {
         return "";
       }
+
+      const turnDirection = normalizeVector({
+        x: outgoingTangent.x - incomingTangent.x,
+        y: outgoingTangent.y - incomingTangent.y
+      });
+      const laneOffset = Math.min(sectionArrowLength * 0.24, 13);
+      const stemLength = sectionArrowLength * 0.72;
+      const incomingPoints = buildOffsetPathPointsFromOverallDistanceRange(
+        preparedPath,
+        Math.max(previousGroup.startDistance, previousGroup.endDistance - stemLength),
+        previousGroup.endDistance,
+        laneOffset
+      );
+      const outgoingPoints = buildOffsetPathPointsFromOverallDistanceRange(
+        preparedPath,
+        group.startDistance,
+        Math.min(group.endDistance, group.startDistance + stemLength),
+        laneOffset
+      );
+
+      const arcStart = incomingPoints[incomingPoints.length - 1];
+      const arcEnd = outgoingPoints[0];
+      if (!arcStart || !arcEnd) {
+        return "";
+      }
+
+      const laneNormal = normalizeVector({
+        x: arcStart.x - group.startPoint.x,
+        y: arcStart.y - group.startPoint.y
+      });
+      const arcPath = buildRetraceArrowPath(
+        group.startPoint,
+        arcStart,
+        arcEnd,
+        turnDirection,
+        laneNormal,
+        laneOffset
+      );
+      const commands: string[] = [];
+      appendPolylineCommands(commands, incomingPoints, true);
+      commands.push(...arcPath);
+      appendPolylineCommands(commands, outgoingPoints.slice(1));
+      const d = commands.join(" ");
 
       return `<path class="writing-app__section-arrow" d="${d}" marker-end="url(#section-arrowhead)"></path>`;
     })
