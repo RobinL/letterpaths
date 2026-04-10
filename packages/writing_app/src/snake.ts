@@ -79,10 +79,8 @@ const registerSnakeServiceWorker = () => {
   });
 };
 
-const FRUIT_EMOJIS = ["🍎", "🍐", "🍊", "🍓", "🍇", "🍒", "🍉", "🥝"] as const;
+const FRUIT_EMOJI = "🍎";
 const DEFAULT_SNAKE_TRACE_TOLERANCE = 150;
-const FRUIT_SIZE = 44;
-const FRUIT_SPACING = 180;
 const SHOW_ME_SPEED_MULTIPLIER = 0.75;
 const SNAKE_SEGMENT_SPACING = 76;
 const SNAKE_GROWTH_DISTANCE = 115;
@@ -1472,6 +1470,26 @@ const buildPathDFromOverallDistanceRange = (
   return commands.join(" ");
 };
 
+const getSectionArrowDistanceRange = (
+  group: TracingGroup,
+  preferredLength: number
+): { startDistance: number; endDistance: number } | null => {
+  const groupLength = group.endDistance - group.startDistance;
+  if (groupLength <= 1) {
+    return null;
+  }
+
+  const arrowLength = Math.min(preferredLength, groupLength * 0.75);
+  if (arrowLength <= 1) {
+    return null;
+  }
+
+  return {
+    startDistance: group.startDistance,
+    endDistance: group.startDistance + arrowLength
+  };
+};
+
 const syncNextSectionHighlight = () => {
   if (!nextSectionEl || !preparedTracingPath) {
     return;
@@ -1566,30 +1584,17 @@ const maybePauseAtTracingGroupBoundary = (state: TracingState): boolean => {
 };
 
 const createFruitTokens = (
-  preparedPath: PreparedTracingPath,
+  _preparedPath: PreparedTracingPath,
   groups: TracingGroup[]
 ): FruitToken[] => {
-  return groups.flatMap((group, groupIndex) => {
-    const groupLength = group.endDistance - group.startDistance;
-    if (groupLength <= 0) {
-      return [];
-    }
-
-    const count = Math.max(1, Math.round(groupLength / FRUIT_SPACING));
-
-    return Array.from({ length: count }, (_, index) => {
-      const pathDistance = group.startDistance + (groupLength * (index + 1)) / (count + 1);
-      const point = getPointAtOverallDistance(preparedPath, pathDistance);
-      return {
-        x: point.x,
-        y: point.y,
-        pathDistance,
-        emoji: FRUIT_EMOJIS[(groupIndex + index) % FRUIT_EMOJIS.length] ?? FRUIT_EMOJIS[0],
-        captured: false,
-        groupIndex
-      };
-    });
-  });
+  return groups.slice(0, -1).map((group, groupIndex) => ({
+    x: group.endPoint.x,
+    y: group.endPoint.y,
+    pathDistance: group.endDistance,
+    emoji: FRUIT_EMOJI,
+    captured: false,
+    groupIndex
+  }));
 };
 
 const resetFruitState = () => {
@@ -2281,32 +2286,37 @@ const setupScene = (path: WritingPath, width: number, height: number, offsetY: n
   fruits = createFruitTokens(preparedPath, tracingGroups);
 
   const drawableStrokes = drawablePathStrokes;
+  const sectionArrowLength = Math.abs(path.guides.baseline - path.guides.xHeight) / 3;
   const backgroundPaths = tracingGroups
     .map(
       (group) =>
         `<path class="writing-app__stroke-bg" d="${buildPathDFromOverallDistanceRange(preparedPath, group.startDistance, group.endDistance)}"></path>`
     )
     .join("");
+  const sectionArrowMarkup = tracingGroups
+    .map((group) => {
+      const range = getSectionArrowDistanceRange(group, sectionArrowLength);
+      if (!range) {
+        return "";
+      }
+
+      const d = buildPathDFromOverallDistanceRange(
+        preparedPath,
+        range.startDistance,
+        range.endDistance
+      );
+      if (!d) {
+        return "";
+      }
+
+      return `<path class="writing-app__section-arrow" d="${d}" marker-end="url(#section-arrowhead)"></path>`;
+    })
+    .join("");
   const tracePaths = drawableStrokes
     .map((stroke) => `<path class="writing-app__stroke-trace" d="${buildPathD(stroke.curves)}"></path>`)
     .join("");
   const demoPaths = drawableStrokes
     .map((stroke) => `<path class="writing-app__stroke-demo" d="${buildPathD(stroke.curves)}"></path>`)
-    .join("");
-  const fruitMarkup = fruits
-    .map(
-      (fruit, index) => `
-        <text
-          class="writing-app__fruit"
-          data-fruit-index="${index}"
-          x="${fruit.x}"
-          y="${fruit.y}"
-          style="font-size: ${FRUIT_SIZE}px"
-          text-anchor="middle"
-          dominant-baseline="middle"
-        >${fruit.emoji}</text>
-      `
-    )
     .join("");
   const snakeBodyMarkup = Array.from({ length: MAX_SNAKE_BODY_SEGMENTS }, (_, index) => {
     const bodyIndex = MAX_SNAKE_BODY_SEGMENTS - 1 - index;
@@ -2337,6 +2347,21 @@ const setupScene = (path: WritingPath, width: number, height: number, offsetY: n
 
   traceSvg.setAttribute("viewBox", `0 0 ${width} ${height}`);
   traceSvg.innerHTML = `
+    <defs>
+      <marker
+        class="writing-app__section-arrowhead"
+        id="section-arrowhead"
+        viewBox="0 0 12 10"
+        markerWidth="4"
+        markerHeight="2.8"
+        refX="6.2"
+        refY="5"
+        orient="auto"
+        markerUnits="strokeWidth"
+      >
+        <path d="M 0 0 L 8.8 5 L 0 10 z"></path>
+      </marker>
+    </defs>
     <rect class="writing-app__bg" x="0" y="0" width="${width}" height="${height}"></rect>
     <line
       class="writing-app__guide writing-app__guide--midline"
@@ -2355,6 +2380,7 @@ const setupScene = (path: WritingPath, width: number, height: number, offsetY: n
     ${backgroundPaths}
     ${tracePaths}
     <path class="writing-app__stroke-next" id="next-section-stroke" d=""></path>
+    ${sectionArrowMarkup}
     ${demoPaths}
     <text
       class="writing-app__boundary-star"
@@ -2363,7 +2389,7 @@ const setupScene = (path: WritingPath, width: number, height: number, offsetY: n
       y="0"
       text-anchor="middle"
       dominant-baseline="middle"
-    >⭐</text>
+    >🍎</text>
     <g class="writing-app__snake" id="trace-snake">
       <g
         class="writing-app__snake-segment writing-app__snake-tail"
@@ -2386,7 +2412,6 @@ const setupScene = (path: WritingPath, width: number, height: number, offsetY: n
         ></image>
       </g>
     </g>
-    ${fruitMarkup}
     <g class="writing-app__deferred-heads" id="deferred-trail-heads">
       ${deferredTrailHeadMarkup}
     </g>

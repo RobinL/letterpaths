@@ -334,6 +334,20 @@ body {
   stroke-opacity: 0.95;
 }
 
+.writing-app__section-arrow {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 8;
+  stroke-linecap: butt;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+
+.writing-app__section-arrowhead path {
+  fill: var(--ink);
+  stroke: none;
+}
+
 .writing-app__cursor {
   pointer-events: none;
   transition: opacity 0.18s ease;
@@ -787,6 +801,10 @@ body {
   .writing-app__stroke-trace,
   .writing-app__stroke-demo {
     stroke-width: 48;
+  }
+
+  .writing-app__section-arrow {
+    stroke-width: 7;
   }
 
   .writing-app__success-actions {
