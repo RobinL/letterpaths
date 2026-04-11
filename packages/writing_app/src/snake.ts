@@ -1573,54 +1573,6 @@ const buildOffsetPathSamplesFromOverallDistanceRange = (
     });
 };
 
-const smoothstep = (value: number): number => {
-  const clamped = Math.max(0, Math.min(1, value));
-  return clamped * clamped * (3 - 2 * clamped);
-};
-
-const lerpPoint = (from: Point, to: Point, amount: number): Point => ({
-  x: from.x + (to.x - from.x) * amount,
-  y: from.y + (to.y - from.y) * amount
-});
-
-const blendOffsetPathSamplesIntoStraightLane = (
-  samples: OffsetPathSample[],
-  turnDistance: number,
-  laneAnchor: Point,
-  laneDirection: Point,
-  straightLength: number,
-  blendLength: number,
-  mode: "incoming" | "outgoing"
-): Point[] => {
-  const transitionLength = straightLength + blendLength;
-
-  return samples
-    .map((sample) => {
-      const distanceFromTurn =
-        mode === "incoming" ? turnDistance - sample.distance : sample.distance - turnDistance;
-      const positiveDistanceFromTurn = Math.max(0, distanceFromTurn);
-      const lanePoint = {
-        x: laneAnchor.x - laneDirection.x * positiveDistanceFromTurn,
-        y: laneAnchor.y - laneDirection.y * positiveDistanceFromTurn
-      };
-
-      if (positiveDistanceFromTurn <= straightLength) {
-        return lanePoint;
-      }
-
-      if (positiveDistanceFromTurn >= transitionLength || blendLength <= 0) {
-        return sample.point;
-      }
-
-      const blendProgress = (positiveDistanceFromTurn - straightLength) / blendLength;
-      return lerpPoint(sample.point, lanePoint, 1 - smoothstep(blendProgress));
-    })
-    .filter((point, index, points) => {
-      const previous = points[index - 1];
-      return !previous || Math.hypot(point.x - previous.x, point.y - previous.y) > 0.01;
-    });
-};
-
 const appendPolylineCommands = (commands: string[], points: Point[], moveToFirst = false) => {
   if (points.length === 0) {
     return;
@@ -1633,78 +1585,26 @@ const appendPolylineCommands = (commands: string[], points: Point[], moveToFirst
   });
 };
 
-const getGroupEndTangent = (groupIndex: number): Point | null => {
-  const group = tracingGroups[groupIndex];
-  if (!group || !preparedTracingPath) {
-    return null;
-  }
-
-  const sampleDistance = Math.max(group.startDistance, group.endDistance - 24);
-  const samplePoint = getPointAtOverallDistance(preparedTracingPath, sampleDistance);
-  const tangent = normalizeVector({
-    x: group.endPoint.x - samplePoint.x,
-    y: group.endPoint.y - samplePoint.y
-  });
-
-  if (Math.hypot(tangent.x, tangent.y) > 0.001) {
-    return tangent;
-  }
-
-  return normalizeVector({
-    x: group.endPoint.x - group.startPoint.x,
-    y: group.endPoint.y - group.startPoint.y
-  });
-};
-
-const toLocalPoint = (
-  origin: Point,
-  direction: Point,
-  normal: Point,
-  along: number,
-  across: number
-): Point => ({
-  x: origin.x + direction.x * along + normal.x * across,
-  y: origin.y + direction.y * along + normal.y * across
-});
-
-const buildRetraceArrowPath = (
+const buildRoundCapArcPath = (
   turnPoint: Point,
   startPoint: Point,
   endPoint: Point,
-  turnDirection: Point,
-  laneNormal: Point,
   radius: number
-): string[] => {
-  const circleKappa = 0.5522847498;
-  const bendDirection = {
-    x: -turnDirection.x,
-    y: -turnDirection.y
-  };
-  const apex = {
-    x: turnPoint.x + bendDirection.x * radius,
-    y: turnPoint.y + bendDirection.y * radius
-  };
-  const control1 = {
-    x: startPoint.x + bendDirection.x * radius * circleKappa,
-    y: startPoint.y + bendDirection.y * radius * circleKappa
-  };
-  const control2 = {
-    x: apex.x + laneNormal.x * radius * circleKappa,
-    y: apex.y + laneNormal.y * radius * circleKappa
-  };
-  const control3 = {
-    x: apex.x - laneNormal.x * radius * circleKappa,
-    y: apex.y - laneNormal.y * radius * circleKappa
-  };
-  const control4 = {
-    x: endPoint.x + bendDirection.x * radius * circleKappa,
-    y: endPoint.y + bendDirection.y * radius * circleKappa
-  };
+): string => {
+  const startRadius = normalizeVector({
+    x: startPoint.x - turnPoint.x,
+    y: startPoint.y - turnPoint.y
+  });
+  const endRadius = normalizeVector({
+    x: endPoint.x - turnPoint.x,
+    y: endPoint.y - turnPoint.y
+  });
+  const startAngle = Math.atan2(startRadius.y, startRadius.x);
+  const endAngle = Math.atan2(endRadius.y, endRadius.x);
+  const clockwiseAngle = (endAngle - startAngle + Math.PI * 2) % (Math.PI * 2);
+  const sweepFlag = clockwiseAngle <= Math.PI ? 0 : 1;
 
-  return [
-    `C ${control1.x} ${control1.y} ${control2.x} ${control2.y} ${apex.x} ${apex.y}`,
-    `C ${control3.x} ${control3.y} ${control4.x} ${control4.y} ${endPoint.x} ${endPoint.y}`
-  ];
+  return `A ${radius} ${radius} 0 0 ${sweepFlag} ${endPoint.x} ${endPoint.y}`;
 };
 
 const syncNextSectionHighlight = () => {
@@ -2517,25 +2417,12 @@ const setupScene = (path: WritingPath, width: number, height: number, offsetY: n
       }
 
       const previousGroup = tracingGroups[index - 1];
-      const incomingTangent = getGroupEndTangent(index - 1);
-      const outgoingTangent = getGroupStartTangent(index);
-      if (!previousGroup || !incomingTangent || !outgoingTangent) {
+      if (!previousGroup) {
         return "";
       }
 
-      const turnDirection = normalizeVector({
-        x: outgoingTangent.x - incomingTangent.x,
-        y: outgoingTangent.y - incomingTangent.y
-      });
-      const bendDirection = {
-        x: -turnDirection.x,
-        y: -turnDirection.y
-      };
       const laneOffset = Math.min(sectionArrowLength * 0.24, 13);
       const stemLength = sectionArrowLength * 0.72;
-      const transitionLength = Math.min(stemLength * 0.7, laneOffset * 5.4);
-      const straightLength = transitionLength * 0.2;
-      const blendLength = transitionLength - straightLength;
       const incomingSamples = buildOffsetPathSamplesFromOverallDistanceRange(
         preparedPath,
         Math.max(previousGroup.startDistance, previousGroup.endDistance - stemLength),
@@ -2549,46 +2436,35 @@ const setupScene = (path: WritingPath, width: number, height: number, offsetY: n
         laneOffset
       );
 
-      const arcStart = incomingSamples[incomingSamples.length - 1]?.point;
-      const arcEnd = outgoingSamples[0]?.point;
-      if (!arcStart || !arcEnd) {
+      if (incomingSamples.length === 0 || outgoingSamples.length === 0) {
         return "";
       }
 
-      const incomingPoints = blendOffsetPathSamplesIntoStraightLane(
-        incomingSamples,
+      const incomingEndPose = getPoseAtOverallDistance(
+        preparedPath,
         previousGroup.endDistance,
-        arcStart,
-        bendDirection,
-        straightLength,
-        blendLength,
-        "incoming"
+        "backward"
       );
-      const outgoingPoints = blendOffsetPathSamplesIntoStraightLane(
-        outgoingSamples,
+      const outgoingStartPose = getPoseAtOverallDistance(
+        preparedPath,
         group.startDistance,
-        arcEnd,
-        bendDirection,
-        straightLength,
-        blendLength,
-        "outgoing"
+        "forward"
       );
-
-      const laneNormal = normalizeVector({
-        x: arcStart.x - group.startPoint.x,
-        y: arcStart.y - group.startPoint.y
-      });
-      const arcPath = buildRetraceArrowPath(
+      const arcStart = offsetPosePoint(incomingEndPose, laneOffset);
+      const arcEnd = offsetPosePoint(outgoingStartPose, laneOffset);
+      const incomingPoints = incomingSamples.map((sample) => sample.point);
+      const outgoingPoints = outgoingSamples.map((sample) => sample.point);
+      incomingPoints[incomingPoints.length - 1] = arcStart;
+      outgoingPoints[0] = arcEnd;
+      const arcPath = buildRoundCapArcPath(
         group.startPoint,
         arcStart,
         arcEnd,
-        turnDirection,
-        laneNormal,
         laneOffset
       );
       const commands: string[] = [];
       appendPolylineCommands(commands, incomingPoints, true);
-      commands.push(...arcPath);
+      commands.push(arcPath);
       appendPolylineCommands(commands, outgoingPoints.slice(1));
       const d = commands.join(" ");
 
