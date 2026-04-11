@@ -1471,6 +1471,10 @@ const buildPathDFromOverallDistanceRange = (
 };
 
 type PoseAtDistanceBias = "forward" | "backward" | "center";
+type OffsetPathSample = {
+  distance: number;
+  point: Point;
+};
 
 const getPoseAtOverallDistance = (
   preparedPath: PreparedTracingPath,
@@ -1519,12 +1523,12 @@ const offsetPosePoint = (pose: { point: Point; tangent: Point }, lateralOffset: 
   };
 };
 
-const buildOffsetPathPointsFromOverallDistanceRange = (
+const buildOffsetPathSamplesFromOverallDistanceRange = (
   preparedPath: PreparedTracingPath,
   startDistance: number,
   endDistance: number,
   lateralOffset: number
-): Point[] => {
+): OffsetPathSample[] => {
   if (endDistance <= startDistance) {
     return [];
   }
@@ -1555,7 +1559,61 @@ const buildOffsetPathPointsFromOverallDistanceRange = (
     .map((distance, index) => {
       const bias =
         index === 0 ? "forward" : index === distances.length - 1 ? "backward" : "center";
-      return offsetPosePoint(getPoseAtOverallDistance(preparedPath, distance, bias), lateralOffset);
+      return {
+        distance,
+        point: offsetPosePoint(getPoseAtOverallDistance(preparedPath, distance, bias), lateralOffset)
+      };
+    })
+    .filter((sample, index, samples) => {
+      const previous = samples[index - 1];
+      return (
+        !previous ||
+        Math.hypot(sample.point.x - previous.point.x, sample.point.y - previous.point.y) > 0.01
+      );
+    });
+};
+
+const smoothstep = (value: number): number => {
+  const clamped = Math.max(0, Math.min(1, value));
+  return clamped * clamped * (3 - 2 * clamped);
+};
+
+const lerpPoint = (from: Point, to: Point, amount: number): Point => ({
+  x: from.x + (to.x - from.x) * amount,
+  y: from.y + (to.y - from.y) * amount
+});
+
+const blendOffsetPathSamplesIntoStraightLane = (
+  samples: OffsetPathSample[],
+  turnDistance: number,
+  laneAnchor: Point,
+  laneDirection: Point,
+  straightLength: number,
+  blendLength: number,
+  mode: "incoming" | "outgoing"
+): Point[] => {
+  const transitionLength = straightLength + blendLength;
+
+  return samples
+    .map((sample) => {
+      const distanceFromTurn =
+        mode === "incoming" ? turnDistance - sample.distance : sample.distance - turnDistance;
+      const positiveDistanceFromTurn = Math.max(0, distanceFromTurn);
+      const lanePoint = {
+        x: laneAnchor.x - laneDirection.x * positiveDistanceFromTurn,
+        y: laneAnchor.y - laneDirection.y * positiveDistanceFromTurn
+      };
+
+      if (positiveDistanceFromTurn <= straightLength) {
+        return lanePoint;
+      }
+
+      if (positiveDistanceFromTurn >= transitionLength || blendLength <= 0) {
+        return sample.point;
+      }
+
+      const blendProgress = (positiveDistanceFromTurn - straightLength) / blendLength;
+      return lerpPoint(sample.point, lanePoint, 1 - smoothstep(blendProgress));
     })
     .filter((point, index, points) => {
       const previous = points[index - 1];
@@ -1618,13 +1676,17 @@ const buildRetraceArrowPath = (
   radius: number
 ): string[] => {
   const circleKappa = 0.5522847498;
+  const bendDirection = {
+    x: -turnDirection.x,
+    y: -turnDirection.y
+  };
   const apex = {
-    x: turnPoint.x + turnDirection.x * radius,
-    y: turnPoint.y + turnDirection.y * radius
+    x: turnPoint.x + bendDirection.x * radius,
+    y: turnPoint.y + bendDirection.y * radius
   };
   const control1 = {
-    x: startPoint.x + turnDirection.x * radius * circleKappa,
-    y: startPoint.y + turnDirection.y * radius * circleKappa
+    x: startPoint.x + bendDirection.x * radius * circleKappa,
+    y: startPoint.y + bendDirection.y * radius * circleKappa
   };
   const control2 = {
     x: apex.x + laneNormal.x * radius * circleKappa,
@@ -1635,8 +1697,8 @@ const buildRetraceArrowPath = (
     y: apex.y - laneNormal.y * radius * circleKappa
   };
   const control4 = {
-    x: endPoint.x + turnDirection.x * radius * circleKappa,
-    y: endPoint.y + turnDirection.y * radius * circleKappa
+    x: endPoint.x + bendDirection.x * radius * circleKappa,
+    y: endPoint.y + bendDirection.y * radius * circleKappa
   };
 
   return [
@@ -2465,26 +2527,52 @@ const setupScene = (path: WritingPath, width: number, height: number, offsetY: n
         x: outgoingTangent.x - incomingTangent.x,
         y: outgoingTangent.y - incomingTangent.y
       });
+      const bendDirection = {
+        x: -turnDirection.x,
+        y: -turnDirection.y
+      };
       const laneOffset = Math.min(sectionArrowLength * 0.24, 13);
       const stemLength = sectionArrowLength * 0.72;
-      const incomingPoints = buildOffsetPathPointsFromOverallDistanceRange(
+      const transitionLength = Math.min(stemLength * 0.7, laneOffset * 5.4);
+      const straightLength = transitionLength * 0.2;
+      const blendLength = transitionLength - straightLength;
+      const incomingSamples = buildOffsetPathSamplesFromOverallDistanceRange(
         preparedPath,
         Math.max(previousGroup.startDistance, previousGroup.endDistance - stemLength),
         previousGroup.endDistance,
         laneOffset
       );
-      const outgoingPoints = buildOffsetPathPointsFromOverallDistanceRange(
+      const outgoingSamples = buildOffsetPathSamplesFromOverallDistanceRange(
         preparedPath,
         group.startDistance,
         Math.min(group.endDistance, group.startDistance + stemLength),
         laneOffset
       );
 
-      const arcStart = incomingPoints[incomingPoints.length - 1];
-      const arcEnd = outgoingPoints[0];
+      const arcStart = incomingSamples[incomingSamples.length - 1]?.point;
+      const arcEnd = outgoingSamples[0]?.point;
       if (!arcStart || !arcEnd) {
         return "";
       }
+
+      const incomingPoints = blendOffsetPathSamplesIntoStraightLane(
+        incomingSamples,
+        previousGroup.endDistance,
+        arcStart,
+        bendDirection,
+        straightLength,
+        blendLength,
+        "incoming"
+      );
+      const outgoingPoints = blendOffsetPathSamplesIntoStraightLane(
+        outgoingSamples,
+        group.startDistance,
+        arcEnd,
+        bendDirection,
+        straightLength,
+        blendLength,
+        "outgoing"
+      );
 
       const laneNormal = normalizeVector({
         x: arcStart.x - group.startPoint.x,
