@@ -150,6 +150,9 @@ const SNAKE_MOVE_SOUND_SOURCES = [
   sandMoving3Sound,
   sandMoving4Sound
 ] as const;
+const SECTION_ARROWHEAD_LENGTH = 26;
+const SECTION_ARROWHEAD_WIDTH = 22;
+const SECTION_ARROWHEAD_TIP_OVERHANG = 11;
 
 type FruitToken = {
   x: number;
@@ -1633,6 +1636,56 @@ const appendPolylineCommands = (commands: string[], points: Point[], moveToFirst
   });
 };
 
+const getPolylineEndDirection = (points: Point[], fallback: Point): Point => {
+  const tip = points[points.length - 1];
+  if (!tip) {
+    return normalizeVector(fallback);
+  }
+
+  for (let index = points.length - 2; index >= 0; index -= 1) {
+    const point = points[index];
+    if (!point) {
+      continue;
+    }
+
+    const distance = Math.hypot(tip.x - point.x, tip.y - point.y);
+    if (distance >= 1) {
+      return normalizeVector({
+        x: tip.x - point.x,
+        y: tip.y - point.y
+      });
+    }
+  }
+
+  return normalizeVector(fallback);
+};
+
+const buildArrowheadPoints = (tip: Point, direction: Point): string => {
+  const unitDirection = normalizeVector(direction);
+  const normal = {
+    x: -unitDirection.y,
+    y: unitDirection.x
+  };
+  const baseCenter = {
+    x: tip.x - unitDirection.x * SECTION_ARROWHEAD_LENGTH,
+    y: tip.y - unitDirection.y * SECTION_ARROWHEAD_LENGTH
+  };
+  const halfWidth = SECTION_ARROWHEAD_WIDTH / 2;
+  const points = [
+    tip,
+    {
+      x: baseCenter.x + normal.x * halfWidth,
+      y: baseCenter.y + normal.y * halfWidth
+    },
+    {
+      x: baseCenter.x - normal.x * halfWidth,
+      y: baseCenter.y - normal.y * halfWidth
+    }
+  ];
+
+  return points.map((point) => `${point.x} ${point.y}`).join(" ");
+};
+
 const getGroupEndTangent = (groupIndex: number): Point | null => {
   const group = tracingGroups[groupIndex];
   if (!group || !preparedTracingPath) {
@@ -2591,8 +2644,18 @@ const setupScene = (path: WritingPath, width: number, height: number, offsetY: n
       commands.push(...arcPath);
       appendPolylineCommands(commands, outgoingPoints.slice(1));
       const d = commands.join(" ");
+      const arrowheadDirection = getPolylineEndDirection(outgoingPoints, outgoingTangent);
+      const arrowheadPathEnd = outgoingPoints[outgoingPoints.length - 1] ?? arcEnd;
+      const arrowheadPoint = {
+        x: arrowheadPathEnd.x + arrowheadDirection.x * SECTION_ARROWHEAD_TIP_OVERHANG,
+        y: arrowheadPathEnd.y + arrowheadDirection.y * SECTION_ARROWHEAD_TIP_OVERHANG
+      };
+      const arrowheadPoints = buildArrowheadPoints(arrowheadPoint, arrowheadDirection);
 
-      return `<path class="writing-app__section-arrow" d="${d}" marker-end="url(#section-arrowhead)"></path>`;
+      return `
+        <path class="writing-app__section-arrow" d="${d}"></path>
+        <polygon class="writing-app__section-arrowhead" points="${arrowheadPoints}"></polygon>
+      `;
     })
     .join("");
   const tracePaths = drawableStrokes
@@ -2630,21 +2693,6 @@ const setupScene = (path: WritingPath, width: number, height: number, offsetY: n
 
   traceSvg.setAttribute("viewBox", `0 0 ${width} ${height}`);
   traceSvg.innerHTML = `
-    <defs>
-      <marker
-        class="writing-app__section-arrowhead"
-        id="section-arrowhead"
-        viewBox="0 0 12 10"
-        markerWidth="4"
-        markerHeight="2.8"
-        refX="6.2"
-        refY="5"
-        orient="auto"
-        markerUnits="strokeWidth"
-      >
-        <path d="M 0 0 L 8.8 5 L 0 10 z"></path>
-      </marker>
-    </defs>
     <rect class="writing-app__bg" x="0" y="0" width="${width}" height="${height}"></rect>
     <line
       class="writing-app__guide writing-app__guide--midline"

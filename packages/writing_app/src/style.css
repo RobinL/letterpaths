@@ -343,9 +343,10 @@ body {
   pointer-events: none;
 }
 
-.writing-app__section-arrowhead path {
+.writing-app__section-arrowhead {
   fill: var(--ink);
   stroke: none;
+  pointer-events: none;
 }
 
 .writing-app__cursor {
