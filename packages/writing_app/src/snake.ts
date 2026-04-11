@@ -2585,7 +2585,7 @@ const setupScene = (path: WritingPath, width: number, height: number, offsetY: n
         y: -turnDirection.y
       };
       const laneOffset = Math.min(sectionArrowLength * 0.24, 13);
-      const stemLength = sectionArrowLength * 0.72;
+      const stemLength = sectionArrowLength * 0.36;
       const transitionLength = Math.min(stemLength * 0.7, laneOffset * 5.4);
       const straightLength = transitionLength * 0.2;
       const blendLength = transitionLength - straightLength;
