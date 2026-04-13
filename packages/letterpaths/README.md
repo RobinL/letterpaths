@@ -363,6 +363,85 @@ Example:
 
 `analyzeTracingGroups()` looks for authored segment boundaries with a strong turn angle, then confirms that the following path substantially overlaps the earlier path. This avoids splitting at ordinary cusps like `v` or `w`, while still detecting true retracing such as a downstroke followed by an upstroke over the same corridor.
 
+### Formation arrows
+
+Use `compileFormationArrows()` when you want renderer-agnostic direction hints for handwriting formation. The initial arrow type is a retrace U-turn arrow, intended for places where cursive formation doubles back through the same corridor.
+
+```ts
+import {
+  buildHandwritingPath,
+  compileFormationArrows,
+  compileTracingPath,
+  formationArrowCommandsToSvgPathData
+} from "letterpaths";
+
+const path = buildHandwritingPath("sys", { style: "cursive" });
+const prepared = compileTracingPath(path);
+const arrows = compileFormationArrows(prepared, {
+  retraceTurns: {
+    offset: 13,
+    stemLength: 46
+  }
+});
+
+const svgPathData = formationArrowCommandsToSvgPathData(arrows[0]?.commands ?? []);
+```
+
+It returns pure geometry:
+
+```ts
+type FormationArrow = {
+  kind: "retrace-turn";
+  commands: FormationArrowPathCommand[];
+  head?: FormationArrowHead;
+  source: {
+    previousGroupIndex: number;
+    groupIndex: number;
+    startDistance: number;
+    turnDistance: number;
+    endDistance: number;
+  };
+  metrics: {
+    offset: number;
+    incomingStemLength: number;
+    outgoingStemLength: number;
+    headLength?: number;
+    headWidth?: number;
+    tipExtension?: number;
+  };
+};
+
+type FormationArrowHead = {
+  tip: Point;
+  direction: Point;
+  polygon: Point[];
+};
+
+type FormationArrowPathCommand =
+  | { type: "move"; to: Point }
+  | { type: "line"; to: Point }
+  | { type: "cubic"; cp1: Point; cp2: Point; to: Point };
+```
+
+`stemLength` controls the straight section outside the U-turn cap. A single number applies to both sides, or you can pass `{ incoming, outgoing }`. Requested stem lengths are clamped to the available tracing group distance.
+
+`offset` controls the perpendicular distance from the handwriting centreline, which determines how wide the U-turn cap is. Defaults are scaled from the guide height (`baseline - xHeight`) so arrows stay proportional when the writing path is scaled.
+
+The arrow body commands end at the computed arrow path endpoint. `head.tipExtension` moves the head tip forward along the local end direction so a thick stroked body sits under the head instead of blunting it.
+
+If you already called `analyzeTracingGroups()`, pass the groups to avoid recalculating them:
+
+```ts
+const formationArrows = compileFormationArrows(prepared, {
+  retraceTurns: {
+    groups: analysis.groups,
+    offset: 13,
+    stemLength: { incoming: 42, outgoing: 46 },
+    head: { length: 26, width: 22, tipExtension: 11 }
+  }
+});
+```
+
 `TracingSession` is a small state machine:
 
 ```ts
@@ -431,6 +510,15 @@ Retrace group analysis options:
 - `oppositeDirectionDotThreshold?: number`
 - `retraceTurnAngleThreshold?: number`
 - `boundaryLookbackDistance?: number`
+
+Formation arrow options:
+
+- `retraceTurns?: false | RetraceTurnArrowOptions`
+- `offset?: number`
+- `stemLength?: number | { incoming?: number; outgoing?: number }`
+- `head?: false | { length?: number; width?: number; tipExtension?: number }`
+- `groupAnalysis?: AnalyzeTracingGroupsOptions`
+- `groups?: TracingGroup[]`
 
 Session options:
 
@@ -535,6 +623,7 @@ Most users only need these:
 - `compileAnimation`
 - `compileTracingPath`
 - `analyzeTracingGroups`
+- `compileFormationArrows`
 - `TracingSession`
 
 For lower-level control, the package also exports:
@@ -543,5 +632,6 @@ For lower-level control, the package also exports:
 - `buildPreCursiveWord`
 - `joinCursiveWord`
 - `CubicBezier`
+- `formationArrowCommandsToSvgPathData`
 - built-in letter data and lookup helpers
 - all core public types

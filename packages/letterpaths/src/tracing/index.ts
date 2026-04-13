@@ -14,6 +14,19 @@ export type {
   TracingGroupAnalysis
 } from "./groups";
 
+export {
+  compileFormationArrows,
+  formationArrowCommandsToSvgPathData
+} from "./formation-arrows";
+export type {
+  CompileFormationArrowsOptions,
+  FormationArrow,
+  FormationArrowHead,
+  FormationArrowHeadOptions,
+  FormationArrowPathCommand,
+  RetraceTurnArrowOptions
+} from "./formation-arrows";
+
 export { TracingSession } from "./session";
 export type {
   TracingStatus,

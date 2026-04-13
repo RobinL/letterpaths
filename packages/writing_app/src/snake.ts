@@ -3,7 +3,9 @@ import {
   AnimationPlayer,
   TracingSession,
   analyzeTracingGroups,
+  compileFormationArrows,
   compileTracingPath,
+  formationArrowCommandsToSvgPathData,
   type Point,
   type PreparedTracingPath,
   type PreparedStroke,
@@ -1473,292 +1475,8 @@ const buildPathDFromOverallDistanceRange = (
   return commands.join(" ");
 };
 
-type PoseAtDistanceBias = "forward" | "backward" | "center";
-type OffsetPathSample = {
-  distance: number;
-  point: Point;
-};
-
-const getPoseAtOverallDistance = (
-  preparedPath: PreparedTracingPath,
-  targetDistance: number,
-  bias: PoseAtDistanceBias = "center"
-): { point: Point; tangent: Point } => {
-  const totalLength = preparedPath.strokes.reduce((sum, stroke) => sum + stroke.totalLength, 0);
-  const clampedDistance = Math.max(0, Math.min(targetDistance, totalLength));
-  const point = getPointAtOverallDistance(preparedPath, clampedDistance);
-  const delta = Math.min(8, Math.max(2, totalLength / 200));
-
-  let fromDistance = Math.max(0, clampedDistance - delta);
-  let toDistance = Math.min(totalLength, clampedDistance + delta);
-
-  if (bias === "forward") {
-    fromDistance = clampedDistance;
-  } else if (bias === "backward") {
-    toDistance = clampedDistance;
-  }
-
-  if (Math.abs(toDistance - fromDistance) < 0.001) {
-    if (clampedDistance <= delta) {
-      toDistance = Math.min(totalLength, clampedDistance + delta);
-    } else {
-      fromDistance = Math.max(0, clampedDistance - delta);
-    }
-  }
-
-  const fromPoint = getPointAtOverallDistance(preparedPath, fromDistance);
-  const toPoint = getPointAtOverallDistance(preparedPath, toDistance);
-
-  return {
-    point,
-    tangent: normalizeVector({
-      x: toPoint.x - fromPoint.x,
-      y: toPoint.y - fromPoint.y
-    })
-  };
-};
-
-const offsetPosePoint = (pose: { point: Point; tangent: Point }, lateralOffset: number): Point => {
-  const normal = { x: -pose.tangent.y, y: pose.tangent.x };
-  return {
-    x: pose.point.x + normal.x * lateralOffset,
-    y: pose.point.y + normal.y * lateralOffset
-  };
-};
-
-const buildOffsetPathSamplesFromOverallDistanceRange = (
-  preparedPath: PreparedTracingPath,
-  startDistance: number,
-  endDistance: number,
-  lateralOffset: number
-): OffsetPathSample[] => {
-  if (endDistance <= startDistance) {
-    return [];
-  }
-
-  const distances = [startDistance];
-  let strokeOffset = 0;
-
-  preparedPath.strokes.forEach((stroke) => {
-    const strokeStart = strokeOffset;
-    const strokeEnd = strokeOffset + stroke.totalLength;
-    strokeOffset = strokeEnd;
-
-    if (endDistance < strokeStart || startDistance > strokeEnd) {
-      return;
-    }
-
-    stroke.samples.forEach((sample) => {
-      const overallDistance = strokeStart + sample.distanceAlongStroke;
-      if (overallDistance > startDistance && overallDistance < endDistance) {
-        distances.push(overallDistance);
-      }
-    });
-  });
-
-  distances.push(endDistance);
-
-  return distances
-    .map((distance, index) => {
-      const bias =
-        index === 0 ? "forward" : index === distances.length - 1 ? "backward" : "center";
-      return {
-        distance,
-        point: offsetPosePoint(getPoseAtOverallDistance(preparedPath, distance, bias), lateralOffset)
-      };
-    })
-    .filter((sample, index, samples) => {
-      const previous = samples[index - 1];
-      return (
-        !previous ||
-        Math.hypot(sample.point.x - previous.point.x, sample.point.y - previous.point.y) > 0.01
-      );
-    });
-};
-
-const smoothstep = (value: number): number => {
-  const clamped = Math.max(0, Math.min(1, value));
-  return clamped * clamped * (3 - 2 * clamped);
-};
-
-const lerpPoint = (from: Point, to: Point, amount: number): Point => ({
-  x: from.x + (to.x - from.x) * amount,
-  y: from.y + (to.y - from.y) * amount
-});
-
-const blendOffsetPathSamplesIntoStraightLane = (
-  samples: OffsetPathSample[],
-  turnDistance: number,
-  laneAnchor: Point,
-  laneDirection: Point,
-  straightLength: number,
-  blendLength: number,
-  mode: "incoming" | "outgoing"
-): Point[] => {
-  const transitionLength = straightLength + blendLength;
-
-  return samples
-    .map((sample) => {
-      const distanceFromTurn =
-        mode === "incoming" ? turnDistance - sample.distance : sample.distance - turnDistance;
-      const positiveDistanceFromTurn = Math.max(0, distanceFromTurn);
-      const lanePoint = {
-        x: laneAnchor.x - laneDirection.x * positiveDistanceFromTurn,
-        y: laneAnchor.y - laneDirection.y * positiveDistanceFromTurn
-      };
-
-      if (positiveDistanceFromTurn <= straightLength) {
-        return lanePoint;
-      }
-
-      if (positiveDistanceFromTurn >= transitionLength || blendLength <= 0) {
-        return sample.point;
-      }
-
-      const blendProgress = (positiveDistanceFromTurn - straightLength) / blendLength;
-      return lerpPoint(sample.point, lanePoint, 1 - smoothstep(blendProgress));
-    })
-    .filter((point, index, points) => {
-      const previous = points[index - 1];
-      return !previous || Math.hypot(point.x - previous.x, point.y - previous.y) > 0.01;
-    });
-};
-
-const appendPolylineCommands = (commands: string[], points: Point[], moveToFirst = false) => {
-  if (points.length === 0) {
-    return;
-  }
-
-  const [firstPoint, ...remainingPoints] = points;
-  commands.push(`${moveToFirst ? "M" : "L"} ${firstPoint.x} ${firstPoint.y}`);
-  remainingPoints.forEach((point) => {
-    commands.push(`L ${point.x} ${point.y}`);
-  });
-};
-
-const getPolylineEndDirection = (points: Point[], fallback: Point): Point => {
-  const tip = points[points.length - 1];
-  if (!tip) {
-    return normalizeVector(fallback);
-  }
-
-  for (let index = points.length - 2; index >= 0; index -= 1) {
-    const point = points[index];
-    if (!point) {
-      continue;
-    }
-
-    const distance = Math.hypot(tip.x - point.x, tip.y - point.y);
-    if (distance >= 1) {
-      return normalizeVector({
-        x: tip.x - point.x,
-        y: tip.y - point.y
-      });
-    }
-  }
-
-  return normalizeVector(fallback);
-};
-
-const buildArrowheadPoints = (tip: Point, direction: Point): string => {
-  const unitDirection = normalizeVector(direction);
-  const normal = {
-    x: -unitDirection.y,
-    y: unitDirection.x
-  };
-  const baseCenter = {
-    x: tip.x - unitDirection.x * SECTION_ARROWHEAD_LENGTH,
-    y: tip.y - unitDirection.y * SECTION_ARROWHEAD_LENGTH
-  };
-  const halfWidth = SECTION_ARROWHEAD_WIDTH / 2;
-  const points = [
-    tip,
-    {
-      x: baseCenter.x + normal.x * halfWidth,
-      y: baseCenter.y + normal.y * halfWidth
-    },
-    {
-      x: baseCenter.x - normal.x * halfWidth,
-      y: baseCenter.y - normal.y * halfWidth
-    }
-  ];
-
-  return points.map((point) => `${point.x} ${point.y}`).join(" ");
-};
-
-const getGroupEndTangent = (groupIndex: number): Point | null => {
-  const group = tracingGroups[groupIndex];
-  if (!group || !preparedTracingPath) {
-    return null;
-  }
-
-  const sampleDistance = Math.max(group.startDistance, group.endDistance - 24);
-  const samplePoint = getPointAtOverallDistance(preparedTracingPath, sampleDistance);
-  const tangent = normalizeVector({
-    x: group.endPoint.x - samplePoint.x,
-    y: group.endPoint.y - samplePoint.y
-  });
-
-  if (Math.hypot(tangent.x, tangent.y) > 0.001) {
-    return tangent;
-  }
-
-  return normalizeVector({
-    x: group.endPoint.x - group.startPoint.x,
-    y: group.endPoint.y - group.startPoint.y
-  });
-};
-
-const toLocalPoint = (
-  origin: Point,
-  direction: Point,
-  normal: Point,
-  along: number,
-  across: number
-): Point => ({
-  x: origin.x + direction.x * along + normal.x * across,
-  y: origin.y + direction.y * along + normal.y * across
-});
-
-const buildRetraceArrowPath = (
-  turnPoint: Point,
-  startPoint: Point,
-  endPoint: Point,
-  turnDirection: Point,
-  laneNormal: Point,
-  radius: number
-): string[] => {
-  const circleKappa = 0.5522847498;
-  const bendDirection = {
-    x: -turnDirection.x,
-    y: -turnDirection.y
-  };
-  const apex = {
-    x: turnPoint.x + bendDirection.x * radius,
-    y: turnPoint.y + bendDirection.y * radius
-  };
-  const control1 = {
-    x: startPoint.x + bendDirection.x * radius * circleKappa,
-    y: startPoint.y + bendDirection.y * radius * circleKappa
-  };
-  const control2 = {
-    x: apex.x + laneNormal.x * radius * circleKappa,
-    y: apex.y + laneNormal.y * radius * circleKappa
-  };
-  const control3 = {
-    x: apex.x - laneNormal.x * radius * circleKappa,
-    y: apex.y - laneNormal.y * radius * circleKappa
-  };
-  const control4 = {
-    x: endPoint.x + bendDirection.x * radius * circleKappa,
-    y: endPoint.y + bendDirection.y * radius * circleKappa
-  };
-
-  return [
-    `C ${control1.x} ${control1.y} ${control2.x} ${control2.y} ${apex.x} ${apex.y}`,
-    `C ${control3.x} ${control3.y} ${control4.x} ${control4.y} ${endPoint.x} ${endPoint.y}`
-  ];
-};
+const buildSvgPoints = (points: Point[]): string =>
+  points.map((point) => `${point.x} ${point.y}`).join(" ");
 
 const syncNextSectionHighlight = () => {
   if (!nextSectionEl || !preparedTracingPath) {
@@ -2563,100 +2281,31 @@ const setupScene = (path: WritingPath, width: number, height: number, offsetY: n
         `<path class="writing-app__stroke-bg" d="${buildPathDFromOverallDistanceRange(preparedPath, group.startDistance, group.endDistance)}"></path>`
     )
     .join("");
-  const sectionArrowMarkup = tracingGroups
-    .map((group, index) => {
-      if (group.kind !== "retrace" || index === 0) {
-        return "";
-      }
-
-      const previousGroup = tracingGroups[index - 1];
-      const incomingTangent = getGroupEndTangent(index - 1);
-      const outgoingTangent = getGroupStartTangent(index);
-      if (!previousGroup || !incomingTangent || !outgoingTangent) {
-        return "";
-      }
-
-      const turnDirection = normalizeVector({
-        x: outgoingTangent.x - incomingTangent.x,
-        y: outgoingTangent.y - incomingTangent.y
-      });
-      const bendDirection = {
-        x: -turnDirection.x,
-        y: -turnDirection.y
-      };
-      const laneOffset = Math.min(sectionArrowLength * 0.24, 13);
-      const stemLength = sectionArrowLength * 0.36;
-      const transitionLength = Math.min(stemLength * 0.7, laneOffset * 5.4);
-      const straightLength = transitionLength * 0.2;
-      const blendLength = transitionLength - straightLength;
-      const incomingSamples = buildOffsetPathSamplesFromOverallDistanceRange(
-        preparedPath,
-        Math.max(previousGroup.startDistance, previousGroup.endDistance - stemLength),
-        previousGroup.endDistance,
-        laneOffset
-      );
-      const outgoingSamples = buildOffsetPathSamplesFromOverallDistanceRange(
-        preparedPath,
-        group.startDistance,
-        Math.min(group.endDistance, group.startDistance + stemLength),
-        laneOffset
-      );
-
-      const arcStart = incomingSamples[incomingSamples.length - 1]?.point;
-      const arcEnd = outgoingSamples[0]?.point;
-      if (!arcStart || !arcEnd) {
-        return "";
-      }
-
-      const incomingPoints = blendOffsetPathSamplesIntoStraightLane(
-        incomingSamples,
-        previousGroup.endDistance,
-        arcStart,
-        bendDirection,
-        straightLength,
-        blendLength,
-        "incoming"
-      );
-      const outgoingPoints = blendOffsetPathSamplesIntoStraightLane(
-        outgoingSamples,
-        group.startDistance,
-        arcEnd,
-        bendDirection,
-        straightLength,
-        blendLength,
-        "outgoing"
-      );
-
-      const laneNormal = normalizeVector({
-        x: arcStart.x - group.startPoint.x,
-        y: arcStart.y - group.startPoint.y
-      });
-      const arcPath = buildRetraceArrowPath(
-        group.startPoint,
-        arcStart,
-        arcEnd,
-        turnDirection,
-        laneNormal,
-        laneOffset
-      );
-      const commands: string[] = [];
-      appendPolylineCommands(commands, incomingPoints, true);
-      commands.push(...arcPath);
-      appendPolylineCommands(commands, outgoingPoints.slice(1));
-      const d = commands.join(" ");
-      const arrowheadDirection = getPolylineEndDirection(outgoingPoints, outgoingTangent);
-      const arrowheadPathEnd = outgoingPoints[outgoingPoints.length - 1] ?? arcEnd;
-      const arrowheadPoint = {
-        x: arrowheadPathEnd.x + arrowheadDirection.x * SECTION_ARROWHEAD_TIP_OVERHANG,
-        y: arrowheadPathEnd.y + arrowheadDirection.y * SECTION_ARROWHEAD_TIP_OVERHANG
-      };
-      const arrowheadPoints = buildArrowheadPoints(arrowheadPoint, arrowheadDirection);
-
-      return `
-        <path class="writing-app__section-arrow" d="${d}"></path>
-        <polygon class="writing-app__section-arrowhead" points="${arrowheadPoints}"></polygon>
-      `;
-    })
+  const sectionArrowMarkup = compileFormationArrows(preparedPath, {
+    retraceTurns: {
+      offset: Math.min(sectionArrowLength * 0.24, 13),
+      stemLength: sectionArrowLength * 0.36,
+      head: {
+        length: SECTION_ARROWHEAD_LENGTH,
+        width: SECTION_ARROWHEAD_WIDTH,
+        tipExtension: SECTION_ARROWHEAD_TIP_OVERHANG
+      },
+      groups: tracingGroups
+    }
+  })
+    .map(
+      (arrow) => `
+        <path
+          class="writing-app__section-arrow"
+          d="${formationArrowCommandsToSvgPathData(arrow.commands)}"
+        ></path>
+        ${
+          arrow.head
+            ? `<polygon class="writing-app__section-arrowhead" points="${buildSvgPoints(arrow.head.polygon)}"></polygon>`
+            : ""
+        }
+      `
+    )
     .join("");
   const tracePaths = drawableStrokes
     .map((stroke) => `<path class="writing-app__stroke-trace" d="${buildPathD(stroke.curves)}"></path>`)
