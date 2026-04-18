@@ -1,7 +1,13 @@
 import "./editor.css";
-import type { BezierLetter, LetterGuides, SegmentId } from "letterpaths";
+import type {
+  BezierLetter,
+  LetterGuides,
+  LetterStroke,
+  SegmentId
+} from "letterpaths";
 
 type Point = { x: number; y: number };
+type StrokePhase = LetterStroke["phase"];
 
 type EditorMark = {
   x: number;
@@ -13,6 +19,7 @@ type EditorCurve = {
   id: string;
   strokeIndex: number;
   curveIndex: number;
+  strokePhase: StrokePhase;
   points: Point[];
   segmentId?: SegmentId;
   cornerStart?: boolean;
@@ -103,6 +110,10 @@ app.innerHTML = `
           <button class="editor-button" id="curve-apply-segment" type="button">
             Apply segment
           </button>
+          <label class="toggle toggle--phase">
+            <input type="checkbox" id="stroke-deferred" />
+            <span>Deferred stroke</span>
+          </label>
           <button class="editor-button" id="dot-toggle" type="button">Dot tool</button>
           <label class="control">
             <span>Dot size</span>
@@ -120,6 +131,7 @@ app.innerHTML = `
           <button class="editor-button" id="curve-delete-short" type="button">Delete short</button>
           <button class="editor-button" id="curve-join" type="button">Join</button>
           <button class="editor-button" id="curve-scissors" type="button">Scissors</button>
+          <button class="editor-button" id="curve-draw" type="button">Draw stroke</button>
           <button class="editor-button" id="curve-copy" type="button">Copy JSON</button>
           <button class="editor-button" id="curve-download" type="button">Download JSON</button>
         </div>
@@ -159,6 +171,8 @@ const curveSegmentEl =
   document.querySelector<HTMLSelectElement>("#curve-segment")!;
 const curveApplySegmentEl =
   document.querySelector<HTMLButtonElement>("#curve-apply-segment")!;
+const strokeDeferredEl =
+  document.querySelector<HTMLInputElement>("#stroke-deferred")!;
 const dotToggleEl =
   document.querySelector<HTMLButtonElement>("#dot-toggle")!;
 const dotSizeEl =
@@ -181,6 +195,8 @@ const curveJoinEl =
   document.querySelector<HTMLButtonElement>("#curve-join")!;
 const curveScissorsEl =
   document.querySelector<HTMLButtonElement>("#curve-scissors")!;
+const curveDrawEl =
+  document.querySelector<HTMLButtonElement>("#curve-draw")!;
 const curveCopyEl =
   document.querySelector<HTMLButtonElement>("#curve-copy")!;
 const curveDownloadEl =
@@ -197,6 +213,7 @@ const builtInLetterSelectEl =
 const state = {
   editorIndex: 0,
   shortThreshold: Number(shortThresholdEl.value) || 12,
+  drawMode: false,
   dotMode: false,
   dotSize: Number(dotSizeEl.value) || 18
 };
@@ -208,6 +225,7 @@ const MAX_EDITOR_ZOOM = 16;
 const WHEEL_ZOOM_STEP = 0.002;
 const EDITOR_PAN_STEP = 0.08;
 const EDITOR_FAST_PAN_STEP = 0.25;
+const MIN_DRAWN_CURVE_LENGTH = 3;
 const SEGMENT_TYPES: SegmentId[] = [
   "lead-in",
   "entry",
@@ -228,6 +246,8 @@ const DEFAULT_GUIDES: LetterGuides = {
 let editorCurves: EditorCurve[] = [];
 let editorOriginal: EditorCurve[] = [];
 let editorDrag: { curveIndex: number; pointIndex: number } | null = null;
+let drawDrag: { curveIndex: number; pointerId: number; start: Point } | null =
+  null;
 let editorMarkDrag: { index: number } | null = null;
 let editorMarkPointerId: number | null = null;
 let editorContext: EditorContext = {};
@@ -262,8 +282,15 @@ curveSegmentEl.addEventListener("change", () => {
 curveApplySegmentEl.addEventListener("click", () => {
   applySelectedSegment();
 });
+strokeDeferredEl.addEventListener("change", () => {
+  applySelectedStrokePhase(strokeDeferredEl.checked ? "deferred" : "main");
+});
 dotToggleEl.addEventListener("click", () => {
   state.dotMode = !state.dotMode;
+  if (state.dotMode) {
+    state.drawMode = false;
+    scissorsMode = false;
+  }
   updateEditorUI();
   editorStatusEl.textContent = state.dotMode
     ? "Dot tool enabled: click to place a dot. Drag to reposition, shift-click to delete."
@@ -316,10 +343,25 @@ curveJoinEl.addEventListener("click", () => {
 });
 curveScissorsEl.addEventListener("click", () => {
   scissorsMode = !scissorsMode;
+  if (scissorsMode) {
+    state.dotMode = false;
+    state.drawMode = false;
+  }
   updateEditorUI();
   editorStatusEl.textContent = scissorsMode
     ? "Scissors enabled: click a lead-in/out curve to split."
     : "Scissors disabled.";
+});
+curveDrawEl.addEventListener("click", () => {
+  state.drawMode = !state.drawMode;
+  if (state.drawMode) {
+    state.dotMode = false;
+    scissorsMode = false;
+  }
+  updateEditorUI();
+  editorStatusEl.textContent = state.drawMode
+    ? "Draw stroke enabled: drag on the canvas to create a disconnected bezier."
+    : "Draw stroke disabled.";
 });
 curveCopyEl.addEventListener("click", async () => {
   const payload = buildBezierExport();
@@ -455,6 +497,12 @@ editorSvg.addEventListener("pointerdown", (event) => {
     editorSvg.setPointerCapture(event.pointerId);
     return;
   }
+  if (state.drawMode) {
+    const coords = toSvgCoords(event, editorSvg);
+    startDrawnCurve(coords, event.pointerId);
+    editorSvg.setPointerCapture(event.pointerId);
+    return;
+  }
   const curveIndex = Number(target.dataset.curveIndex);
   const pointIndex = Number(target.dataset.pointIndex);
   if (Number.isFinite(curveIndex) && Number.isFinite(pointIndex)) {
@@ -492,6 +540,12 @@ editorSvg.addEventListener("pointermove", (event) => {
       guides[draggingGuideId] = clamp(point.y, 0, 1000);
     }
     editorContext.guides = guides;
+    renderEditor();
+    return;
+  }
+  if (drawDrag && drawDrag.pointerId === event.pointerId) {
+    const coords = toSvgCoords(event, editorSvg);
+    updateDrawnCurve(coords);
     renderEditor();
     return;
   }
@@ -570,6 +624,11 @@ editorSvg.addEventListener("pointerup", (event) => {
     renderEditor();
     return;
   }
+  if (drawDrag && drawDrag.pointerId === event.pointerId) {
+    editorSvg.releasePointerCapture(event.pointerId);
+    finishDrawnCurve();
+    return;
+  }
   if (editorDrag) {
     editorSvg.releasePointerCapture(event.pointerId);
   }
@@ -588,6 +647,9 @@ editorSvg.addEventListener("pointerup", (event) => {
   editorDrag = null;
 });
 editorSvg.addEventListener("pointerleave", () => {
+  if (drawDrag) {
+    finishDrawnCurve();
+  }
   editorDrag = null;
   editorMarkDrag = null;
   editorMarkPointerId = null;
@@ -696,6 +758,8 @@ function updateEditorUI() {
   curveJoinEl.disabled = !hasCurves;
   curveScissorsEl.disabled = !hasCurves;
   curveScissorsEl.classList.toggle("is-active", scissorsMode);
+  curveDrawEl.classList.toggle("is-active", state.drawMode);
+  strokeDeferredEl.disabled = !hasCurves;
   dotToggleEl.disabled = !hasCurves;
   dotToggleEl.classList.toggle("is-active", state.dotMode);
   dotSizeEl.disabled = !hasCurves;
@@ -707,9 +771,13 @@ function updateEditorUI() {
     .map((curve, index) => {
       const segmentLabel = normalizeSegmentId(curve.segmentId);
       const suffix = segmentLabel ? ` (${segmentLabel})` : "";
+      const phaseSuffix =
+        normalizeStrokePhase(curve.strokePhase) === "deferred"
+          ? " [deferred]"
+          : "";
       return `<option value="${index}">Stroke ${curve.strokeIndex + 1} - Curve ${
         curve.curveIndex + 1
-      }${suffix}</option>`;
+      }${suffix}${phaseSuffix}</option>`;
     })
     .join("");
   if (state.editorIndex >= 0 && state.editorIndex < editorCurves.length) {
@@ -728,7 +796,11 @@ function syncSegmentControls() {
   const segmentLabel = normalizeSegmentId(selected?.segmentId);
   curveSegmentEl.disabled = !selected;
   curveApplySegmentEl.disabled = !selected;
+  strokeDeferredEl.disabled = !selected;
   curveSegmentEl.value = segmentLabel ?? "";
+  strokeDeferredEl.checked =
+    selected !== null &&
+    normalizeStrokePhase(selected.strokePhase) === "deferred";
 }
 
 function applySelectedSegment() {
@@ -747,9 +819,116 @@ function applySelectedSegment() {
     : "Segment cleared.";
 }
 
+function applySelectedStrokePhase(nextPhase: StrokePhase) {
+  const selected =
+    state.editorIndex >= 0 && state.editorIndex < editorCurves.length
+      ? editorCurves[state.editorIndex]
+      : null;
+  if (!selected) {
+    return;
+  }
+  setStrokePhase(selected.strokeIndex, nextPhase);
+  updateEditorUI();
+  editorStatusEl.textContent =
+    nextPhase === "deferred" ? "Stroke set to deferred." : "Stroke set to main.";
+}
+
 function clearSelection() {
   selectionState = null;
   selectedHandles = [];
+}
+
+function startDrawnCurve(start: Point, pointerId: number) {
+  if (!editorContext.guides) {
+    editorContext.guides = { ...DEFAULT_GUIDES };
+  }
+  clearSelection();
+  const strokeIndex = getNextStrokeIndex();
+  const segmentId = normalizeSegmentId(curveSegmentEl.value) ?? "body";
+  const strokePhase = strokeDeferredEl.checked ? "deferred" : "main";
+  const curve: EditorCurve = {
+    id: `draw-${Date.now()}-${editorCurves.length}`,
+    strokeIndex,
+    curveIndex: 0,
+    strokePhase,
+    points: buildStandaloneCurvePoints(start, start),
+    segmentId
+  };
+  editorCurves.push(curve);
+  state.editorIndex = editorCurves.length - 1;
+  drawDrag = {
+    curveIndex: state.editorIndex,
+    pointerId,
+    start
+  };
+  updateEditorUI();
+}
+
+function updateDrawnCurve(end: Point) {
+  if (!drawDrag) {
+    return;
+  }
+  const curve = editorCurves[drawDrag.curveIndex];
+  if (!curve) {
+    return;
+  }
+  curve.points = buildStandaloneCurvePoints(drawDrag.start, end);
+}
+
+function finishDrawnCurve() {
+  if (!drawDrag) {
+    return;
+  }
+  const curveIndex = drawDrag.curveIndex;
+  const curve = editorCurves[curveIndex];
+  drawDrag = null;
+  if (!curve) {
+    return;
+  }
+  const length = Math.hypot(
+    curve.points[3].x - curve.points[0].x,
+    curve.points[3].y - curve.points[0].y
+  );
+  if (length < MIN_DRAWN_CURVE_LENGTH) {
+    editorCurves.splice(curveIndex, 1);
+    state.editorIndex =
+      editorCurves.length > 0
+        ? Math.min(curveIndex, editorCurves.length - 1)
+        : -1;
+    updateEditorUI();
+    editorStatusEl.textContent = "Draw stroke cancelled: drag further.";
+    return;
+  }
+  markCornerJoins(editorCurves, MAX_TURN_ANGLE);
+  editorOriginal = editorCurves.map((entry) => ({
+    ...entry,
+    points: entry.points.map((point) => ({ ...point }))
+  }));
+  state.editorIndex = curveIndex;
+  updateEditorUI();
+  editorStatusEl.textContent = `Added disconnected stroke ${
+    curve.strokeIndex + 1
+  }.`;
+}
+
+function buildStandaloneCurvePoints(start: Point, end: Point): Point[] {
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  return [
+    { ...start },
+    { x: start.x + dx / 3, y: start.y + dy / 3 },
+    { x: start.x + (dx * 2) / 3, y: start.y + (dy * 2) / 3 },
+    { ...end }
+  ];
+}
+
+function getNextStrokeIndex() {
+  return (
+    editorCurves.reduce(
+      (maxStrokeIndex, curve) => Math.max(maxStrokeIndex, curve.strokeIndex),
+      -1
+    ) + 1
+  );
 }
 
 function addEditorMark(point: Point) {
@@ -933,6 +1112,7 @@ function mergeStrokes(targetStrokeIndex: number, sourceStrokeIndex: number) {
   if (targetStrokeIndex === sourceStrokeIndex) {
     return;
   }
+  const targetPhase = getStrokePhase(targetStrokeIndex);
   const targetMax = editorCurves
     .filter((curve) => curve.strokeIndex === targetStrokeIndex)
     .reduce((max, curve) => Math.max(max, curve.curveIndex), -1);
@@ -942,6 +1122,7 @@ function mergeStrokes(targetStrokeIndex: number, sourceStrokeIndex: number) {
     if (curve.strokeIndex === sourceStrokeIndex) {
       curve.strokeIndex = targetStrokeIndex;
       curve.curveIndex += offset;
+      curve.strokePhase = targetPhase;
     }
   });
 
@@ -1160,7 +1341,7 @@ function buildBezierExport(): BezierLetter | null {
     const segmentId = normalizeSegmentId(curves[0]?.segmentId);
     return {
       kind: "stroke" as const,
-      phase: "main" as const,
+      phase: normalizeStrokePhase(curves[0]?.strokePhase),
       segment: segmentId,
       curves: curves.map((curve) => ({
         p0: { ...curve.points[0] },
@@ -1317,11 +1498,13 @@ function buildEditorCurvesFromLetter(letter: BezierLetter): {
       return;
     }
     const fallbackSegment = normalizeSegmentId(stroke.segment);
+    const strokePhase = normalizeStrokePhase(stroke.phase);
     stroke.curves.forEach((curve, curveIndex) => {
       curves.push({
         id: `${strokeIndex}-${curveIndex}`,
         strokeIndex,
         curveIndex,
+        strokePhase,
         points: [
           { x: curve.p0.x, y: curve.p0.y },
           { x: curve.p1.x, y: curve.p1.y },
@@ -1345,6 +1528,25 @@ function normalizeSegmentId(value: string | SegmentId | undefined | null) {
   return SEGMENT_TYPES.includes(trimmed as SegmentId)
     ? (trimmed as SegmentId)
     : undefined;
+}
+
+function normalizeStrokePhase(
+  value: string | StrokePhase | undefined | null
+): StrokePhase {
+  return value === "deferred" ? "deferred" : "main";
+}
+
+function getStrokePhase(strokeIndex: number): StrokePhase {
+  const curve = editorCurves.find((entry) => entry.strokeIndex === strokeIndex);
+  return normalizeStrokePhase(curve?.strokePhase);
+}
+
+function setStrokePhase(strokeIndex: number, phase: StrokePhase) {
+  editorCurves.forEach((curve) => {
+    if (curve.strokeIndex === strokeIndex) {
+      curve.strokePhase = phase;
+    }
+  });
 }
 
 function splitCurveAtPoint(curveIndex: number, target: Point) {
@@ -1482,11 +1684,14 @@ function renderEditor() {
   syncSegmentControls();
   applyEditorViewBox();
   editorSvg.classList.toggle("is-dot-mode", state.dotMode);
+  editorSvg.classList.toggle("is-draw-mode", state.drawMode);
   if (editorCurves.length === 0) {
     resetEditorViewBox();
     editorSvg.innerHTML =
       '<text class="empty-label" x="50" y="60">Load a bezier letter to begin.</text>';
-    editorStatusEl.textContent = "";
+    editorStatusEl.textContent = state.drawMode
+      ? "Draw stroke enabled: drag on the canvas to create a disconnected bezier."
+      : "";
     return;
   }
   const hasActiveCurve =
@@ -1528,7 +1733,10 @@ function renderEditor() {
           : curveStrokeWidth;
       const segmentId = normalizeSegmentId(curve.segmentId);
       const segmentAttr = segmentId ? ` data-segment="${segmentId}"` : "";
-      return `<path class="${className}" d="${d}" data-curve-index="${index}" stroke-width="${strokeWidth}"${segmentAttr}></path>`;
+      const phaseAttr = ` data-phase="${normalizeStrokePhase(
+        curve.strokePhase
+      )}"`;
+      return `<path class="${className}" d="${d}" data-curve-index="${index}" stroke-width="${strokeWidth}"${segmentAttr}${phaseAttr}></path>`;
     })
     .join("");
   const selectionRect = selectionState
@@ -1619,19 +1827,22 @@ function renderEditor() {
         : "No curve selected.";
     const scissorsLabel = scissorsMode ? " | Scissors on" : "";
     const dotLabel = state.dotMode ? " | Dot tool on" : "";
-    editorStatusEl.textContent = `${selectionLabel}${scissorsLabel}${dotLabel}`;
+    const drawLabel = state.drawMode ? " | Draw stroke on" : "";
+    editorStatusEl.textContent = `${selectionLabel}${scissorsLabel}${dotLabel}${drawLabel}`;
     return;
   }
   const segmentLabel = normalizeSegmentId(selected.segmentId) || "unlabeled";
+  const phaseLabel = normalizeStrokePhase(selected.strokePhase);
   const selectionLabel =
     selectedHandles.length > 0
       ? ` | Selected endpoints: ${selectedHandles.length}`
       : "";
   const scissorsLabel = scissorsMode ? " | Scissors on" : "";
   const dotLabel = state.dotMode ? " | Dot tool on" : "";
+  const drawLabel = state.drawMode ? " | Draw stroke on" : "";
   editorStatusEl.textContent = `Curve ${state.editorIndex + 1} of ${
     editorCurves.length
-  } | Segment: ${segmentLabel}${selectionLabel}${scissorsLabel}${dotLabel}`;
+  } | Segment: ${segmentLabel} | Phase: ${phaseLabel}${selectionLabel}${scissorsLabel}${dotLabel}${drawLabel}`;
 }
 
 function toSvgCoords(event: PointerEvent, svg: SVGSVGElement) {

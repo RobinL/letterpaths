@@ -284,7 +284,8 @@ svg {
   touch-action: none;
 }
 
-.bezier-editor__canvas svg.is-dot-mode {
+.bezier-editor__canvas svg.is-dot-mode,
+.bezier-editor__canvas svg.is-draw-mode {
   cursor: crosshair;
 }
 
@@ -334,6 +335,11 @@ svg {
 
 .editor-curve[data-segment="dot"] {
   stroke: var(--segment-dot);
+}
+
+.editor-curve[data-phase="deferred"] {
+  stroke-dasharray: 18 12;
+  stroke-opacity: 0.78;
 }
 
 .editor-line {
