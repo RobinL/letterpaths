@@ -31,6 +31,32 @@ type EditorLoadResult = {
   label: string;
 };
 
+type BuiltInLetterOption = {
+  path: string;
+  label: string;
+  payload: unknown;
+};
+
+const builtInLetterModules = import.meta.glob(
+  "../../letterpaths/src/data/bezier/entry-low/*.json",
+  {
+    eager: true,
+    import: "default"
+  }
+) as Record<string, unknown>;
+const builtInLetterOptions: BuiltInLetterOption[] = Object.entries(
+  builtInLetterModules
+)
+  .map(([path, payload]) => ({
+    path,
+    payload,
+    label: formatBuiltInLetterLabel(path, payload)
+  }))
+  .sort((first, second) => first.label.localeCompare(second.label));
+const builtInLettersByPath = new Map(
+  builtInLetterOptions.map((option) => [option.path, option])
+);
+
 const app = document.querySelector<HTMLDivElement>("#app");
 
 if (!app) {
@@ -98,6 +124,10 @@ app.innerHTML = `
           <button class="editor-button" id="curve-download" type="button">Download JSON</button>
         </div>
         <div class="bezier-editor__load">
+          <label class="control">
+            <span>Existing JSON</span>
+            <select id="editor-built-in-select"></select>
+          </label>
           <input id="editor-load-input" type="file" accept="application/json,.json" hidden />
           <button class="editor-button" id="editor-load-json" type="button">
             Load JSON
@@ -108,7 +138,7 @@ app.innerHTML = `
         </div>
       </header>
       <div class="bezier-editor__canvas">
-        <svg id="bezier-editor-svg" viewBox="0 0 1000 1000" aria-label="Bezier editor"></svg>
+        <svg id="bezier-editor-svg" viewBox="0 0 1000 1000" aria-label="Bezier editor" tabindex="0"></svg>
       </div>
       <div class="bezier-editor__status" id="bezier-editor-status"></div>
     </section>
@@ -161,6 +191,8 @@ const editorLoadInput =
   document.querySelector<HTMLInputElement>("#editor-load-input")!;
 const editorLoadDrop =
   document.querySelector<HTMLDivElement>("#editor-load-drop")!;
+const builtInLetterSelectEl =
+  document.querySelector<HTMLSelectElement>("#editor-built-in-select")!;
 
 const state = {
   editorIndex: 0,
@@ -170,6 +202,12 @@ const state = {
 };
 
 const MAX_TURN_ANGLE = 45;
+const EDITOR_CANVAS_SIZE = 1000;
+const MIN_EDITOR_ZOOM = 0.5;
+const MAX_EDITOR_ZOOM = 16;
+const WHEEL_ZOOM_STEP = 0.002;
+const EDITOR_PAN_STEP = 0.08;
+const EDITOR_FAST_PAN_STEP = 0.25;
 const SEGMENT_TYPES: SegmentId[] = [
   "lead-in",
   "entry",
@@ -198,6 +236,14 @@ let draggingGuideId: keyof LetterGuides | null = null;
 let draggingGuidePointerId: number | null = null;
 let selectionState: { start: Point; end: Point } | null = null;
 let selectedHandles: Array<{ curveIndex: number; pointIndex: number }> = [];
+let editorViewBox = {
+  x: 0,
+  y: 0,
+  width: EDITOR_CANVAS_SIZE,
+  height: EDITOR_CANVAS_SIZE
+};
+
+populateBuiltInLetterSelect();
 
 showGuidesEl.addEventListener("change", renderEditor);
 shortThresholdEl.addEventListener("input", () => {
@@ -315,8 +361,16 @@ editorLoadInput.addEventListener("change", async () => {
   if (!file) {
     return;
   }
+  builtInLetterSelectEl.value = "";
   await handleEditorLoadFile(file);
   editorLoadInput.value = "";
+});
+builtInLetterSelectEl.addEventListener("change", () => {
+  const option = builtInLettersByPath.get(builtInLetterSelectEl.value);
+  if (!option) {
+    return;
+  }
+  loadBuiltInLetter(option);
 });
 ["dragenter", "dragover"].forEach((eventName) => {
   editorLoadDrop.addEventListener(eventName, (event) => {
@@ -341,6 +395,7 @@ editorLoadDrop.addEventListener("drop", async (event) => {
 });
 
 editorSvg.addEventListener("pointerdown", (event) => {
+  focusEditorCanvas();
   const target = event.target as HTMLElement | null;
   if (!target) {
     return;
@@ -539,8 +594,39 @@ editorSvg.addEventListener("pointerleave", () => {
   draggingGuideId = null;
   draggingGuidePointerId = null;
 });
+editorSvg.addEventListener("wheel", onEditorWheel, { passive: false });
+editorSvg.addEventListener("keydown", onEditorKeyDown);
 
 updateEditorUI();
+
+function populateBuiltInLetterSelect() {
+  const placeholder = document.createElement("option");
+  placeholder.value = "";
+  placeholder.textContent =
+    builtInLetterOptions.length > 0
+      ? "Choose an entry-low letter..."
+      : "No built-in letters found";
+  builtInLetterSelectEl.append(placeholder);
+
+  builtInLetterOptions.forEach((option) => {
+    const optionEl = document.createElement("option");
+    optionEl.value = option.path;
+    optionEl.textContent = option.label;
+    builtInLetterSelectEl.append(optionEl);
+  });
+
+  builtInLetterSelectEl.disabled = builtInLetterOptions.length === 0;
+}
+
+function loadBuiltInLetter(option: BuiltInLetterOption) {
+  const result = extractEditorLoadResult(option.payload);
+  if (!result || result.curves.length === 0) {
+    editorStatusEl.textContent = `No bezier curves found in ${option.label}.`;
+    return;
+  }
+  setEditorCurves(result.curves, result.context, result.label);
+  editorStatusEl.textContent = `Loaded ${result.label}.`;
+}
 
 async function handleEditorLoadFile(file: File) {
   try {
@@ -575,6 +661,7 @@ function setEditorCurves(
     }
   }
   clearSelection();
+  resetEditorViewBox();
   const normalized = normalizeEditorCurves(curves, curves);
   editorCurves = normalized.curves;
   unifyEditorEndpoints(editorCurves);
@@ -1200,6 +1287,13 @@ function formatGlyphLabel(glyph: BezierLetter["glyph"] | undefined) {
   return `${char} (${casePart} ${stylePart})`;
 }
 
+function formatBuiltInLetterLabel(path: string, payload: unknown) {
+  if (isBezierLetter(payload)) {
+    return formatGlyphLabel(payload.glyph);
+  }
+  return path.split("/").pop()?.replace(/\.json$/u, "") ?? path;
+}
+
 function buildEditorCurvesFromLetter(letter: BezierLetter): {
   curves: EditorCurve[];
   marks: EditorMark[];
@@ -1386,8 +1480,10 @@ function lerpPoint(a: Point, b: Point, t: number): Point {
 
 function renderEditor() {
   syncSegmentControls();
+  applyEditorViewBox();
   editorSvg.classList.toggle("is-dot-mode", state.dotMode);
   if (editorCurves.length === 0) {
+    resetEditorViewBox();
     editorSvg.innerHTML =
       '<text class="empty-label" x="50" y="60">Load a bezier letter to begin.</text>';
     editorStatusEl.textContent = "";
@@ -1401,6 +1497,13 @@ function renderEditor() {
     curveSelectEl.selectedIndex = -1;
   }
   const selected = hasActiveCurve ? editorCurves[state.editorIndex] : null;
+  const curveStrokeWidth = scaled(8);
+  const activeCurveStrokeWidth = scaled(12);
+  const handleRadius = scaled(8);
+  const handleStrokeWidth = scaled(2);
+  const selectedHandleStrokeWidth = scaled(3);
+  const controlLineStrokeWidth = scaled(1.5);
+  const controlLineDasharray = `${scaled(6)} ${scaled(6)}`;
   const guideMarkup =
     showGuidesEl.checked && editorContext.guides
       ? renderGuides(editorContext.guides)
@@ -1419,9 +1522,13 @@ function renderEditor() {
         hasActiveCurve && index === state.editorIndex
           ? "editor-curve is-active"
           : "editor-curve";
+      const strokeWidth =
+        hasActiveCurve && index === state.editorIndex
+          ? activeCurveStrokeWidth
+          : curveStrokeWidth;
       const segmentId = normalizeSegmentId(curve.segmentId);
       const segmentAttr = segmentId ? ` data-segment="${segmentId}"` : "";
-      return `<path class="${className}" d="${d}" data-curve-index="${index}"${segmentAttr}></path>`;
+      return `<path class="${className}" d="${d}" data-curve-index="${index}" stroke-width="${strokeWidth}"${segmentAttr}></path>`;
     })
     .join("");
   const selectionRect = selectionState
@@ -1438,9 +1545,14 @@ function renderEditor() {
         .map((entry) => {
           const selectedHandle = isHandleSelected(state.editorIndex, entry.index);
           const classSuffix = selectedHandle ? " is-selected" : "";
+          const strokeWidth = selectedHandle
+            ? selectedHandleStrokeWidth
+            : handleStrokeWidth;
           return `<circle class="editor-handle editor-handle--${entry.type}${classSuffix}" cx="${round(
             entry.point.x
-          )}" cy="${round(entry.point.y)}" r="8" data-curve-index="${state.editorIndex}" data-point-index="${entry.index}"></circle>`;
+          )}" cy="${round(
+            entry.point.y
+          )}" r="${handleRadius}" stroke-width="${strokeWidth}" data-curve-index="${state.editorIndex}" data-point-index="${entry.index}"></circle>`;
         })
         .join("")
     : "";
@@ -1455,7 +1567,9 @@ function renderEditor() {
       const point = curve.points[handle.pointIndex];
       return `<circle class="editor-handle editor-handle--anchor is-selected is-passive" cx="${round(
         point.x
-      )}" cy="${round(point.y)}" r="8"></circle>`;
+      )}" cy="${round(
+        point.y
+      )}" r="${handleRadius}" stroke-width="${selectedHandleStrokeWidth}"></circle>`;
     })
     .join("");
 
@@ -1465,7 +1579,9 @@ function renderEditor() {
         Number.isFinite(mark.size) && mark.size! > 0 ? mark.size! : state.dotSize;
       return `<circle class="editor-mark" cx="${round(
         mark.x
-      )}" cy="${round(mark.y)}" r="${round(radius)}" data-mark-index="${index}"></circle>`;
+      )}" cy="${round(mark.y)}" r="${round(radius)}" stroke-width="${scaled(
+        1
+      )}" data-mark-index="${index}"></circle>`;
     })
     .join("");
 
@@ -1475,12 +1591,12 @@ function renderEditor() {
           selected.points[0].y
         )}" x2="${round(selected.points[1].x)}" y2="${round(
           selected.points[1].y
-        )}"></line>`,
+        )}" stroke-width="${controlLineStrokeWidth}" stroke-dasharray="${controlLineDasharray}"></line>`,
         `<line class="editor-line" x1="${round(selected.points[2].x)}" y1="${round(
           selected.points[2].y
         )}" x2="${round(selected.points[3].x)}" y2="${round(
           selected.points[3].y
-        )}"></line>`
+        )}" stroke-width="${controlLineStrokeWidth}" stroke-dasharray="${controlLineDasharray}"></line>`
       ].join("")
     : "";
 
@@ -1520,9 +1636,117 @@ function renderEditor() {
 
 function toSvgCoords(event: PointerEvent, svg: SVGSVGElement) {
   const rect = svg.getBoundingClientRect();
-  const x = (event.clientX - rect.left) * (1000 / rect.width);
-  const y = (event.clientY - rect.top) * (1000 / rect.height);
+  const viewBox = svg.viewBox.baseVal;
+  const x =
+    (event.clientX - rect.left) * (viewBox.width / rect.width) + viewBox.x;
+  const y =
+    (event.clientY - rect.top) * (viewBox.height / rect.height) + viewBox.y;
   return { x, y };
+}
+
+function onEditorWheel(event: WheelEvent) {
+  if (editorCurves.length === 0) {
+    return;
+  }
+  focusEditorCanvas();
+  event.preventDefault();
+
+  const rect = editorSvg.getBoundingClientRect();
+  if (rect.width === 0 || rect.height === 0) {
+    return;
+  }
+
+  const pointerRatio = {
+    x: clamp((event.clientX - rect.left) / rect.width, 0, 1),
+    y: clamp((event.clientY - rect.top) / rect.height, 0, 1)
+  };
+  const pointer = {
+    x: editorViewBox.x + pointerRatio.x * editorViewBox.width,
+    y: editorViewBox.y + pointerRatio.y * editorViewBox.height
+  };
+  const currentZoom = EDITOR_CANVAS_SIZE / editorViewBox.width;
+  const nextZoom = clamp(
+    currentZoom * Math.exp(-event.deltaY * WHEEL_ZOOM_STEP),
+    MIN_EDITOR_ZOOM,
+    MAX_EDITOR_ZOOM
+  );
+  const nextSize = EDITOR_CANVAS_SIZE / nextZoom;
+
+  editorViewBox = {
+    x: pointer.x - pointerRatio.x * nextSize,
+    y: pointer.y - pointerRatio.y * nextSize,
+    width: nextSize,
+    height: nextSize
+  };
+  renderEditor();
+}
+
+function onEditorKeyDown(event: KeyboardEvent) {
+  if (editorCurves.length === 0) {
+    return;
+  }
+  const step =
+    editorViewBox.width *
+    (event.shiftKey ? EDITOR_FAST_PAN_STEP : EDITOR_PAN_STEP);
+  if (event.key === "ArrowLeft") {
+    event.preventDefault();
+    panEditorViewBox(-step, 0);
+    return;
+  }
+  if (event.key === "ArrowRight") {
+    event.preventDefault();
+    panEditorViewBox(step, 0);
+    return;
+  }
+  if (event.key === "ArrowUp") {
+    event.preventDefault();
+    panEditorViewBox(0, -step);
+    return;
+  }
+  if (event.key === "ArrowDown") {
+    event.preventDefault();
+    panEditorViewBox(0, step);
+  }
+}
+
+function panEditorViewBox(deltaX: number, deltaY: number) {
+  editorViewBox = {
+    ...editorViewBox,
+    x: editorViewBox.x + deltaX,
+    y: editorViewBox.y + deltaY
+  };
+  renderEditor();
+}
+
+function resetEditorViewBox() {
+  editorViewBox = {
+    x: 0,
+    y: 0,
+    width: EDITOR_CANVAS_SIZE,
+    height: EDITOR_CANVAS_SIZE
+  };
+  applyEditorViewBox();
+}
+
+function applyEditorViewBox() {
+  editorSvg.setAttribute(
+    "viewBox",
+    `${round(editorViewBox.x)} ${round(editorViewBox.y)} ${round(
+      editorViewBox.width
+    )} ${round(editorViewBox.height)}`
+  );
+}
+
+function getEditorZoomScale() {
+  return editorViewBox.width / EDITOR_CANVAS_SIZE;
+}
+
+function scaled(value: number) {
+  return round(value * getEditorZoomScale());
+}
+
+function focusEditorCanvas() {
+  editorSvg.focus({ preventScroll: true });
 }
 
 function renderSelectionRect(selection: { start: Point; end: Point }) {
@@ -1532,7 +1756,11 @@ function renderSelectionRect(selection: { start: Point; end: Point }) {
   const height = Math.abs(selection.start.y - selection.end.y);
   return `<rect class="editor-selection" x="${round(x)}" y="${round(
     y
-  )}" width="${round(width)}" height="${round(height)}"></rect>`;
+  )}" width="${round(width)}" height="${round(
+    height
+  )}" stroke-width="${scaled(2)}" stroke-dasharray="${scaled(8)} ${scaled(
+    6
+  )}"></rect>`;
 }
 
 function renderGuides(guides?: LetterGuides) {
@@ -1559,14 +1787,22 @@ function renderGuides(guides?: LetterGuides) {
   if (Number.isFinite(guides.rightSidebearing)) {
     vertical.push({ id: "rightSidebearing", x: guides.rightSidebearing! });
   }
+  const guideStrokeWidth = scaled(2);
+  const keyGuideStrokeWidth = scaled(3);
+  const guideDasharray = `${scaled(10)} ${scaled(8)}`;
   return [
     ...horizontal.map(
-      (entry) =>
-        `<line class="guide guide--${entry.id}" x1="0" y1="${entry.y}" x2="1000" y2="${entry.y}"></line>`
+      (entry) => {
+        const strokeWidth =
+          entry.id === "baseline" || entry.id === "xHeight"
+            ? keyGuideStrokeWidth
+            : guideStrokeWidth;
+        return `<line class="guide guide--${entry.id}" x1="0" y1="${entry.y}" x2="1000" y2="${entry.y}" stroke-width="${strokeWidth}" stroke-dasharray="${guideDasharray}"></line>`;
+      }
     ),
     ...vertical.map(
       (entry) =>
-        `<line class="guide guide--${entry.id}" x1="${entry.x}" y1="0" x2="${entry.x}" y2="1000"></line>`
+        `<line class="guide guide--${entry.id}" x1="${entry.x}" y1="0" x2="${entry.x}" y2="1000" stroke-width="${guideStrokeWidth}" stroke-dasharray="${guideDasharray}"></line>`
     )
   ].join("");
 }
@@ -1576,40 +1812,61 @@ function renderGuideHandles(guides?: LetterGuides) {
     return "";
   }
   const handles: string[] = [];
+  const edgeOffset = scaled(24);
+  const labelOffset = scaled(38);
+  const verticalLabelOffset = scaled(12);
+  const verticalHandleX = editorViewBox.x + edgeOffset;
+  const horizontalHandleY = editorViewBox.y + edgeOffset;
+  const horizontalLabelY = editorViewBox.y + scaled(28);
+  const radius = scaled(8);
+  const strokeWidth = scaled(2);
+  const labelFontSize = scaled(12);
   if (Number.isFinite(guides.ascender)) {
     handles.push(
-      `<circle class="editor-guide-handle editor-guide-handle--horizontal" data-guide="ascender" cx="24" cy="${guides.ascender}" r="8"></circle>`,
-      `<text class="editor-guide-label" x="38" y="${guides.ascender}">Ascender</text>`
+      `<circle class="editor-guide-handle editor-guide-handle--horizontal" data-guide="ascender" cx="${verticalHandleX}" cy="${guides.ascender}" r="${radius}" stroke-width="${strokeWidth}"></circle>`,
+      `<text class="editor-guide-label" x="${
+        editorViewBox.x + labelOffset
+      }" y="${guides.ascender}" font-size="${labelFontSize}">Ascender</text>`
     );
   }
   if (Number.isFinite(guides.xHeight)) {
     handles.push(
-      `<circle class="editor-guide-handle editor-guide-handle--horizontal" data-guide="xHeight" cx="24" cy="${guides.xHeight}" r="8"></circle>`,
-      `<text class="editor-guide-label" x="38" y="${guides.xHeight}">x-height</text>`
+      `<circle class="editor-guide-handle editor-guide-handle--horizontal" data-guide="xHeight" cx="${verticalHandleX}" cy="${guides.xHeight}" r="${radius}" stroke-width="${strokeWidth}"></circle>`,
+      `<text class="editor-guide-label" x="${
+        editorViewBox.x + labelOffset
+      }" y="${guides.xHeight}" font-size="${labelFontSize}">x-height</text>`
     );
   }
   if (Number.isFinite(guides.baseline)) {
     handles.push(
-      `<circle class="editor-guide-handle editor-guide-handle--horizontal" data-guide="baseline" cx="24" cy="${guides.baseline}" r="8"></circle>`,
-      `<text class="editor-guide-label" x="38" y="${guides.baseline}">Baseline</text>`
+      `<circle class="editor-guide-handle editor-guide-handle--horizontal" data-guide="baseline" cx="${verticalHandleX}" cy="${guides.baseline}" r="${radius}" stroke-width="${strokeWidth}"></circle>`,
+      `<text class="editor-guide-label" x="${
+        editorViewBox.x + labelOffset
+      }" y="${guides.baseline}" font-size="${labelFontSize}">Baseline</text>`
     );
   }
   if (Number.isFinite(guides.descender)) {
     handles.push(
-      `<circle class="editor-guide-handle editor-guide-handle--horizontal" data-guide="descender" cx="24" cy="${guides.descender}" r="8"></circle>`,
-      `<text class="editor-guide-label" x="38" y="${guides.descender}">Descender</text>`
+      `<circle class="editor-guide-handle editor-guide-handle--horizontal" data-guide="descender" cx="${verticalHandleX}" cy="${guides.descender}" r="${radius}" stroke-width="${strokeWidth}"></circle>`,
+      `<text class="editor-guide-label" x="${
+        editorViewBox.x + labelOffset
+      }" y="${guides.descender}" font-size="${labelFontSize}">Descender</text>`
     );
   }
   if (Number.isFinite(guides.leftSidebearing)) {
     handles.push(
-      `<circle class="editor-guide-handle editor-guide-handle--vertical" data-guide="leftSidebearing" cx="${guides.leftSidebearing}" cy="24" r="8"></circle>`,
-      `<text class="editor-guide-label" x="${guides.leftSidebearing! + 12}" y="28">Left sidebearing</text>`
+      `<circle class="editor-guide-handle editor-guide-handle--vertical" data-guide="leftSidebearing" cx="${guides.leftSidebearing}" cy="${horizontalHandleY}" r="${radius}" stroke-width="${strokeWidth}"></circle>`,
+      `<text class="editor-guide-label" x="${
+        guides.leftSidebearing! + verticalLabelOffset
+      }" y="${horizontalLabelY}" font-size="${labelFontSize}">Left sidebearing</text>`
     );
   }
   if (Number.isFinite(guides.rightSidebearing)) {
     handles.push(
-      `<circle class="editor-guide-handle editor-guide-handle--vertical" data-guide="rightSidebearing" cx="${guides.rightSidebearing}" cy="24" r="8"></circle>`,
-      `<text class="editor-guide-label" x="${guides.rightSidebearing! + 12}" y="28">Right sidebearing</text>`
+      `<circle class="editor-guide-handle editor-guide-handle--vertical" data-guide="rightSidebearing" cx="${guides.rightSidebearing}" cy="${horizontalHandleY}" r="${radius}" stroke-width="${strokeWidth}"></circle>`,
+      `<text class="editor-guide-label" x="${
+        guides.rightSidebearing! + verticalLabelOffset
+      }" y="${horizontalLabelY}" font-size="${labelFontSize}">Right sidebearing</text>`
     );
   }
   return handles.join("");

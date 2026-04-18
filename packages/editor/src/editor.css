@@ -295,25 +295,13 @@ svg {
 
 .guide {
   stroke: var(--accent-guides);
-  stroke-width: 2;
-  stroke-dasharray: 10 8;
-}
-
-.guide--baseline,
-.guide--xHeight {
-  stroke-width: 3;
 }
 
 .editor-curve {
   fill: none;
   stroke: var(--segment-default);
-  stroke-width: 8;
   stroke-opacity: 0.5;
   pointer-events: stroke;
-}
-
-.editor-curve.is-active {
-  stroke-width: 12;
 }
 
 .editor-curve[data-segment="lead-in"] {
@@ -350,20 +338,16 @@ svg {
 
 .editor-line {
   stroke: rgba(35, 30, 26, 0.25);
-  stroke-width: 1.5;
-  stroke-dasharray: 6 6;
 }
 
 .editor-handle {
   fill: #fffaf2;
   stroke: rgba(35, 30, 26, 0.5);
-  stroke-width: 2;
   cursor: grab;
 }
 
 .editor-handle.is-selected {
   stroke: var(--accent-alt);
-  stroke-width: 3;
 }
 
 .editor-handle.is-passive {
@@ -386,15 +370,12 @@ svg {
 .editor-selection {
   fill: rgba(75, 120, 90, 0.12);
   stroke: var(--accent-alt);
-  stroke-width: 2;
-  stroke-dasharray: 8 6;
   pointer-events: none;
 }
 
 .editor-mark {
   fill: var(--segment-dot);
   stroke: rgba(35, 30, 26, 0.4);
-  stroke-width: 1;
   opacity: 0.75;
   cursor: grab;
 }
@@ -406,7 +387,6 @@ svg {
 .editor-guide-handle {
   fill: #fffaf2;
   stroke: rgba(35, 30, 26, 0.5);
-  stroke-width: 2;
   cursor: ns-resize;
 }
 
@@ -415,7 +395,6 @@ svg {
 }
 
 .editor-guide-label {
-  font-size: 12px;
   fill: var(--muted);
   font-family: "Space Mono", "Courier New", monospace;
 }
