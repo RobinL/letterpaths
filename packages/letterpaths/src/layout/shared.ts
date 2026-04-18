@@ -520,6 +520,13 @@ export function measureJoinSpacing(
 ): {
   verticalDistance: number;
   angleChangeDegrees: number;
+  endpointAngleChangeDegrees: number;
+  midpointTurnDegrees: number;
+  midpointBonusDegrees: number;
+  verticalLiftFactor: number;
+  alignmentFactor: number;
+  entryResolutionHorizontality: number;
+  horizontalDemandFactor: number;
   verticalContribution: number;
   angleChangeContribution: number;
   combinedContribution: number;
@@ -532,6 +539,13 @@ export function measureJoinSpacing(
     return {
       verticalDistance: 0,
       angleChangeDegrees: 0,
+      endpointAngleChangeDegrees: 0,
+      midpointTurnDegrees: 0,
+      midpointBonusDegrees: 0,
+      verticalLiftFactor: 0,
+      alignmentFactor: 0,
+      entryResolutionHorizontality: 0,
+      horizontalDemandFactor: 0,
       verticalContribution: 0,
       angleChangeContribution: 0,
       combinedContribution: 0,
@@ -577,6 +591,13 @@ export function measureJoinSpacing(
   return {
     verticalDistance,
     angleChangeDegrees,
+    endpointAngleChangeDegrees,
+    midpointTurnDegrees,
+    midpointBonusDegrees,
+    verticalLiftFactor,
+    alignmentFactor,
+    entryResolutionHorizontality,
+    horizontalDemandFactor,
     verticalContribution,
     angleChangeContribution,
     combinedContribution,

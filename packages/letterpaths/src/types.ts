@@ -20,6 +20,13 @@ export type JoinMetric = {
   nextChar: string;
   verticalDistance: number;
   angleChangeDegrees: number;
+  endpointAngleChangeDegrees: number;
+  midpointTurnDegrees: number;
+  midpointBonusDegrees: number;
+  verticalLiftFactor: number;
+  alignmentFactor: number;
+  entryResolutionHorizontality: number;
+  horizontalDemandFactor: number;
   verticalContribution: number;
   angleChangeContribution: number;
   combinedContribution: number;
