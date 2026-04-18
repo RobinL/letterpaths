@@ -42,6 +42,8 @@ export type JoinSpacingOptions = {
   minSidebearingGap?: number;
   bendSearchMinSidebearingGap?: number;
   bendSearchMaxSidebearingGap?: number;
+  exitHandleScale?: number;
+  entryHandleScale?: number;
 };
 
 export type ResolvedJoinSpacingOptions = {
@@ -49,6 +51,8 @@ export type ResolvedJoinSpacingOptions = {
   minSidebearingGap: number;
   bendSearchMinSidebearingGap: number;
   bendSearchMaxSidebearingGap: number;
+  exitHandleScale: number;
+  entryHandleScale: number;
 };
 
 type StandaloneLayoutConfig = {
@@ -72,7 +76,9 @@ export const defaultJoinSpacingOptions: ResolvedJoinSpacingOptions = {
   targetBendRate: 30,
   minSidebearingGap: 50,
   bendSearchMinSidebearingGap: -30,
-  bendSearchMaxSidebearingGap: 80
+  bendSearchMaxSidebearingGap: 80,
+  exitHandleScale: 1,
+  entryHandleScale: 1
 };
 
 const bendSearchStep = 1;
@@ -422,7 +428,16 @@ export function curveToStep(curve: Curve, segment?: WritingPathSegment): BezierS
   };
 }
 
-export function buildJoinCurve(exitCurve: Curve, entryCurve: Curve): Curve {
+type JoinHandleScaleOptions = Pick<
+  ResolvedJoinSpacingOptions,
+  "exitHandleScale" | "entryHandleScale"
+>;
+
+export function buildJoinCurve(
+  exitCurve: Curve,
+  entryCurve: Curve,
+  options: JoinHandleScaleOptions = defaultJoinSpacingOptions
+): Curve {
   const p0 = exitCurve.p3;
   const p3 = entryCurve.p0;
   const dx = p3.x - p0.x;
@@ -451,8 +466,14 @@ export function buildJoinCurve(exitCurve: Curve, entryCurve: Curve): Curve {
 
   return {
     p0,
-    p1: { x: p0.x + tanOut.x * adjusted.lenOut, y: p0.y + tanOut.y * adjusted.lenOut },
-    p2: { x: p3.x - tanIn.x * adjusted.lenIn, y: p3.y - tanIn.y * adjusted.lenIn },
+    p1: {
+      x: p0.x + tanOut.x * adjusted.lenOut * options.exitHandleScale,
+      y: p0.y + tanOut.y * adjusted.lenOut * options.exitHandleScale
+    },
+    p2: {
+      x: p3.x - tanIn.x * adjusted.lenIn * options.entryHandleScale,
+      y: p3.y - tanIn.y * adjusted.lenIn * options.entryHandleScale
+    },
     p3
   };
 }
@@ -509,8 +530,20 @@ export function resolveJoinSpacingOptions(
     minSidebearingGap:
       options?.minSidebearingGap ?? defaultJoinSpacingOptions.minSidebearingGap,
     bendSearchMinSidebearingGap: Math.min(rawSearchMin, rawSearchMax),
-    bendSearchMaxSidebearingGap: Math.max(rawSearchMin, rawSearchMax)
+    bendSearchMaxSidebearingGap: Math.max(rawSearchMin, rawSearchMax),
+    exitHandleScale: resolveJoinHandleScale(
+      options?.exitHandleScale,
+      defaultJoinSpacingOptions.exitHandleScale
+    ),
+    entryHandleScale: resolveJoinHandleScale(
+      options?.entryHandleScale,
+      defaultJoinSpacingOptions.entryHandleScale
+    )
   };
+}
+
+function resolveJoinHandleScale(value: number | undefined, fallback: number): number {
+  return value !== undefined && Number.isFinite(value) ? Math.max(0, value) : fallback;
 }
 
 export function measureJoinSpacing(
@@ -562,13 +595,15 @@ export function measureJoinSpacing(
     nextEntryFromLeftSidebearing,
     options.targetBendRate,
     options.bendSearchMinSidebearingGap,
-    options.bendSearchMaxSidebearingGap
+    options.bendSearchMaxSidebearingGap,
+    options
   );
   const noBackwardsSidebearingGap = measureNoBackwardsSidebearingGap(
     exitCurve,
     entryCurve,
     previousExitToRightSidebearing,
-    nextEntryFromLeftSidebearing
+    nextEntryFromLeftSidebearing,
+    options
   );
 
   return {
@@ -592,7 +627,8 @@ function findSmallestGapForTargetBendRate(
   nextEntryFromLeftSidebearing: number,
   targetBendRate: number,
   bendSearchMinSidebearingGap: number,
-  bendSearchMaxSidebearingGap: number
+  bendSearchMaxSidebearingGap: number,
+  options: JoinHandleScaleOptions
 ): {
   sidebearingGap: number;
   bend: { degrees: number; t: number };
@@ -603,7 +639,8 @@ function findSmallestGapForTargetBendRate(
     entryCurve,
     previousExitToRightSidebearing,
     nextEntryFromLeftSidebearing,
-    bendSearchMaxSidebearingGap
+    bendSearchMaxSidebearingGap,
+    options
   );
 
   for (
@@ -616,7 +653,8 @@ function findSmallestGapForTargetBendRate(
       entryCurve,
       previousExitToRightSidebearing,
       nextEntryFromLeftSidebearing,
-      sidebearingGap
+      sidebearingGap,
+      options
     );
     fallback = candidate;
     if (candidate.bend.degrees <= targetBendRate) {
@@ -632,7 +670,8 @@ function measureBendAtSidebearingGap(
   entryCurve: Curve,
   previousExitToRightSidebearing: number,
   nextEntryFromLeftSidebearing: number,
-  sidebearingGap: number
+  sidebearingGap: number,
+  options: JoinHandleScaleOptions
 ): {
   sidebearingGap: number;
   bend: { degrees: number; t: number };
@@ -643,7 +682,8 @@ function measureBendAtSidebearingGap(
     entryCurve,
     previousExitToRightSidebearing,
     nextEntryFromLeftSidebearing,
-    sidebearingGap
+    sidebearingGap,
+    options
   );
   return {
     sidebearingGap,
@@ -657,7 +697,8 @@ function buildJoinAtSidebearingGap(
   entryCurve: Curve,
   previousExitToRightSidebearing: number,
   nextEntryFromLeftSidebearing: number,
-  sidebearingGap: number
+  sidebearingGap: number,
+  options: JoinHandleScaleOptions
 ): Curve {
   const entryX =
     exitCurve.p3.x +
@@ -665,14 +706,15 @@ function buildJoinAtSidebearingGap(
     sidebearingGap +
     nextEntryFromLeftSidebearing;
   const shiftedEntryCurve = translateCurve(entryCurve, entryX - entryCurve.p0.x, 0);
-  return buildJoinCurve(exitCurve, shiftedEntryCurve);
+  return buildJoinCurve(exitCurve, shiftedEntryCurve, options);
 }
 
 function measureNoBackwardsSidebearingGap(
   exitCurve: Curve,
   entryCurve: Curve,
   previousExitToRightSidebearing: number,
-  nextEntryFromLeftSidebearing: number
+  nextEntryFromLeftSidebearing: number,
+  options: JoinHandleScaleOptions
 ): number {
   const baseRange =
     Math.abs(previousExitToRightSidebearing) + Math.abs(nextEntryFromLeftSidebearing) + 1000;
@@ -686,7 +728,8 @@ function measureNoBackwardsSidebearingGap(
         entryCurve,
         previousExitToRightSidebearing,
         nextEntryFromLeftSidebearing,
-        high
+        high,
+        options
       )
     ) &&
     high < 10000
@@ -701,7 +744,8 @@ function measureNoBackwardsSidebearingGap(
         entryCurve,
         previousExitToRightSidebearing,
         nextEntryFromLeftSidebearing,
-        high
+        high,
+        options
       )
     )
   ) {
@@ -717,7 +761,8 @@ function measureNoBackwardsSidebearingGap(
           entryCurve,
           previousExitToRightSidebearing,
           nextEntryFromLeftSidebearing,
-          mid
+          mid,
+          options
         )
       )
     ) {

@@ -57,6 +57,22 @@ const joinControlDefinitions = [
     max: 240,
     step: 1,
     value: defaultJoinSpacingOptions.bendSearchMaxSidebearingGap
+  },
+  {
+    key: "exitHandleScale",
+    label: "p0-p1 handle scale",
+    min: 0,
+    max: 1,
+    step: 0.05,
+    value: defaultJoinSpacingOptions.exitHandleScale
+  },
+  {
+    key: "entryHandleScale",
+    label: "p2-p3 handle scale",
+    min: 0,
+    max: 1,
+    step: 0.05,
+    value: defaultJoinSpacingOptions.entryHandleScale
   }
 ] as const satisfies ReadonlyArray<{
   key: JoinControlKey
@@ -255,6 +271,8 @@ const readJoinSpacing = (): Required<JoinSpacingOptions> => ({
   minSidebearingGap: Number(joinSpacingInputs.minSidebearingGap?.value ?? 0),
   bendSearchMinSidebearingGap: Number(joinSpacingInputs.bendSearchMinSidebearingGap?.value ?? 0),
   bendSearchMaxSidebearingGap: Number(joinSpacingInputs.bendSearchMaxSidebearingGap?.value ?? 0),
+  exitHandleScale: Number(joinSpacingInputs.exitHandleScale?.value ?? 1),
+  entryHandleScale: Number(joinSpacingInputs.entryHandleScale?.value ?? 1),
 })
 
 const syncJoinSpacingLabels = () => {
@@ -766,6 +784,8 @@ const renderMetricsPanel = (state: RenderState) => {
     <div class="join-stats__metric-grid">
       ${metricRow("Pair", metric.pair)}
       ${metricRow("Target maximum bend rate", `${formatNumber(spacing.targetBendRate)} deg/0.1t`)}
+      ${metricRow("p0-p1 handle scale", formatNumber(spacing.exitHandleScale))}
+      ${metricRow("p2-p3 handle scale", formatNumber(spacing.entryHandleScale))}
       ${metricRow("Search range", `${formatNumber(metric.bendSearchMinSidebearingGap)} to ${formatNumber(metric.bendSearchMaxSidebearingGap)} sidebearing gap, step ${formatNumber(metric.bendSearchStep)}`)}
       ${metricRow("Selected sidebearing gap", formatNumber(metric.searchedSidebearingGap))}
       ${metricRow("Selected max bend rate", `${formatNumber(metric.searchedBendRate)} deg/0.1t at t=${formatNumber(metric.searchedBendT, 3)}`)}

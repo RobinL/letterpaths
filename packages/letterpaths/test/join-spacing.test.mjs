@@ -41,6 +41,8 @@ const minimumCurveDx = (curve) => {
   return Math.min(...candidates.map((t) => 3 * (a * t * t + b * t + c)));
 };
 
+const distance = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+
 test("join spacing searches sidebearing gaps from -30 to 80 by default", () => {
   const metric = metricFor("cu", {
     joinSpacing: {
@@ -158,4 +160,34 @@ test("no-backwards clamp still applies after bend search and minimum sidebearing
   );
   assert.ok(metric.noBackwardsSidebearingGap > metric.searchedSidebearingGap);
   assert.ok(minimumCurveDx(firstJoinCurveFor("ur", options)) >= -0.001);
+});
+
+test("join handle scales shorten the outgoing and incoming control handles", () => {
+  const base = firstJoinCurveFor("cu", {
+    joinSpacing: {
+      minSidebearingGap: 200,
+      targetBendRate: 999
+    }
+  });
+  const scaled = firstJoinCurveFor("cu", {
+    joinSpacing: {
+      minSidebearingGap: 200,
+      targetBendRate: 999,
+      exitHandleScale: 0.5,
+      entryHandleScale: 0.25
+    }
+  });
+
+  assert.equal(scaled.p0.x, base.p0.x);
+  assert.equal(scaled.p0.y, base.p0.y);
+  assert.equal(scaled.p3.x, base.p3.x);
+  assert.equal(scaled.p3.y, base.p3.y);
+  assert.ok(
+    Math.abs(distance(scaled.p0, scaled.p1) - distance(base.p0, base.p1) * 0.5) <
+      0.000001
+  );
+  assert.ok(
+    Math.abs(distance(scaled.p2, scaled.p3) - distance(base.p2, base.p3) * 0.25) <
+      0.000001
+  );
 });

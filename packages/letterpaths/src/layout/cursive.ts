@@ -193,7 +193,7 @@ export function joinCursiveWord(
     }
 
     if (prevExitCurve) {
-      const joinCurve = buildJoinCurve(prevExitCurve, shiftedEntryCurve);
+      const joinCurve = buildJoinCurve(prevExitCurve, shiftedEntryCurve, joinSpacing);
       joinStepIndices.add(outputSteps.length);
       outputSteps.push(curveToStep(joinCurve, "join"));
       ensureJoinStart(shifted, shiftedEntryPoint);
