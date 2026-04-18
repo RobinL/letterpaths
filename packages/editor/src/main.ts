@@ -66,28 +66,12 @@ type JoinControlKey = keyof typeof defaultJoinSpacingOptions
 
 const joinControlDefinitions = [
   {
-    key: "verticalDistanceWeight",
-    label: "Vertical distance influence",
-    min: -1,
-    max: 1,
-    step: 0.01,
-    value: 0.14
-  },
-  {
-    key: "angleChangeWeight",
-    label: "Bend influence",
-    min: -5,
-    max: 5,
-    step: 0.05,
-    value: defaultJoinSpacingOptions.angleChangeWeight
-  },
-  {
-    key: "kerningScale",
-    label: "Kerning scale",
-    min: -5,
-    max: 5,
-    step: 0.05,
-    value: 1
+    key: "targetBendRate",
+    label: "Target maximum bend rate",
+    min: 0,
+    max: 80,
+    step: 1,
+    value: defaultJoinSpacingOptions.targetBendRate
   },
   {
     key: "minSidebearingGap",
@@ -96,6 +80,22 @@ const joinControlDefinitions = [
     max: 500,
     step: 5,
     value: 95
+  },
+  {
+    key: "bendSearchMinSidebearingGap",
+    label: "Search minimum sidebearing gap",
+    min: -200,
+    max: 120,
+    step: 1,
+    value: defaultJoinSpacingOptions.bendSearchMinSidebearingGap
+  },
+  {
+    key: "bendSearchMaxSidebearingGap",
+    label: "Search maximum sidebearing gap",
+    min: -120,
+    max: 240,
+    step: 1,
+    value: defaultJoinSpacingOptions.bendSearchMaxSidebearingGap
   }
 ] as const satisfies ReadonlyArray<{
   key: JoinControlKey
@@ -296,10 +296,10 @@ const renderTraceEmpty = (message: string) => {
 }
 
 const readJoinSpacing = (): JoinSpacingOptions => ({
-  verticalDistanceWeight: Number(joinSpacingInputs.verticalDistanceWeight?.value ?? 0),
-  angleChangeWeight: Number(joinSpacingInputs.angleChangeWeight?.value ?? 0),
-  kerningScale: Number(joinSpacingInputs.kerningScale?.value ?? 0),
-  minSidebearingGap: Number(joinSpacingInputs.minSidebearingGap?.value ?? 0)
+  targetBendRate: Number(joinSpacingInputs.targetBendRate?.value ?? 0),
+  minSidebearingGap: Number(joinSpacingInputs.minSidebearingGap?.value ?? 0),
+  bendSearchMinSidebearingGap: Number(joinSpacingInputs.bendSearchMinSidebearingGap?.value ?? 0),
+  bendSearchMaxSidebearingGap: Number(joinSpacingInputs.bendSearchMaxSidebearingGap?.value ?? 0)
 })
 
 const syncJoinSpacingLabels = () => {
@@ -310,7 +310,10 @@ const syncJoinSpacingLabels = () => {
       return
     }
     valueEl.textContent =
-      control.key === "minSidebearingGap"
+      control.key === "targetBendRate" ||
+      control.key === "minSidebearingGap" ||
+      control.key === "bendSearchMinSidebearingGap" ||
+      control.key === "bendSearchMaxSidebearingGap"
         ? Number(inputEl.value).toFixed(0)
         : Number(inputEl.value).toFixed(2)
   })

@@ -27,28 +27,12 @@ type JoinControlKey = keyof typeof defaultJoinSpacingOptions
 
 const joinControlDefinitions = [
   {
-    key: "verticalDistanceWeight",
-    label: "Vertical distance influence",
-    min: -1,
-    max: 1,
-    step: 0.01,
-    value: 0.14
-  },
-  {
-    key: "angleChangeWeight",
-    label: "Bend influence",
-    min: -5,
-    max: 5,
-    step: 0.05,
-    value: defaultJoinSpacingOptions.angleChangeWeight
-  },
-  {
-    key: "kerningScale",
-    label: "Kerning scale",
-    min: -5,
-    max: 5,
-    step: 0.05,
-    value: 1
+    key: "targetBendRate",
+    label: "Target maximum bend rate",
+    min: 0,
+    max: 80,
+    step: 1,
+    value: defaultJoinSpacingOptions.targetBendRate
   },
   {
     key: "minSidebearingGap",
@@ -59,12 +43,20 @@ const joinControlDefinitions = [
     value: 95
   },
   {
-    key: "bendMeasurementSidebearingGap",
-    label: "Bend measurement sidebearing gap",
+    key: "bendSearchMinSidebearingGap",
+    label: "Search minimum sidebearing gap",
     min: -200,
-    max: 300,
-    step: 5,
-    value: defaultJoinSpacingOptions.bendMeasurementSidebearingGap
+    max: 120,
+    step: 1,
+    value: defaultJoinSpacingOptions.bendSearchMinSidebearingGap
+  },
+  {
+    key: "bendSearchMaxSidebearingGap",
+    label: "Search maximum sidebearing gap",
+    min: -120,
+    max: 240,
+    step: 1,
+    value: defaultJoinSpacingOptions.bendSearchMaxSidebearingGap
   }
 ] as const satisfies ReadonlyArray<{
   key: JoinControlKey
@@ -174,7 +166,7 @@ app.innerHTML = `
       <article class="join-stats__panel">
         <div class="join-stats__panel-title">
           <h2>Calculation visual</h2>
-          <span>Raw target, clamp, actual placement, bend and vertical inputs</span>
+          <span>Search target, clamps, actual placement and bend rate</span>
         </div>
         <svg
           class="join-stats__svg join-stats__svg--calculation"
@@ -259,13 +251,10 @@ const formulaTerm = (
 ): string => `<span class="join-stats__formula-term ${className}" title="${escapeHtml(title)}">${escapeHtml(label)}</span>`
 
 const readJoinSpacing = (): Required<JoinSpacingOptions> => ({
-  verticalDistanceWeight: Number(joinSpacingInputs.verticalDistanceWeight?.value ?? 0),
-  angleChangeWeight: Number(joinSpacingInputs.angleChangeWeight?.value ?? 0),
-  kerningScale: Number(joinSpacingInputs.kerningScale?.value ?? 0),
+  targetBendRate: Number(joinSpacingInputs.targetBendRate?.value ?? 0),
   minSidebearingGap: Number(joinSpacingInputs.minSidebearingGap?.value ?? 0),
-  bendMeasurementSidebearingGap: Number(joinSpacingInputs.bendMeasurementSidebearingGap?.value ?? 0),
-  angleDifferenceWeight: 0,
-  bendReversalWeight: 0
+  bendSearchMinSidebearingGap: Number(joinSpacingInputs.bendSearchMinSidebearingGap?.value ?? 0),
+  bendSearchMaxSidebearingGap: Number(joinSpacingInputs.bendSearchMaxSidebearingGap?.value ?? 0),
 })
 
 const syncJoinSpacingLabels = () => {
@@ -276,7 +265,10 @@ const syncJoinSpacingLabels = () => {
       return
     }
     valueEl.textContent =
-      control.key === "minSidebearingGap" || control.key === "bendMeasurementSidebearingGap"
+      control.key === "targetBendRate" ||
+      control.key === "minSidebearingGap" ||
+      control.key === "bendSearchMinSidebearingGap" ||
+      control.key === "bendSearchMaxSidebearingGap"
         ? Number(inputEl.value).toFixed(0)
         : Number(inputEl.value).toFixed(2)
   })
@@ -320,7 +312,7 @@ const shiftWritingPath = (path: WritingPath, dx: number, dy: number): WritingPat
 })
 
 const shiftCurve = (
-  curve: JoinMetric["bendMeasurementJoinCurve"],
+  curve: JoinMetric["searchedJoinCurve"],
   dx: number,
   dy: number
 ): CubicBezier =>
@@ -586,8 +578,8 @@ const renderCalculationPanel = (state: RenderState) => {
   }
 
   const shiftedMetric = shiftMetricX(metric, state.offsetX)
-  const bendMeasurementCurve = shiftCurve(
-    metric.bendMeasurementJoinCurve,
+  const searchedCurve = shiftCurve(
+    metric.searchedJoinCurve,
     state.offsetX,
     state.offsetY
   )
@@ -595,14 +587,14 @@ const renderCalculationPanel = (state: RenderState) => {
   const selectedMinX = Math.min(
     ...selectedSlots.map((slot) => slot.leftX),
     joinCurve.p0.x,
-    bendMeasurementCurve.p0.x,
-    bendMeasurementCurve.p3.x
+    searchedCurve.p0.x,
+    searchedCurve.p3.x
   )
   const selectedMaxX = Math.max(
     ...selectedSlots.map((slot) => slot.rightX),
     joinCurve.p3.x,
-    bendMeasurementCurve.p0.x,
-    bendMeasurementCurve.p3.x
+    searchedCurve.p0.x,
+    searchedCurve.p3.x
   )
   const guideYValues = [
     state.path.guides.xHeight + state.offsetY,
@@ -615,8 +607,8 @@ const renderCalculationPanel = (state: RenderState) => {
     joinCurve.p1.x,
     joinCurve.p2.x,
     joinCurve.p3.x,
-    bendMeasurementCurve.p1.x,
-    bendMeasurementCurve.p2.x,
+    searchedCurve.p1.x,
+    searchedCurve.p2.x,
     shiftedMetric.previousRightSidebearingX,
     shiftedMetric.targetNextLeftSidebearingX,
     shiftedMetric.clampedNextLeftSidebearingX,
@@ -629,8 +621,8 @@ const renderCalculationPanel = (state: RenderState) => {
     joinCurve.p1.y,
     joinCurve.p2.y,
     joinCurve.p3.y,
-    bendMeasurementCurve.p1.y,
-    bendMeasurementCurve.p2.y,
+    searchedCurve.p1.y,
+    searchedCurve.p2.y,
     ...guideYValues
   ]
   const minX = Math.min(...xValues) - 140
@@ -642,9 +634,8 @@ const renderCalculationPanel = (state: RenderState) => {
   const topLabelY = minY + 34
   const sidebearingTop = minY + 58
   const sidebearingBottom = maxY - 72
-  const verticalX = Math.min(joinCurve.p0.x, joinCurve.p3.x) - 42
   const appliedGapY = Math.max(joinCurve.p0.y, joinCurve.p3.y) + 68
-  const bendPoint = bendMeasurementCurve.getPointAt(metric.sharpestBendT)
+  const bendPoint = searchedCurve.getPointAt(metric.searchedBendT)
 
   calculationSvg.setAttribute("viewBox", `${minX} ${minY} ${width} ${height}`)
   calculationSvg.innerHTML = `
@@ -666,14 +657,14 @@ const renderCalculationPanel = (state: RenderState) => {
     <line class="join-stats__calc-line join-stats__calc-line--entry" x1="${shiftedMetric.nextEntryX}" y1="${sidebearingTop}" x2="${shiftedMetric.nextEntryX}" y2="${sidebearingBottom}"></line>
 
     <text class="join-stats__label" x="${shiftedMetric.previousRightSidebearingX}" y="${topLabelY}" text-anchor="middle">prev right</text>
-    <text class="join-stats__label" x="${shiftedMetric.targetNextLeftSidebearingX}" y="${topLabelY + 28}" text-anchor="middle">raw target</text>
+    <text class="join-stats__label" x="${shiftedMetric.targetNextLeftSidebearingX}" y="${topLabelY + 28}" text-anchor="middle">search target</text>
     <text class="join-stats__label" x="${shiftedMetric.clampedNextLeftSidebearingX}" y="${topLabelY + 56}" text-anchor="middle">min sidebearing</text>
     <text class="join-stats__label" x="${shiftedMetric.noBackwardsNextLeftSidebearingX}" y="${topLabelY + 84}" text-anchor="middle">no backwards</text>
     <text class="join-stats__label" x="${shiftedMetric.actualNextLeftSidebearingX}" y="${topLabelY + 112}" text-anchor="middle">actual left</text>
     <text class="join-stats__label" x="${shiftedMetric.nextEntryX}" y="${topLabelY + 140}" text-anchor="middle">next entry</text>
 
     <path class="join-stats__calc-join" d="${buildCurveD(joinCurve)}"></path>
-    <path class="join-stats__bend-measurement-join" d="${buildCurveD(bendMeasurementCurve)}"></path>
+    <path class="join-stats__bend-measurement-join" d="${buildCurveD(searchedCurve)}"></path>
     <line class="join-stats__calc-handle" x1="${joinCurve.p0.x}" y1="${joinCurve.p0.y}" x2="${joinCurve.p1.x}" y2="${joinCurve.p1.y}"></line>
     <line class="join-stats__calc-handle" x1="${joinCurve.p3.x}" y1="${joinCurve.p3.y}" x2="${joinCurve.p2.x}" y2="${joinCurve.p2.y}"></line>
     <circle class="join-stats__calc-point" cx="${joinCurve.p0.x}" cy="${joinCurve.p0.y}" r="10"></circle>
@@ -682,12 +673,7 @@ const renderCalculationPanel = (state: RenderState) => {
     <text class="join-stats__label" x="${joinCurve.p0.x - 16}" y="${joinCurve.p0.y - 24}" text-anchor="end">exit</text>
     <text class="join-stats__label" x="${joinCurve.p3.x + 16}" y="${joinCurve.p3.y - 24}">entry</text>
     <text class="join-stats__label" x="${bendPoint.x + 18}" y="${bendPoint.y + 34}">
-      fixed-gap bend ${formatNumber(metric.sharpestBendDegrees)} deg/0.1t
-    </text>
-
-    <line class="join-stats__measure" x1="${verticalX}" y1="${joinCurve.p0.y}" x2="${verticalX}" y2="${joinCurve.p3.y}"></line>
-    <text class="join-stats__label" x="${verticalX - 14}" y="${(joinCurve.p0.y + joinCurve.p3.y) / 2}" text-anchor="end">
-      vertical ${formatNumber(metric.verticalDistance)}
+      searched bend ${formatNumber(metric.searchedBendRate)} deg/0.1t
     </text>
 
     <line class="join-stats__measure" x1="${joinCurve.p0.x}" y1="${appliedGapY}" x2="${joinCurve.p3.x}" y2="${appliedGapY}"></line>
@@ -732,16 +718,7 @@ const renderMetricsPanel = (state: RenderState) => {
   const clampedByMinimum =
     metric.actualNextLeftSidebearingX === metric.clampedNextLeftSidebearingX &&
     metric.targetNextLeftSidebearingX < metric.clampedNextLeftSidebearingX
-  const verticalWeight = formatNumber(spacing.verticalDistanceWeight)
-  const bendWeight = formatNumber(spacing.angleChangeWeight)
-  const kerningScale = formatNumber(spacing.kerningScale)
-  const verticalDistance = formatNumber(metric.verticalDistance)
-  const verticalContribution = formatNumber(metric.verticalContribution)
-  const sharpestBend = formatNumber(metric.sharpestBendDegrees)
-  const bendContribution = formatNumber(metric.angleChangeContribution)
-  const combinedContribution = formatNumber(metric.combinedContribution)
-  const rawGap = formatNumber(metric.rawGap)
-  const targetLeft = formatNumber(metric.targetNextLeftSidebearingX)
+  const searchTargetLeft = formatNumber(metric.targetNextLeftSidebearingX)
   const minimumLeft = formatNumber(metric.clampedNextLeftSidebearingX)
   const noBackwardsLeft = formatNumber(metric.noBackwardsNextLeftSidebearingX)
   const actualLeft = formatNumber(metric.actualNextLeftSidebearingX)
@@ -751,14 +728,16 @@ const renderMetricsPanel = (state: RenderState) => {
   const computedGapBeforeNoBackwards = formatNumber(computedGapBeforeNoBackwardsValue)
   const noBackwardsGap = formatNumber(metric.noBackwardsSidebearingGap)
   const actualSidebearingGap = formatNumber(metric.renderedSidebearingGap)
-  const verticalWeightTerm = formulaTerm("vertical weight", "join-stats__formula-token--vertical-weight", "vertical distance influence")
-  const verticalDistanceTerm = formulaTerm("vertical distance", "join-stats__formula-token--vertical-distance", "distance between exit and next entry y positions")
-  const bendWeightTerm = formulaTerm("bend weight", "join-stats__formula-token--bend-weight", "bend influence")
-  const sharpestBendTerm = formulaTerm("fixed-gap bend rate", "join-stats__formula-token--bend", `greatest tangent-angle change per 0.1t when sidebearing gap is ${formatNumber(metric.bendMeasurementSidebearingGap)}`)
-  const kerningScaleTerm = formulaTerm("kerning scale", "join-stats__formula-token--kerning", "kerning scale")
-  const verticalContributionTerm = formulaTerm("vertical contribution", "join-stats__formula-token--vertical-contribution", "vertical distance influence multiplied by vertical distance")
-  const bendContributionTerm = formulaTerm("bend contribution", "join-stats__formula-token--bend-contribution", "bend influence multiplied by fixed-gap bend rate")
-  const rawTargetTerm = formulaTerm("raw target left", "join-stats__formula-token--raw-target", "raw target left sidebearing x")
+  const searchGap = formatNumber(metric.searchedSidebearingGap)
+  const searchBend = formatNumber(metric.searchedBendRate)
+  const targetBendRate = formatNumber(metric.targetBendRate)
+  const searchMin = formatNumber(metric.bendSearchMinSidebearingGap)
+  const searchMax = formatNumber(metric.bendSearchMaxSidebearingGap)
+  const searchGapTerm = formulaTerm("smallest gap", "join-stats__formula-token--raw-target", "smallest searched sidebearing gap that keeps bend rate at or below the target")
+  const searchRangeTerm = formulaTerm("search range", "join-stats__formula-token--computed-gap", `sidebearing gaps tested from ${searchMin} to ${searchMax}`)
+  const bendRateTerm = formulaTerm("max bend rate", "join-stats__formula-token--bend", "greatest tangent-angle change per 0.1t on the join Bezier")
+  const targetBendTerm = formulaTerm("target bend rate", "join-stats__formula-token--bend-weight", "user configured maximum bend rate")
+  const searchTargetTerm = formulaTerm("search target left", "join-stats__formula-token--raw-target", "left sidebearing x from the selected searched gap")
   const minimumTerm = formulaTerm("minimum sidebearing line", "join-stats__formula-token--minimum", "minimum sidebearing line")
   const computedGapTerm = formulaTerm("computed gap", "join-stats__formula-token--computed-gap", "sidebearing gap after raw spacing and minimum sidebearing")
   const noBackwardsGapTerm = formulaTerm("no-backwards minimum gap", "join-stats__formula-token--no-backwards", "minimum sidebearing gap that keeps the join Bezier moving left-to-right")
@@ -769,24 +748,14 @@ const renderMetricsPanel = (state: RenderState) => {
   metricsEl.innerHTML = `
     <div class="join-stats__formula">
       ${formulaLine(
-        "vertical",
-        `${verticalWeightTerm} * ${verticalDistanceTerm}`,
-        `${formulaNumber(verticalWeight, "join-stats__formula-token--vertical-weight", "vertical distance influence")} * ${formulaNumber(verticalDistance, "join-stats__formula-token--vertical-distance", "vertical distance")} = ${formulaNumber(verticalContribution, "join-stats__formula-token--vertical-contribution", "vertical contribution")}`
-      )}
-      ${formulaLine(
-        "bend",
-        `${bendWeightTerm} * ${sharpestBendTerm}`,
-        `${formulaNumber(bendWeight, "join-stats__formula-token--bend-weight", "bend influence")} * ${formulaNumber(sharpestBend, "join-stats__formula-token--bend", "fixed-gap bend rate")} = ${formulaNumber(bendContribution, "join-stats__formula-token--bend-contribution", "bend contribution")}`
-      )}
-      ${formulaLine(
-        "raw gap",
-        `${kerningScaleTerm} * (${verticalContributionTerm} + ${bendContributionTerm})`,
-        `${formulaNumber(kerningScale, "join-stats__formula-token--kerning", "kerning scale")} * (${formulaNumber(verticalContribution, "join-stats__formula-token--vertical-contribution", "vertical contribution")} + ${formulaNumber(bendContribution, "join-stats__formula-token--bend-contribution", "bend contribution")}) = ${formulaNumber(rawGap, "join-stats__formula-token--raw-gap", "raw gap")}`
+        "search",
+        `${searchGapTerm} in ${searchRangeTerm} where ${bendRateTerm} <= ${targetBendTerm}`,
+        `${formulaNumber(searchGap, "join-stats__formula-token--raw-target", "selected sidebearing gap")} in [${formulaNumber(searchMin, "join-stats__formula-token--computed-gap", "minimum searched sidebearing gap")}, ${formulaNumber(searchMax, "join-stats__formula-token--computed-gap", "maximum searched sidebearing gap")}] gives ${formulaNumber(searchBend, "join-stats__formula-token--bend", "selected maximum bend rate")} <= ${formulaNumber(targetBendRate, "join-stats__formula-token--bend-weight", "target maximum bend rate")}`
       )}
       ${formulaLine(
         "actual left",
-        `max(${rawTargetTerm}, ${minimumTerm}, ${noBackwardsTerm})`,
-        `max(${formulaNumber(targetLeft, "join-stats__formula-token--raw-target", "raw target left sidebearing x")}, ${formulaNumber(minimumLeft, "join-stats__formula-token--minimum", "minimum sidebearing line")}, ${formulaNumber(noBackwardsLeft, "join-stats__formula-token--no-backwards", "no-backwards line")}) = ${formulaNumber(actualLeft, "join-stats__formula-token--actual", "actual left sidebearing x")}`
+        `max(${searchTargetTerm}, ${minimumTerm}, ${noBackwardsTerm})`,
+        `max(${formulaNumber(searchTargetLeft, "join-stats__formula-token--raw-target", "search target left sidebearing x")}, ${formulaNumber(minimumLeft, "join-stats__formula-token--minimum", "minimum sidebearing line")}, ${formulaNumber(noBackwardsLeft, "join-stats__formula-token--no-backwards", "no-backwards line")}) = ${formulaNumber(actualLeft, "join-stats__formula-token--actual", "actual left sidebearing x")}`
       )}
       ${formulaLine(
         "final gap",
@@ -796,25 +765,14 @@ const renderMetricsPanel = (state: RenderState) => {
     </div>
     <div class="join-stats__metric-grid">
       ${metricRow("Pair", metric.pair)}
+      ${metricRow("Target maximum bend rate", `${formatNumber(spacing.targetBendRate)} deg/0.1t`)}
+      ${metricRow("Search range", `${formatNumber(metric.bendSearchMinSidebearingGap)} to ${formatNumber(metric.bendSearchMaxSidebearingGap)} sidebearing gap, step ${formatNumber(metric.bendSearchStep)}`)}
+      ${metricRow("Selected sidebearing gap", formatNumber(metric.searchedSidebearingGap))}
+      ${metricRow("Selected max bend rate", `${formatNumber(metric.searchedBendRate)} deg/0.1t at t=${formatNumber(metric.searchedBendT, 3)}`)}
       ${metricRow("Vertical distance", formatNumber(metric.verticalDistance))}
-      ${metricRow("Bend measurement sidebearing gap", formatNumber(metric.bendMeasurementSidebearingGap))}
-      ${metricRow(
-        "Vertical contribution",
-        `${formatNumber(spacing.verticalDistanceWeight)} * ${formatNumber(metric.verticalDistance)} = ${formatNumber(metric.verticalContribution)}`
-      )}
-      ${metricRow("Fixed-gap bend rate", `${formatNumber(metric.sharpestBendDegrees)} deg/0.1t at t=${formatNumber(metric.sharpestBendT, 3)}`)}
-      ${metricRow(
-        "Bend contribution",
-        `${formatNumber(spacing.angleChangeWeight)} * ${formatNumber(metric.sharpestBendDegrees)} = ${formatNumber(metric.angleChangeContribution)}`
-      )}
-      ${metricRow("Combined contribution", formatNumber(metric.combinedContribution))}
-      ${metricRow(
-        "Raw gap",
-        `${formatNumber(spacing.kerningScale)} * ${formatNumber(metric.combinedContribution)} = ${formatNumber(metric.rawGap)}`
-      )}
       ${metricRow("Previous exit to right sidebearing", formatNumber(metric.previousExitToRightSidebearing))}
       ${metricRow("Next entry from left sidebearing", formatNumber(metric.nextEntryFromLeftSidebearing))}
-      ${metricRow("Raw target left sidebearing x", formatNumber(metric.targetNextLeftSidebearingX))}
+      ${metricRow("Search target left sidebearing x", formatNumber(metric.targetNextLeftSidebearingX))}
       ${metricRow("Minimum allowed left sidebearing x", formatNumber(metric.clampedNextLeftSidebearingX))}
       ${metricRow("Computed sidebearing gap before no-backwards", computedGapBeforeNoBackwards)}
       ${metricRow("No-backwards minimum sidebearing gap", formatNumber(metric.noBackwardsSidebearingGap))}

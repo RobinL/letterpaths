@@ -140,8 +140,7 @@ export function joinCursiveWord(
         nextEntryFromLeftSidebearing,
         joinSpacing
       );
-      const targetCursorX =
-        prevExitCurve.p3.x + spacing.rawGap - entryOffsetFromLeftSidebearing;
+      const targetCursorX = prevRightSidebearing + spacing.searchedSidebearingGap;
       const minCursorX = prevRightSidebearing + joinSpacing.minSidebearingGap;
       const noBackwardsCursorX =
         prevRightSidebearing + spacing.noBackwardsSidebearingGap;
@@ -157,16 +156,14 @@ export function joinCursiveWord(
         previousChar: prevChar,
         nextChar: char,
         verticalDistance: spacing.verticalDistance,
-        angleChangeDegrees: spacing.angleChangeDegrees,
-        sharpestBendDegrees: spacing.sharpestBendDegrees,
-        sharpestBendT: spacing.sharpestBendT,
-        bendMeasurementSidebearingGap: spacing.bendMeasurementSidebearingGap,
-        bendMeasurementJoinCurve: spacing.bendMeasurementJoinCurve,
-        verticalContribution: spacing.verticalContribution,
-        angleChangeContribution: spacing.angleChangeContribution,
-        combinedContribution: spacing.combinedContribution,
-        kerningScale: spacing.kerningScale,
-        rawGap: spacing.rawGap,
+        targetBendRate: spacing.targetBendRate,
+        bendSearchMinSidebearingGap: spacing.bendSearchMinSidebearingGap,
+        bendSearchMaxSidebearingGap: spacing.bendSearchMaxSidebearingGap,
+        bendSearchStep: spacing.bendSearchStep,
+        searchedSidebearingGap: spacing.searchedSidebearingGap,
+        searchedBendRate: spacing.searchedBendRate,
+        searchedBendT: spacing.searchedBendT,
+        searchedJoinCurve: spacing.searchedJoinCurve,
         appliedGap,
         minSidebearingGap: joinSpacing.minSidebearingGap,
         renderedSidebearingGap,

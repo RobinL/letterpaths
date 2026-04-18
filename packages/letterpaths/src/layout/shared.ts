@@ -38,21 +38,17 @@ export type BuildHandwritingOptions = JoinCursiveOptions & {
 };
 
 export type JoinSpacingOptions = {
-  verticalDistanceWeight?: number;
-  angleChangeWeight?: number;
-  kerningScale?: number;
+  targetBendRate?: number;
   minSidebearingGap?: number;
-  bendMeasurementSidebearingGap?: number;
-  angleDifferenceWeight?: number;
-  bendReversalWeight?: number;
+  bendSearchMinSidebearingGap?: number;
+  bendSearchMaxSidebearingGap?: number;
 };
 
 export type ResolvedJoinSpacingOptions = {
-  verticalDistanceWeight: number;
-  angleChangeWeight: number;
-  kerningScale: number;
+  targetBendRate: number;
   minSidebearingGap: number;
-  bendMeasurementSidebearingGap: number;
+  bendSearchMinSidebearingGap: number;
+  bendSearchMaxSidebearingGap: number;
 };
 
 type StandaloneLayoutConfig = {
@@ -73,12 +69,13 @@ export const cursiveLetterSpacing = 60;
 export const preCursiveLetterSpacing = cursiveLetterSpacing;
 
 export const defaultJoinSpacingOptions: ResolvedJoinSpacingOptions = {
-  verticalDistanceWeight: 0.19,
-  angleChangeWeight: 0.45,
-  kerningScale: 1,
+  targetBendRate: 30,
   minSidebearingGap: 50,
-  bendMeasurementSidebearingGap: 5
+  bendSearchMinSidebearingGap: -30,
+  bendSearchMaxSidebearingGap: 80
 };
+
+const bendSearchStep = 1;
 
 export function buildStandaloneWord(
   text: string,
@@ -500,19 +497,19 @@ function resolveHandleLengths(
 export function resolveJoinSpacingOptions(
   options?: JoinSpacingOptions
 ): ResolvedJoinSpacingOptions {
+  const rawSearchMin =
+    options?.bendSearchMinSidebearingGap ??
+    defaultJoinSpacingOptions.bendSearchMinSidebearingGap;
+  const rawSearchMax =
+    options?.bendSearchMaxSidebearingGap ??
+    defaultJoinSpacingOptions.bendSearchMaxSidebearingGap;
+
   return {
-    verticalDistanceWeight:
-      options?.verticalDistanceWeight ?? defaultJoinSpacingOptions.verticalDistanceWeight,
-    angleChangeWeight:
-      options?.angleChangeWeight ??
-      options?.angleDifferenceWeight ??
-      defaultJoinSpacingOptions.angleChangeWeight,
-    kerningScale: options?.kerningScale ?? defaultJoinSpacingOptions.kerningScale,
+    targetBendRate: options?.targetBendRate ?? defaultJoinSpacingOptions.targetBendRate,
     minSidebearingGap:
       options?.minSidebearingGap ?? defaultJoinSpacingOptions.minSidebearingGap,
-    bendMeasurementSidebearingGap:
-      options?.bendMeasurementSidebearingGap ??
-      defaultJoinSpacingOptions.bendMeasurementSidebearingGap
+    bendSearchMinSidebearingGap: Math.min(rawSearchMin, rawSearchMax),
+    bendSearchMaxSidebearingGap: Math.max(rawSearchMin, rawSearchMax)
   };
 }
 
@@ -524,86 +521,151 @@ export function measureJoinSpacing(
   options: ResolvedJoinSpacingOptions
 ): {
   verticalDistance: number;
-  angleChangeDegrees: number;
-  sharpestBendDegrees: number;
-  sharpestBendT: number;
-  bendMeasurementSidebearingGap: number;
-  bendMeasurementJoinCurve: Curve;
+  targetBendRate: number;
+  bendSearchMinSidebearingGap: number;
+  bendSearchMaxSidebearingGap: number;
+  bendSearchStep: number;
+  searchedSidebearingGap: number;
+  searchedBendRate: number;
+  searchedBendT: number;
+  searchedJoinCurve: Curve;
   noBackwardsSidebearingGap: number;
-  verticalContribution: number;
-  angleChangeContribution: number;
-  combinedContribution: number;
-  kerningScale: number;
-  rawGap: number;
 } {
   const entryCurve = entryPhaseCurves[0];
   const lastEntryCurve = entryPhaseCurves[entryPhaseCurves.length - 1];
   if (!entryCurve || !lastEntryCurve) {
+    const emptyCurve = {
+      p0: { x: 0, y: 0 },
+      p1: { x: 0, y: 0 },
+      p2: { x: 0, y: 0 },
+      p3: { x: 0, y: 0 }
+    };
     return {
       verticalDistance: 0,
-      angleChangeDegrees: 0,
-      sharpestBendDegrees: 0,
-      sharpestBendT: 0,
-      bendMeasurementSidebearingGap: options.bendMeasurementSidebearingGap,
-      bendMeasurementJoinCurve: {
-        p0: { x: 0, y: 0 },
-        p1: { x: 0, y: 0 },
-        p2: { x: 0, y: 0 },
-        p3: { x: 0, y: 0 }
-      },
-      noBackwardsSidebearingGap: 0,
-      verticalContribution: 0,
-      angleChangeContribution: 0,
-      combinedContribution: 0,
-      kerningScale: options.kerningScale,
-      rawGap: 0
+      targetBendRate: options.targetBendRate,
+      bendSearchMinSidebearingGap: options.bendSearchMinSidebearingGap,
+      bendSearchMaxSidebearingGap: options.bendSearchMaxSidebearingGap,
+      bendSearchStep,
+      searchedSidebearingGap: 0,
+      searchedBendRate: 0,
+      searchedBendT: 0,
+      searchedJoinCurve: emptyCurve,
+      noBackwardsSidebearingGap: 0
     };
   }
 
-  const minJoinEntryX =
-    exitCurve.p3.x +
-    previousExitToRightSidebearing +
-    options.minSidebearingGap +
-    nextEntryFromLeftSidebearing;
   const verticalDistance = Math.abs(entryCurve.p0.y - exitCurve.p3.y);
-  const verticalContribution = options.verticalDistanceWeight * verticalDistance;
-  const bendMeasurementEntryX =
-    exitCurve.p3.x +
-    previousExitToRightSidebearing +
-    options.bendMeasurementSidebearingGap +
-    nextEntryFromLeftSidebearing;
-  const entryOffsetX = bendMeasurementEntryX - entryCurve.p0.x;
-  const bendMeasurementEntryCurves = entryPhaseCurves.map((curve) =>
-    translateCurve(curve, entryOffsetX, 0)
+  const searched = findSmallestGapForTargetBendRate(
+    exitCurve,
+    entryCurve,
+    previousExitToRightSidebearing,
+    nextEntryFromLeftSidebearing,
+    options.targetBendRate,
+    options.bendSearchMinSidebearingGap,
+    options.bendSearchMaxSidebearingGap
   );
-  const bendMeasurementEntryCurve = bendMeasurementEntryCurves[0]!;
-  const bendMeasurementJoinCurve = buildJoinCurve(exitCurve, bendMeasurementEntryCurve);
-  const sharpestBend = measureSharpestBend(bendMeasurementJoinCurve);
   const noBackwardsSidebearingGap = measureNoBackwardsSidebearingGap(
     exitCurve,
     entryCurve,
     previousExitToRightSidebearing,
     nextEntryFromLeftSidebearing
   );
-  const angleChangeDegrees = sharpestBend.degrees;
-  const angleChangeContribution = options.angleChangeWeight * sharpestBend.degrees;
-  const combinedContribution = verticalContribution + angleChangeContribution;
-  const rawGap = options.kerningScale * combinedContribution;
 
   return {
     verticalDistance,
-    angleChangeDegrees,
-    sharpestBendDegrees: sharpestBend.degrees,
-    sharpestBendT: sharpestBend.t,
-    bendMeasurementSidebearingGap: options.bendMeasurementSidebearingGap,
-    bendMeasurementJoinCurve,
+    targetBendRate: options.targetBendRate,
+    bendSearchMinSidebearingGap: options.bendSearchMinSidebearingGap,
+    bendSearchMaxSidebearingGap: options.bendSearchMaxSidebearingGap,
+    bendSearchStep,
+    searchedSidebearingGap: searched.sidebearingGap,
+    searchedBendRate: searched.bend.degrees,
+    searchedBendT: searched.bend.t,
+    searchedJoinCurve: searched.joinCurve,
     noBackwardsSidebearingGap,
-    verticalContribution,
-    angleChangeContribution,
-    combinedContribution,
-    kerningScale: options.kerningScale,
-    rawGap
   };
+}
+
+function findSmallestGapForTargetBendRate(
+  exitCurve: Curve,
+  entryCurve: Curve,
+  previousExitToRightSidebearing: number,
+  nextEntryFromLeftSidebearing: number,
+  targetBendRate: number,
+  bendSearchMinSidebearingGap: number,
+  bendSearchMaxSidebearingGap: number
+): {
+  sidebearingGap: number;
+  bend: { degrees: number; t: number };
+  joinCurve: Curve;
+} {
+  let fallback = measureBendAtSidebearingGap(
+    exitCurve,
+    entryCurve,
+    previousExitToRightSidebearing,
+    nextEntryFromLeftSidebearing,
+    bendSearchMaxSidebearingGap
+  );
+
+  for (
+    let sidebearingGap = bendSearchMinSidebearingGap;
+    sidebearingGap <= bendSearchMaxSidebearingGap;
+    sidebearingGap += bendSearchStep
+  ) {
+    const candidate = measureBendAtSidebearingGap(
+      exitCurve,
+      entryCurve,
+      previousExitToRightSidebearing,
+      nextEntryFromLeftSidebearing,
+      sidebearingGap
+    );
+    fallback = candidate;
+    if (candidate.bend.degrees <= targetBendRate) {
+      return candidate;
+    }
+  }
+
+  return fallback;
+}
+
+function measureBendAtSidebearingGap(
+  exitCurve: Curve,
+  entryCurve: Curve,
+  previousExitToRightSidebearing: number,
+  nextEntryFromLeftSidebearing: number,
+  sidebearingGap: number
+): {
+  sidebearingGap: number;
+  bend: { degrees: number; t: number };
+  joinCurve: Curve;
+} {
+  const joinCurve = buildJoinAtSidebearingGap(
+    exitCurve,
+    entryCurve,
+    previousExitToRightSidebearing,
+    nextEntryFromLeftSidebearing,
+    sidebearingGap
+  );
+  return {
+    sidebearingGap,
+    bend: measureSharpestBend(joinCurve),
+    joinCurve
+  };
+}
+
+function buildJoinAtSidebearingGap(
+  exitCurve: Curve,
+  entryCurve: Curve,
+  previousExitToRightSidebearing: number,
+  nextEntryFromLeftSidebearing: number,
+  sidebearingGap: number
+): Curve {
+  const entryX =
+    exitCurve.p3.x +
+    previousExitToRightSidebearing +
+    sidebearingGap +
+    nextEntryFromLeftSidebearing;
+  const shiftedEntryCurve = translateCurve(entryCurve, entryX - entryCurve.p0.x, 0);
+  return buildJoinCurve(exitCurve, shiftedEntryCurve);
 }
 
 function measureNoBackwardsSidebearingGap(
@@ -612,32 +674,53 @@ function measureNoBackwardsSidebearingGap(
   previousExitToRightSidebearing: number,
   nextEntryFromLeftSidebearing: number
 ): number {
-  const buildJoinAtSidebearingGap = (sidebearingGap: number): Curve => {
-    const entryX =
-      exitCurve.p3.x +
-      previousExitToRightSidebearing +
-      sidebearingGap +
-      nextEntryFromLeftSidebearing;
-    const shiftedEntryCurve = translateCurve(entryCurve, entryX - entryCurve.p0.x, 0);
-    return buildJoinCurve(exitCurve, shiftedEntryCurve);
-  };
-
   const baseRange =
     Math.abs(previousExitToRightSidebearing) + Math.abs(nextEntryFromLeftSidebearing) + 1000;
   let low = -Math.max(1000, baseRange);
   let high = Math.max(1000, baseRange);
 
-  while (!isCurveNonBacktrackingX(buildJoinAtSidebearingGap(high)) && high < 10000) {
+  while (
+    !isCurveNonBacktrackingX(
+      buildJoinAtSidebearingGap(
+        exitCurve,
+        entryCurve,
+        previousExitToRightSidebearing,
+        nextEntryFromLeftSidebearing,
+        high
+      )
+    ) &&
+    high < 10000
+  ) {
     high *= 2;
   }
 
-  if (!isCurveNonBacktrackingX(buildJoinAtSidebearingGap(high))) {
+  if (
+    !isCurveNonBacktrackingX(
+      buildJoinAtSidebearingGap(
+        exitCurve,
+        entryCurve,
+        previousExitToRightSidebearing,
+        nextEntryFromLeftSidebearing,
+        high
+      )
+    )
+  ) {
     return high;
   }
 
   for (let i = 0; i < 36; i += 1) {
     const mid = (low + high) / 2;
-    if (isCurveNonBacktrackingX(buildJoinAtSidebearingGap(mid))) {
+    if (
+      isCurveNonBacktrackingX(
+        buildJoinAtSidebearingGap(
+          exitCurve,
+          entryCurve,
+          previousExitToRightSidebearing,
+          nextEntryFromLeftSidebearing,
+          mid
+        )
+      )
+    ) {
       high = mid;
     } else {
       low = mid;

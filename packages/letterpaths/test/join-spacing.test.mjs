@@ -41,107 +41,121 @@ const minimumCurveDx = (curve) => {
   return Math.min(...candidates.map((t) => 3 * (a * t * t + b * t + c)));
 };
 
-test("bend metric is the tangent-angle-rate term used by join spacing", () => {
-  for (const pair of ["oo", "rs", "cu", "aa", "er"]) {
-    const metric = metricFor(pair);
-    assert.equal(metric.angleChangeDegrees, metric.sharpestBendDegrees);
-    assert.ok(metric.sharpestBendDegrees >= 0, `Expected non-negative bend for ${pair}.`);
-    assert.ok(metric.sharpestBendT > 0 && metric.sharpestBendT < 1, `Expected bend t inside join for ${pair}.`);
-  }
-});
-
-test("fixed-gap bend measurement does not depend on spacing controls", () => {
-  const defaultMetric = metricFor("cu");
-  const retunedMetric = metricFor("cu", {
+test("join spacing searches sidebearing gaps from -30 to 80 by default", () => {
+  const metric = metricFor("cu", {
     joinSpacing: {
-      verticalDistanceWeight: -0.8,
-      angleChangeWeight: 3.5,
-      kerningScale: 0.2,
-      minSidebearingGap: -220
+      minSidebearingGap: -500,
+      targetBendRate: 30
     }
   });
 
-  assert.equal(defaultMetric.bendMeasurementSidebearingGap, 5);
-  assert.equal(retunedMetric.bendMeasurementSidebearingGap, 5);
-  assert.equal(defaultMetric.sharpestBendDegrees, retunedMetric.sharpestBendDegrees);
-  assert.equal(defaultMetric.sharpestBendT, retunedMetric.sharpestBendT);
+  assert.equal(metric.bendSearchMinSidebearingGap, -30);
+  assert.equal(metric.bendSearchMaxSidebearingGap, 80);
+  assert.equal(metric.bendSearchStep, 1);
+  assert.ok(metric.searchedSidebearingGap >= -30);
+  assert.ok(metric.searchedSidebearingGap <= 80);
+  assert.ok(metric.searchedBendRate <= metric.targetBendRate);
 });
 
-test("fixed-gap bend measurement sidebearing gap is configurable", () => {
-  const tightMetric = metricFor("cu", {
+test("search sidebearing gap bounds are configurable", () => {
+  const metric = metricFor("cu", {
     joinSpacing: {
-      bendMeasurementSidebearingGap: 5
+      minSidebearingGap: -500,
+      targetBendRate: 999,
+      bendSearchMinSidebearingGap: 10,
+      bendSearchMaxSidebearingGap: 40
     }
   });
-  const wideMetric = metricFor("cu", {
+
+  assert.equal(metric.bendSearchMinSidebearingGap, 10);
+  assert.equal(metric.bendSearchMaxSidebearingGap, 40);
+  assert.equal(metric.searchedSidebearingGap, 10);
+});
+
+test("reversed search sidebearing gap bounds are normalized", () => {
+  const metric = metricFor("cu", {
     joinSpacing: {
-      bendMeasurementSidebearingGap: 120
+      minSidebearingGap: -500,
+      targetBendRate: 999,
+      bendSearchMinSidebearingGap: 40,
+      bendSearchMaxSidebearingGap: 10
     }
   });
 
-  assert.equal(tightMetric.bendMeasurementSidebearingGap, 5);
-  assert.equal(wideMetric.bendMeasurementSidebearingGap, 120);
-  assert.notEqual(tightMetric.sharpestBendDegrees, wideMetric.sharpestBendDegrees);
+  assert.equal(metric.bendSearchMinSidebearingGap, 10);
+  assert.equal(metric.bendSearchMaxSidebearingGap, 40);
+  assert.equal(metric.searchedSidebearingGap, 10);
 });
 
-test("raw gap combines vertical and fixed-gap bend contributions", () => {
-  const metric = metricFor("ac");
-  assert.equal(
-    metric.rawGap,
-    metric.kerningScale * (metric.verticalContribution + metric.angleChangeContribution)
-  );
+test("looser bend target chooses the minimum searched sidebearing gap", () => {
+  const metric = metricFor("cu", {
+    joinSpacing: {
+      minSidebearingGap: -500,
+      targetBendRate: 999
+    }
+  });
+
+  assert.equal(metric.searchedSidebearingGap, metric.bendSearchMinSidebearingGap);
 });
 
-test("curvier fixed-gap joins receive larger bend influence", () => {
-  const oo = metricFor("oo");
-  const rs = metricFor("rs");
-  const cu = metricFor("cu");
-  const ac = metricFor("ac");
-  const er = metricFor("er");
+test("unreachable bend target falls back to the maximum searched sidebearing gap", () => {
+  const metric = metricFor("cu", {
+    joinSpacing: {
+      minSidebearingGap: -500,
+      targetBendRate: 0
+    }
+  });
 
-  assert.ok(rs.sharpestBendDegrees > oo.sharpestBendDegrees, `Expected rs bend > oo bend.`);
-  assert.ok(cu.sharpestBendDegrees > rs.sharpestBendDegrees, `Expected cu bend > rs bend.`);
-  assert.ok(ac.sharpestBendDegrees > er.sharpestBendDegrees, `Expected ac bend > er bend.`);
-  assert.ok(cu.angleChangeContribution > rs.angleChangeContribution, `Expected cu bend contribution > rs.`);
-  assert.ok(ac.angleChangeContribution > er.angleChangeContribution, `Expected ac bend contribution > er.`);
+  assert.equal(metric.searchedSidebearingGap, metric.bendSearchMaxSidebearingGap);
+  assert.ok(metric.searchedBendRate > metric.targetBendRate);
 });
 
-test("bend influence increases raw and applied spacing for sharp unclamped joins", () => {
-  const withoutBend = metricFor("aa", { joinSpacing: { angleChangeWeight: 0 } });
-  const withBend = metricFor("aa", { joinSpacing: { angleChangeWeight: 5 } });
+test("lower target bend rates choose wider sidebearing gaps", () => {
+  const loose = metricFor("cu", {
+    joinSpacing: {
+      minSidebearingGap: -500,
+      targetBendRate: 55
+    }
+  });
+  const strict = metricFor("cu", {
+    joinSpacing: {
+      minSidebearingGap: -500,
+      targetBendRate: 25
+    }
+  });
 
-  assert.ok(withBend.rawGap > withoutBend.rawGap, `Expected bend influence to increase raw gap.`);
-  assert.ok(
-    withBend.appliedGap > withoutBend.appliedGap,
-    `Expected bend influence to increase applied gap when the join is not clamped.`
-  );
+  assert.ok(strict.searchedSidebearingGap > loose.searchedSidebearingGap);
+  assert.ok(strict.searchedBendRate <= strict.targetBendRate);
 });
 
-test("minimum sidebearing clamp still applies when raw target is tighter than the minimum", () => {
-  const metric = metricFor("oo", { joinSpacing: { angleChangeWeight: 0 } });
+test("minimum sidebearing clamp still applies after bend search", () => {
+  const metric = metricFor("oo", {
+    joinSpacing: {
+      minSidebearingGap: 95,
+      targetBendRate: 999
+    }
+  });
 
+  assert.equal(metric.searchedSidebearingGap, metric.bendSearchMinSidebearingGap);
   assert.equal(metric.renderedSidebearingGap, metric.minSidebearingGap);
   assert.equal(metric.actualNextLeftSidebearingX, metric.clampedNextLeftSidebearingX);
-  assert.ok(metric.appliedGap > metric.rawGap, `Expected sidebearing clamp to dominate oo.`);
 });
 
-test("no-backwards clamp applies a pair-specific sidebearing gap after all spacing controls", () => {
-  const negativeSpacingOptions = {
+test("no-backwards clamp still applies after bend search and minimum sidebearing", () => {
+  const options = {
     joinSpacing: {
-      verticalDistanceWeight: -1,
-      angleChangeWeight: 0,
-      kerningScale: 1,
-      minSidebearingGap: -500
+      minSidebearingGap: -500,
+      targetBendRate: 999
     }
   };
-  const metric = metricFor("ur", negativeSpacingOptions);
+  const metric = metricFor("ur", options);
 
-  assert.ok(metric.rawGap < 0, `Expected retuned controls to request a negative raw gap.`);
+  assert.equal(metric.searchedSidebearingGap, metric.bendSearchMinSidebearingGap);
   assert.equal(metric.actualNextLeftSidebearingX, metric.noBackwardsNextLeftSidebearingX);
   assert.ok(
     Math.abs(metric.renderedSidebearingGap - metric.noBackwardsSidebearingGap) < 0.000001,
-    `Expected rendered gap to use the pair-specific no-backwards gap.`
+    "Expected rendered gap to use the pair-specific no-backwards gap."
   );
-  assert.ok(metric.noBackwardsSidebearingGap > 0, `Expected a positive no-backwards minimum gap.`);
-  assert.ok(minimumCurveDx(firstJoinCurveFor("ur", negativeSpacingOptions)) >= -0.001);
+  assert.ok(metric.noBackwardsSidebearingGap > metric.searchedSidebearingGap);
+  assert.ok(minimumCurveDx(firstJoinCurveFor("ur", options)) >= -0.001);
 });
