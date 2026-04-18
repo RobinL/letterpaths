@@ -524,6 +524,7 @@ export function measureJoinSpacing(
   sharpestBendT: number;
   bendMeasurementSidebearingGap: number;
   bendMeasurementJoinCurve: Curve;
+  noBackwardsSidebearingGap: number;
   verticalContribution: number;
   angleChangeContribution: number;
   combinedContribution: number;
@@ -545,6 +546,7 @@ export function measureJoinSpacing(
         p2: { x: 0, y: 0 },
         p3: { x: 0, y: 0 }
       },
+      noBackwardsSidebearingGap: 0,
       verticalContribution: 0,
       angleChangeContribution: 0,
       combinedContribution: 0,
@@ -572,6 +574,12 @@ export function measureJoinSpacing(
   const bendMeasurementEntryCurve = bendMeasurementEntryCurves[0]!;
   const bendMeasurementJoinCurve = buildJoinCurve(exitCurve, bendMeasurementEntryCurve);
   const sharpestBend = measureSharpestBend(bendMeasurementJoinCurve);
+  const noBackwardsSidebearingGap = measureNoBackwardsSidebearingGap(
+    exitCurve,
+    entryCurve,
+    previousExitToRightSidebearing,
+    nextEntryFromLeftSidebearing
+  );
   const angleChangeDegrees = sharpestBend.degrees;
   const angleChangeContribution = options.angleChangeWeight * sharpestBend.degrees;
   const combinedContribution = verticalContribution + angleChangeContribution;
@@ -584,12 +592,76 @@ export function measureJoinSpacing(
     sharpestBendT: sharpestBend.t,
     bendMeasurementSidebearingGap,
     bendMeasurementJoinCurve,
+    noBackwardsSidebearingGap,
     verticalContribution,
     angleChangeContribution,
     combinedContribution,
     kerningScale: options.kerningScale,
     rawGap
   };
+}
+
+function measureNoBackwardsSidebearingGap(
+  exitCurve: Curve,
+  entryCurve: Curve,
+  previousExitToRightSidebearing: number,
+  nextEntryFromLeftSidebearing: number
+): number {
+  const buildJoinAtSidebearingGap = (sidebearingGap: number): Curve => {
+    const entryX =
+      exitCurve.p3.x +
+      previousExitToRightSidebearing +
+      sidebearingGap +
+      nextEntryFromLeftSidebearing;
+    const shiftedEntryCurve = translateCurve(entryCurve, entryX - entryCurve.p0.x, 0);
+    return buildJoinCurve(exitCurve, shiftedEntryCurve);
+  };
+
+  const baseRange =
+    Math.abs(previousExitToRightSidebearing) + Math.abs(nextEntryFromLeftSidebearing) + 1000;
+  let low = -Math.max(1000, baseRange);
+  let high = Math.max(1000, baseRange);
+
+  while (!isCurveNonBacktrackingX(buildJoinAtSidebearingGap(high)) && high < 10000) {
+    high *= 2;
+  }
+
+  if (!isCurveNonBacktrackingX(buildJoinAtSidebearingGap(high))) {
+    return high;
+  }
+
+  for (let i = 0; i < 36; i += 1) {
+    const mid = (low + high) / 2;
+    if (isCurveNonBacktrackingX(buildJoinAtSidebearingGap(mid))) {
+      high = mid;
+    } else {
+      low = mid;
+    }
+  }
+
+  return high;
+}
+
+function isCurveNonBacktrackingX(curve: Curve): boolean {
+  return getMinimumCurveDx(curve) >= -0.001;
+}
+
+function getMinimumCurveDx(curve: Curve): number {
+  const x0 = curve.p0.x;
+  const x1 = curve.p1.x;
+  const x2 = curve.p2.x;
+  const x3 = curve.p3.x;
+  const a = -x0 + 3 * x1 - 3 * x2 + x3;
+  const b = 2 * x0 - 4 * x1 + 2 * x2;
+  const c = x1 - x0;
+  const candidates = [0, 1];
+  if (Math.abs(a) > 0.000001) {
+    const vertex = -b / (2 * a);
+    if (vertex > 0 && vertex < 1) {
+      candidates.push(vertex);
+    }
+  }
+  return Math.min(...candidates.map((t) => 3 * (a * t * t + b * t + c)));
 }
 
 function measureSharpestBend(curve: Curve, sampleCount = 80): { degrees: number; t: number } {

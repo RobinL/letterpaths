@@ -143,7 +143,9 @@ export function joinCursiveWord(
       const targetCursorX =
         prevExitCurve.p3.x + spacing.rawGap - entryOffsetFromLeftSidebearing;
       const minCursorX = prevRightSidebearing + joinSpacing.minSidebearingGap;
-      cursorX = Math.max(targetCursorX, minCursorX);
+      const noBackwardsCursorX =
+        prevRightSidebearing + spacing.noBackwardsSidebearingGap;
+      cursorX = Math.max(targetCursorX, minCursorX, noBackwardsCursorX);
       const offsetX = cursorX - normalizedGuides.left;
       const shiftedEntryX = entryCurve.p0.x + offsetX;
       const renderedSidebearingGap = cursorX - prevRightSidebearing;
@@ -175,6 +177,8 @@ export function joinCursiveWord(
         previousRightSidebearingX: prevRightSidebearing,
         targetNextLeftSidebearingX: targetCursorX,
         clampedNextLeftSidebearingX: minCursorX,
+        noBackwardsSidebearingGap: spacing.noBackwardsSidebearingGap,
+        noBackwardsNextLeftSidebearingX: noBackwardsCursorX,
         actualNextLeftSidebearingX: cursorX,
         nextEntryX: shiftedEntryX
       });

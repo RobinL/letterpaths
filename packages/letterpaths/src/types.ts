@@ -39,6 +39,8 @@ export type JoinMetric = {
   previousRightSidebearingX: number;
   targetNextLeftSidebearingX: number;
   clampedNextLeftSidebearingX: number;
+  noBackwardsSidebearingGap: number;
+  noBackwardsNextLeftSidebearingX: number;
   actualNextLeftSidebearingX: number;
   nextEntryX: number;
 };

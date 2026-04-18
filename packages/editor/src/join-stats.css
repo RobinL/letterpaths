@@ -321,6 +321,11 @@ body {
   stroke-dasharray: 4 8;
 }
 
+.join-stats__calc-line--no-backwards {
+  stroke: #c43b68;
+  stroke-dasharray: 14 6 4 6;
+}
+
 .join-stats__calc-line--actual {
   stroke: #188977;
 }
@@ -429,9 +434,17 @@ body {
   background: #5f6470;
 }
 
+.join-stats__formula-token--computed-gap {
+  background: #6d7470;
+}
+
 .join-stats__formula-token--minimum {
   background: #c79f22;
   color: #1f2724;
+}
+
+.join-stats__formula-token--no-backwards {
+  background: #c43b68;
 }
 
 .join-stats__formula-token--actual {

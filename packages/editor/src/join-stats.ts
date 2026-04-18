@@ -219,6 +219,7 @@ const metricXKeys = [
   "previousRightSidebearingX",
   "targetNextLeftSidebearingX",
   "clampedNextLeftSidebearingX",
+  "noBackwardsNextLeftSidebearingX",
   "actualNextLeftSidebearingX",
   "nextEntryX"
 ] as const satisfies ReadonlyArray<keyof JoinMetric>
@@ -610,6 +611,7 @@ const renderCalculationPanel = (state: RenderState) => {
     shiftedMetric.previousRightSidebearingX,
     shiftedMetric.targetNextLeftSidebearingX,
     shiftedMetric.clampedNextLeftSidebearingX,
+    shiftedMetric.noBackwardsNextLeftSidebearingX,
     shiftedMetric.actualNextLeftSidebearingX,
     shiftedMetric.nextEntryX
   ]
@@ -650,14 +652,16 @@ const renderCalculationPanel = (state: RenderState) => {
     <line class="join-stats__calc-line join-stats__calc-line--previous" x1="${shiftedMetric.previousRightSidebearingX}" y1="${sidebearingTop}" x2="${shiftedMetric.previousRightSidebearingX}" y2="${sidebearingBottom}"></line>
     <line class="join-stats__calc-line join-stats__calc-line--target" x1="${shiftedMetric.targetNextLeftSidebearingX}" y1="${sidebearingTop}" x2="${shiftedMetric.targetNextLeftSidebearingX}" y2="${sidebearingBottom}"></line>
     <line class="join-stats__calc-line join-stats__calc-line--minimum" x1="${shiftedMetric.clampedNextLeftSidebearingX}" y1="${sidebearingTop}" x2="${shiftedMetric.clampedNextLeftSidebearingX}" y2="${sidebearingBottom}"></line>
+    <line class="join-stats__calc-line join-stats__calc-line--no-backwards" x1="${shiftedMetric.noBackwardsNextLeftSidebearingX}" y1="${sidebearingTop}" x2="${shiftedMetric.noBackwardsNextLeftSidebearingX}" y2="${sidebearingBottom}"></line>
     <line class="join-stats__calc-line join-stats__calc-line--actual" x1="${shiftedMetric.actualNextLeftSidebearingX}" y1="${sidebearingTop}" x2="${shiftedMetric.actualNextLeftSidebearingX}" y2="${sidebearingBottom}"></line>
     <line class="join-stats__calc-line join-stats__calc-line--entry" x1="${shiftedMetric.nextEntryX}" y1="${sidebearingTop}" x2="${shiftedMetric.nextEntryX}" y2="${sidebearingBottom}"></line>
 
     <text class="join-stats__label" x="${shiftedMetric.previousRightSidebearingX}" y="${topLabelY}" text-anchor="middle">prev right</text>
     <text class="join-stats__label" x="${shiftedMetric.targetNextLeftSidebearingX}" y="${topLabelY + 28}" text-anchor="middle">raw target</text>
     <text class="join-stats__label" x="${shiftedMetric.clampedNextLeftSidebearingX}" y="${topLabelY + 56}" text-anchor="middle">min sidebearing</text>
-    <text class="join-stats__label" x="${shiftedMetric.actualNextLeftSidebearingX}" y="${topLabelY + 84}" text-anchor="middle">actual left</text>
-    <text class="join-stats__label" x="${shiftedMetric.nextEntryX}" y="${topLabelY + 112}" text-anchor="middle">next entry</text>
+    <text class="join-stats__label" x="${shiftedMetric.noBackwardsNextLeftSidebearingX}" y="${topLabelY + 84}" text-anchor="middle">no backwards</text>
+    <text class="join-stats__label" x="${shiftedMetric.actualNextLeftSidebearingX}" y="${topLabelY + 112}" text-anchor="middle">actual left</text>
+    <text class="join-stats__label" x="${shiftedMetric.nextEntryX}" y="${topLabelY + 140}" text-anchor="middle">next entry</text>
 
     <path class="join-stats__calc-join" d="${buildCurveD(joinCurve)}"></path>
     <path class="join-stats__bend-measurement-join" d="${buildCurveD(bendMeasurementCurve)}"></path>
@@ -730,7 +734,14 @@ const renderMetricsPanel = (state: RenderState) => {
   const rawGap = formatNumber(metric.rawGap)
   const targetLeft = formatNumber(metric.targetNextLeftSidebearingX)
   const minimumLeft = formatNumber(metric.clampedNextLeftSidebearingX)
+  const noBackwardsLeft = formatNumber(metric.noBackwardsNextLeftSidebearingX)
   const actualLeft = formatNumber(metric.actualNextLeftSidebearingX)
+  const computedGapBeforeNoBackwardsValue =
+    Math.max(metric.targetNextLeftSidebearingX, metric.clampedNextLeftSidebearingX) -
+    metric.previousRightSidebearingX
+  const computedGapBeforeNoBackwards = formatNumber(computedGapBeforeNoBackwardsValue)
+  const noBackwardsGap = formatNumber(metric.noBackwardsSidebearingGap)
+  const actualSidebearingGap = formatNumber(metric.renderedSidebearingGap)
   const verticalWeightTerm = formulaTerm("vertical weight", "join-stats__formula-token--vertical-weight", "vertical distance influence")
   const verticalDistanceTerm = formulaTerm("vertical distance", "join-stats__formula-token--vertical-distance", "distance between exit and next entry y positions")
   const bendWeightTerm = formulaTerm("bend weight", "join-stats__formula-token--bend-weight", "bend influence")
@@ -740,6 +751,9 @@ const renderMetricsPanel = (state: RenderState) => {
   const bendContributionTerm = formulaTerm("bend contribution", "join-stats__formula-token--bend-contribution", "bend influence multiplied by fixed-gap bend rate")
   const rawTargetTerm = formulaTerm("raw target left", "join-stats__formula-token--raw-target", "raw target left sidebearing x")
   const minimumTerm = formulaTerm("minimum sidebearing line", "join-stats__formula-token--minimum", "minimum sidebearing line")
+  const computedGapTerm = formulaTerm("computed gap", "join-stats__formula-token--computed-gap", "sidebearing gap after raw spacing and minimum sidebearing")
+  const noBackwardsGapTerm = formulaTerm("no-backwards minimum gap", "join-stats__formula-token--no-backwards", "minimum sidebearing gap that keeps the join Bezier moving left-to-right")
+  const noBackwardsTerm = formulaTerm("no-backwards line", "join-stats__formula-token--no-backwards", "left sidebearing line from the no-backwards minimum gap")
   const actualTerm = formulaTerm("actual left", "join-stats__formula-token--actual", "actual left sidebearing x")
 
   pairLabel.textContent = `${metric.pair} pair ${selectedPairIndex + 1} of ${state.metrics.length}`
@@ -762,8 +776,13 @@ const renderMetricsPanel = (state: RenderState) => {
       )}
       ${formulaLine(
         "actual left",
-        `max(${rawTargetTerm}, ${minimumTerm})`,
-        `max(${formulaNumber(targetLeft, "join-stats__formula-token--raw-target", "raw target left sidebearing x")}, ${formulaNumber(minimumLeft, "join-stats__formula-token--minimum", "minimum sidebearing line")}) = ${formulaNumber(actualLeft, "join-stats__formula-token--actual", "actual left sidebearing x")}`
+        `max(${rawTargetTerm}, ${minimumTerm}, ${noBackwardsTerm})`,
+        `max(${formulaNumber(targetLeft, "join-stats__formula-token--raw-target", "raw target left sidebearing x")}, ${formulaNumber(minimumLeft, "join-stats__formula-token--minimum", "minimum sidebearing line")}, ${formulaNumber(noBackwardsLeft, "join-stats__formula-token--no-backwards", "no-backwards line")}) = ${formulaNumber(actualLeft, "join-stats__formula-token--actual", "actual left sidebearing x")}`
+      )}
+      ${formulaLine(
+        "final gap",
+        `max(${computedGapTerm}, ${noBackwardsGapTerm})`,
+        `max(${formulaNumber(computedGapBeforeNoBackwards, "join-stats__formula-token--computed-gap", "computed sidebearing gap before no-backwards clamp")}, ${formulaNumber(noBackwardsGap, "join-stats__formula-token--no-backwards", "no-backwards minimum sidebearing gap")}) = ${formulaNumber(actualSidebearingGap, "join-stats__formula-token--actual", "actual sidebearing gap")}`
       )}
     </div>
     <div class="join-stats__metric-grid">
@@ -788,8 +807,12 @@ const renderMetricsPanel = (state: RenderState) => {
       ${metricRow("Next entry from left sidebearing", formatNumber(metric.nextEntryFromLeftSidebearing))}
       ${metricRow("Raw target left sidebearing x", formatNumber(metric.targetNextLeftSidebearingX))}
       ${metricRow("Minimum allowed left sidebearing x", formatNumber(metric.clampedNextLeftSidebearingX))}
+      ${metricRow("Computed sidebearing gap before no-backwards", computedGapBeforeNoBackwards)}
+      ${metricRow("No-backwards minimum sidebearing gap", formatNumber(metric.noBackwardsSidebearingGap))}
+      ${metricRow("No-backwards left sidebearing x", formatNumber(metric.noBackwardsNextLeftSidebearingX))}
       ${metricRow("Actual left sidebearing x", formatNumber(metric.actualNextLeftSidebearingX))}
       ${metricRow("Minimum clamp applied", clampedByMinimum ? "yes" : "no")}
+      ${metricRow("No-backwards clamp applied", metric.actualNextLeftSidebearingX === metric.noBackwardsNextLeftSidebearingX ? "yes" : "no")}
       ${metricRow("Rendered sidebearing gap", formatNumber(metric.renderedSidebearingGap))}
       ${metricRow("Applied exit-to-entry gap", formatNumber(metric.appliedGap))}
     </div>
