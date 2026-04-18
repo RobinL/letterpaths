@@ -75,7 +75,7 @@ const joinControlDefinitions = [
   },
   {
     key: "angleChangeWeight",
-    label: "Join turn influence",
+    label: "Bend influence",
     min: -5,
     max: 5,
     step: 0.05,

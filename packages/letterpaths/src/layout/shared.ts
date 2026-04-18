@@ -76,7 +76,7 @@ export const defaultJoinSpacingOptions: ResolvedJoinSpacingOptions = {
   kerningScale: 1,
   minSidebearingGap: 50
 };
-const midpointLiftVerticalScale = 300;
+const bendMeasurementSidebearingGap = 5;
 
 export function buildStandaloneWord(
   text: string,
@@ -520,13 +520,10 @@ export function measureJoinSpacing(
 ): {
   verticalDistance: number;
   angleChangeDegrees: number;
-  endpointAngleChangeDegrees: number;
-  midpointTurnDegrees: number;
-  midpointBonusDegrees: number;
-  verticalLiftFactor: number;
-  alignmentFactor: number;
-  entryResolutionHorizontality: number;
-  horizontalDemandFactor: number;
+  sharpestBendDegrees: number;
+  sharpestBendT: number;
+  bendMeasurementSidebearingGap: number;
+  bendMeasurementJoinCurve: Curve;
   verticalContribution: number;
   angleChangeContribution: number;
   combinedContribution: number;
@@ -539,13 +536,15 @@ export function measureJoinSpacing(
     return {
       verticalDistance: 0,
       angleChangeDegrees: 0,
-      endpointAngleChangeDegrees: 0,
-      midpointTurnDegrees: 0,
-      midpointBonusDegrees: 0,
-      verticalLiftFactor: 0,
-      alignmentFactor: 0,
-      entryResolutionHorizontality: 0,
-      horizontalDemandFactor: 0,
+      sharpestBendDegrees: 0,
+      sharpestBendT: 0,
+      bendMeasurementSidebearingGap,
+      bendMeasurementJoinCurve: {
+        p0: { x: 0, y: 0 },
+        p1: { x: 0, y: 0 },
+        p2: { x: 0, y: 0 },
+        p3: { x: 0, y: 0 }
+      },
       verticalContribution: 0,
       angleChangeContribution: 0,
       combinedContribution: 0,
@@ -559,45 +558,32 @@ export function measureJoinSpacing(
     previousExitToRightSidebearing +
     options.minSidebearingGap +
     nextEntryFromLeftSidebearing;
-  const entryOffsetX = minJoinEntryX - entryCurve.p0.x;
-  const provisionalEntryCurves = entryPhaseCurves.map((curve) =>
+  const verticalDistance = Math.abs(entryCurve.p0.y - exitCurve.p3.y);
+  const verticalContribution = options.verticalDistanceWeight * verticalDistance;
+  const bendMeasurementEntryX =
+    exitCurve.p3.x +
+    previousExitToRightSidebearing +
+    bendMeasurementSidebearingGap +
+    nextEntryFromLeftSidebearing;
+  const entryOffsetX = bendMeasurementEntryX - entryCurve.p0.x;
+  const bendMeasurementEntryCurves = entryPhaseCurves.map((curve) =>
     translateCurve(curve, entryOffsetX, 0)
   );
-  const provisionalEntryCurve = provisionalEntryCurves[0]!;
-  const provisionalLastEntryCurve = provisionalEntryCurves[provisionalEntryCurves.length - 1]!;
-  const provisionalJoinCurve = buildJoinCurve(exitCurve, provisionalEntryCurve);
-  const verticalDistance = Math.abs(provisionalEntryCurve.p0.y - exitCurve.p3.y);
-  const startTangent = getExitTangent(exitCurve);
-  const entryStartTangent = getEntryTangent(provisionalEntryCurve);
-  const endpointAngleChangeDegrees = getAngleBetweenVectorsDegrees(
-    startTangent,
-    entryStartTangent
-  );
-  const midpointTurnDegrees = measureCurveTurnDegrees(provisionalJoinCurve);
-  const midpointBonusDegrees = Math.max(0, midpointTurnDegrees - endpointAngleChangeDegrees);
-  const verticalLiftFactor = Math.min(1, verticalDistance / midpointLiftVerticalScale);
-  const alignmentFactor = Math.max(0, 1 - endpointAngleChangeDegrees / 90);
-  const entryResolutionHorizontality = Math.abs(getExitTangent(provisionalLastEntryCurve).x);
-  const horizontalDemandFactor = 0.5 + 0.5 * entryResolutionHorizontality;
-  const angleChangeDegrees =
-    (endpointAngleChangeDegrees +
-      midpointBonusDegrees * verticalLiftFactor * alignmentFactor) *
-    horizontalDemandFactor;
-  const verticalContribution = options.verticalDistanceWeight * verticalDistance;
-  const angleChangeContribution = options.angleChangeWeight * angleChangeDegrees;
+  const bendMeasurementEntryCurve = bendMeasurementEntryCurves[0]!;
+  const bendMeasurementJoinCurve = buildJoinCurve(exitCurve, bendMeasurementEntryCurve);
+  const sharpestBend = measureSharpestBend(bendMeasurementJoinCurve);
+  const angleChangeDegrees = sharpestBend.degrees;
+  const angleChangeContribution = options.angleChangeWeight * sharpestBend.degrees;
   const combinedContribution = verticalContribution + angleChangeContribution;
   const rawGap = options.kerningScale * combinedContribution;
 
   return {
     verticalDistance,
     angleChangeDegrees,
-    endpointAngleChangeDegrees,
-    midpointTurnDegrees,
-    midpointBonusDegrees,
-    verticalLiftFactor,
-    alignmentFactor,
-    entryResolutionHorizontality,
-    horizontalDemandFactor,
+    sharpestBendDegrees: sharpestBend.degrees,
+    sharpestBendT: sharpestBend.t,
+    bendMeasurementSidebearingGap,
+    bendMeasurementJoinCurve,
     verticalContribution,
     angleChangeContribution,
     combinedContribution,
@@ -606,33 +592,52 @@ export function measureJoinSpacing(
   };
 }
 
-function measureCurveTurnDegrees(curve: Curve): number {
-  const startTangent = normalizeVector({
-    x: curve.p1.x - curve.p0.x,
-    y: curve.p1.y - curve.p0.y
-  });
-  const endTangent = normalizeVector({
-    x: curve.p3.x - curve.p2.x,
-    y: curve.p3.y - curve.p2.y
-  });
-  const controlMidpoint = {
-    x: (curve.p1.x + curve.p2.x) / 2,
-    y: (curve.p1.y + curve.p2.y) / 2
-  };
-  const midpointFromExit = normalizeVector({
-    x: controlMidpoint.x - curve.p0.x,
-    y: controlMidpoint.y - curve.p0.y
-  });
-  const entryFromMidpoint = normalizeVector({
-    x: curve.p3.x - controlMidpoint.x,
-    y: curve.p3.y - controlMidpoint.y
-  });
+function measureSharpestBend(curve: Curve, sampleCount = 80): { degrees: number; t: number } {
+  const sampleWindowT = 0.02;
+  const rateScaleT = 0.1;
+  let sharpest = { degrees: 0, t: 0 };
+  const edgeSamplePadding = Math.max(1, Math.ceil(sampleCount * 0.05));
 
-  return (
-    getAngleBetweenVectorsDegrees(startTangent, midpointFromExit) +
-    getAngleBetweenVectorsDegrees(entryFromMidpoint, endTangent)
-  );
+  for (let index = edgeSamplePadding; index <= sampleCount - edgeSamplePadding; index += 1) {
+    const t = index / sampleCount;
+    const before = getTangentAngleAt(curve, Math.max(0, t - sampleWindowT));
+    const after = getTangentAngleAt(curve, Math.min(1, t + sampleWindowT));
+    const radiansPerT = getAngleDeltaRadians(before, after) / (sampleWindowT * 2);
+    const degrees = radiansPerT * rateScaleT * (180 / Math.PI);
+    if (degrees > sharpest.degrees) {
+      sharpest = { degrees, t };
+    }
+  }
+
+  return sharpest;
 }
+
+function getTangentAngleAt(curve: Curve, t: number): number {
+  const tangent = getCurveDerivativeAt(curve, t);
+  return Math.atan2(tangent.y, tangent.x);
+}
+
+function getAngleDeltaRadians(a: number, b: number): number {
+  let delta = b - a;
+  while (delta > Math.PI) delta -= Math.PI * 2;
+  while (delta < -Math.PI) delta += Math.PI * 2;
+  return Math.abs(delta);
+}
+
+function getCurveDerivativeAt(curve: Curve, t: number): Point {
+  const mt = 1 - t;
+  return {
+    x:
+      3 * mt * mt * (curve.p1.x - curve.p0.x) +
+      6 * mt * t * (curve.p2.x - curve.p1.x) +
+      3 * t * t * (curve.p3.x - curve.p2.x),
+    y:
+      3 * mt * mt * (curve.p1.y - curve.p0.y) +
+      6 * mt * t * (curve.p2.y - curve.p1.y) +
+      3 * t * t * (curve.p3.y - curve.p2.y)
+  };
+}
+
 
 function getExitTangent(curve: Curve): Point {
   return normalizeVector({
