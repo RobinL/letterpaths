@@ -57,6 +57,14 @@ const joinControlDefinitions = [
     max: 500,
     step: 5,
     value: 95
+  },
+  {
+    key: "bendMeasurementSidebearingGap",
+    label: "Bend measurement sidebearing gap",
+    min: -200,
+    max: 300,
+    step: 5,
+    value: defaultJoinSpacingOptions.bendMeasurementSidebearingGap
   }
 ] as const satisfies ReadonlyArray<{
   key: JoinControlKey
@@ -255,6 +263,7 @@ const readJoinSpacing = (): Required<JoinSpacingOptions> => ({
   angleChangeWeight: Number(joinSpacingInputs.angleChangeWeight?.value ?? 0),
   kerningScale: Number(joinSpacingInputs.kerningScale?.value ?? 0),
   minSidebearingGap: Number(joinSpacingInputs.minSidebearingGap?.value ?? 0),
+  bendMeasurementSidebearingGap: Number(joinSpacingInputs.bendMeasurementSidebearingGap?.value ?? 0),
   angleDifferenceWeight: 0,
   bendReversalWeight: 0
 })
@@ -267,7 +276,7 @@ const syncJoinSpacingLabels = () => {
       return
     }
     valueEl.textContent =
-      control.key === "minSidebearingGap"
+      control.key === "minSidebearingGap" || control.key === "bendMeasurementSidebearingGap"
         ? Number(inputEl.value).toFixed(0)
         : Number(inputEl.value).toFixed(2)
   })

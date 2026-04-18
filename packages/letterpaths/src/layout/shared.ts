@@ -42,6 +42,7 @@ export type JoinSpacingOptions = {
   angleChangeWeight?: number;
   kerningScale?: number;
   minSidebearingGap?: number;
+  bendMeasurementSidebearingGap?: number;
   angleDifferenceWeight?: number;
   bendReversalWeight?: number;
 };
@@ -51,6 +52,7 @@ export type ResolvedJoinSpacingOptions = {
   angleChangeWeight: number;
   kerningScale: number;
   minSidebearingGap: number;
+  bendMeasurementSidebearingGap: number;
 };
 
 type StandaloneLayoutConfig = {
@@ -74,9 +76,9 @@ export const defaultJoinSpacingOptions: ResolvedJoinSpacingOptions = {
   verticalDistanceWeight: 0.19,
   angleChangeWeight: 0.45,
   kerningScale: 1,
-  minSidebearingGap: 50
+  minSidebearingGap: 50,
+  bendMeasurementSidebearingGap: 5
 };
-const bendMeasurementSidebearingGap = 5;
 
 export function buildStandaloneWord(
   text: string,
@@ -507,7 +509,10 @@ export function resolveJoinSpacingOptions(
       defaultJoinSpacingOptions.angleChangeWeight,
     kerningScale: options?.kerningScale ?? defaultJoinSpacingOptions.kerningScale,
     minSidebearingGap:
-      options?.minSidebearingGap ?? defaultJoinSpacingOptions.minSidebearingGap
+      options?.minSidebearingGap ?? defaultJoinSpacingOptions.minSidebearingGap,
+    bendMeasurementSidebearingGap:
+      options?.bendMeasurementSidebearingGap ??
+      defaultJoinSpacingOptions.bendMeasurementSidebearingGap
   };
 }
 
@@ -539,7 +544,7 @@ export function measureJoinSpacing(
       angleChangeDegrees: 0,
       sharpestBendDegrees: 0,
       sharpestBendT: 0,
-      bendMeasurementSidebearingGap,
+      bendMeasurementSidebearingGap: options.bendMeasurementSidebearingGap,
       bendMeasurementJoinCurve: {
         p0: { x: 0, y: 0 },
         p1: { x: 0, y: 0 },
@@ -565,7 +570,7 @@ export function measureJoinSpacing(
   const bendMeasurementEntryX =
     exitCurve.p3.x +
     previousExitToRightSidebearing +
-    bendMeasurementSidebearingGap +
+    options.bendMeasurementSidebearingGap +
     nextEntryFromLeftSidebearing;
   const entryOffsetX = bendMeasurementEntryX - entryCurve.p0.x;
   const bendMeasurementEntryCurves = entryPhaseCurves.map((curve) =>
@@ -590,7 +595,7 @@ export function measureJoinSpacing(
     angleChangeDegrees,
     sharpestBendDegrees: sharpestBend.degrees,
     sharpestBendT: sharpestBend.t,
-    bendMeasurementSidebearingGap,
+    bendMeasurementSidebearingGap: options.bendMeasurementSidebearingGap,
     bendMeasurementJoinCurve,
     noBackwardsSidebearingGap,
     verticalContribution,

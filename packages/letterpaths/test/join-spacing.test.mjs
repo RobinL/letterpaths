@@ -67,6 +67,23 @@ test("fixed-gap bend measurement does not depend on spacing controls", () => {
   assert.equal(defaultMetric.sharpestBendT, retunedMetric.sharpestBendT);
 });
 
+test("fixed-gap bend measurement sidebearing gap is configurable", () => {
+  const tightMetric = metricFor("cu", {
+    joinSpacing: {
+      bendMeasurementSidebearingGap: 5
+    }
+  });
+  const wideMetric = metricFor("cu", {
+    joinSpacing: {
+      bendMeasurementSidebearingGap: 120
+    }
+  });
+
+  assert.equal(tightMetric.bendMeasurementSidebearingGap, 5);
+  assert.equal(wideMetric.bendMeasurementSidebearingGap, 120);
+  assert.notEqual(tightMetric.sharpestBendDegrees, wideMetric.sharpestBendDegrees);
+});
+
 test("raw gap combines vertical and fixed-gap bend contributions", () => {
   const metric = metricFor("ac");
   assert.equal(
