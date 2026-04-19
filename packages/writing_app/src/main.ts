@@ -5,6 +5,7 @@ import {
   annotationCommandsToSvgPathData,
   compileFormationAnnotations,
   compileTracingPath,
+  type AnnotationPathCommand,
   type FormationAnnotation,
   type Point,
   type PreparedTracingPath,
@@ -38,6 +39,17 @@ app.innerHTML = `
           <div class="writing-app__title">
             <p class="writing-app__eyebrow">Trace this word</p>
             <h1 class="writing-app__word" id="word-label"></h1>
+            <label class="writing-app__word-input-label" for="word-input">
+              <span>Word</span>
+              <input
+                class="writing-app__word-input"
+                id="word-input"
+                type="text"
+                value="zephyr"
+                autocomplete="off"
+                spellcheck="false"
+              />
+            </label>
           </div>
           <div class="writing-app__controls">
             <label class="writing-app__tolerance" for="tolerance-slider">
@@ -106,6 +118,10 @@ app.innerHTML = `
                 <input id="offset-arrow-lanes" type="checkbox" checked />
                 <span>Offset lanes</span>
               </label>
+              <label class="writing-app__annotation-color" for="arrow-color-picker">
+                <span>Arrow colour</span>
+                <input id="arrow-color-picker" type="color" value="#ffffff" />
+              </label>
             </fieldset>
           </div>
           <button class="writing-app__button" id="show-me-button" type="button">
@@ -134,6 +150,7 @@ app.innerHTML = `
 `;
 
 const wordLabel = document.querySelector<HTMLHeadingElement>("#word-label");
+const wordInput = document.querySelector<HTMLInputElement>("#word-input");
 const traceSvg = document.querySelector<SVGSVGElement>("#trace-svg");
 const showMeButton = document.querySelector<HTMLButtonElement>("#show-me-button");
 const successOverlay = document.querySelector<HTMLDivElement>("#success-overlay");
@@ -145,12 +162,14 @@ const midpointDensityValue = document.querySelector<HTMLSpanElement>("#midpoint-
 const turnRadiusSlider = document.querySelector<HTMLInputElement>("#turn-radius-slider");
 const turnRadiusValue = document.querySelector<HTMLSpanElement>("#turn-radius-value");
 const offsetArrowLanesToggle = document.querySelector<HTMLInputElement>("#offset-arrow-lanes");
+const arrowColorPicker = document.querySelector<HTMLInputElement>("#arrow-color-picker");
 const annotationToggleEls = Array.from(
   document.querySelectorAll<HTMLInputElement>("[data-annotation-kind]")
 );
 
 if (
   !wordLabel ||
+  !wordInput ||
   !traceSvg ||
   !showMeButton ||
   !successOverlay ||
@@ -162,12 +181,14 @@ if (
   !turnRadiusSlider ||
   !turnRadiusValue ||
   !offsetArrowLanesToggle ||
+  !arrowColorPicker ||
   annotationToggleEls.length === 0
 ) {
   throw new Error("Missing elements for writing app.");
 }
 
 let currentWordIndex = -1;
+let currentWord = "zephyr";
 let currentPath: WritingPath | null = null;
 let tracingSession: TracingSession | null = null;
 let preparedTracingPath: PreparedTracingPath | null = null;
@@ -185,6 +206,7 @@ let currentTraceTolerance = DEFAULT_TRACE_TOLERANCE;
 let currentMidpointDensity = 320;
 let currentTurnRadius = 13;
 let shouldOffsetArrowLanes = true;
+let currentArrowColor = "#ffffff";
 let annotationVisibility: Record<FormationAnnotation["kind"], boolean> = {
   "turning-point": true,
   "start-arrow": true,
@@ -197,6 +219,27 @@ const TRACE_CURSOR_TURN_LOOKAHEAD_DISTANCE = 2;
 const SECTION_ARROWHEAD_LENGTH = 26;
 const SECTION_ARROWHEAD_WIDTH = 22;
 const SECTION_ARROWHEAD_TIP_OVERHANG = 11;
+const ANNOTATION_COLLISION_SAMPLE_STEP = 4;
+const ANNOTATION_STROKE_WIDTH = 8;
+const ANNOTATION_STROKE_HALF_WIDTH = ANNOTATION_STROKE_WIDTH / 2;
+
+type ArrowAnnotation = Extract<FormationAnnotation, { commands: AnnotationPathCommand[] }>;
+type StraightArrowAnnotation = Extract<
+  FormationAnnotation,
+  { kind: "start-arrow" | "midpoint-arrow" }
+>;
+type TurningPointAnnotation = Extract<FormationAnnotation, { kind: "turning-point" }>;
+
+type AnnotationCollisionShape = {
+  pathPoints: Point[];
+  headPolygon?: Point[];
+  bounds: {
+    minX: number;
+    minY: number;
+    maxX: number;
+    maxY: number;
+  };
+};
 
 const buildSvgPoints = (points: Point[]): string =>
   points.map((point) => `${point.x} ${point.y}`).join(" ");
@@ -219,8 +262,359 @@ const syncTurnRadiusLabel = () => {
   turnRadiusValue.textContent = `${currentTurnRadius}px`;
 };
 
+const normalizeArrowColor = (value: string): string | null =>
+  /^#[0-9a-fA-F]{6}$/.test(value) ? value.toLowerCase() : null;
+
 const getAnnotationClassName = (annotation: FormationAnnotation): string =>
-  `writing-app__section-arrow writing-app__section-arrow--white writing-app__section-arrow--${annotation.kind}`;
+  `writing-app__section-arrow writing-app__section-arrow--formation writing-app__section-arrow--${annotation.kind}`;
+
+const isStraightArrowAnnotation = (
+  annotation: FormationAnnotation
+): annotation is StraightArrowAnnotation =>
+  annotation.kind === "start-arrow" || annotation.kind === "midpoint-arrow";
+
+const isTurningPointAnnotation = (
+  annotation: FormationAnnotation
+): annotation is TurningPointAnnotation => annotation.kind === "turning-point";
+
+const getAnnotationPathDistance = (annotation: FormationAnnotation): number => {
+  if ("distance" in annotation.source) {
+    return annotation.source.distance;
+  }
+
+  return annotation.source.turnDistance;
+};
+
+const getPointDistance = (a: Point, b: Point): number => Math.hypot(a.x - b.x, a.y - b.y);
+
+const getSquaredPointDistance = (a: Point, b: Point): number =>
+  (a.x - b.x) * (a.x - b.x) + (a.y - b.y) * (a.y - b.y);
+
+const interpolatePoint = (start: Point, end: Point, progress: number): Point => ({
+  x: start.x + (end.x - start.x) * progress,
+  y: start.y + (end.y - start.y) * progress
+});
+
+const getCubicPoint = (
+  start: Point,
+  cp1: Point,
+  cp2: Point,
+  end: Point,
+  progress: number
+): Point => {
+  const inverse = 1 - progress;
+  const inverseSquared = inverse * inverse;
+  const progressSquared = progress * progress;
+
+  return {
+    x:
+      inverseSquared * inverse * start.x +
+      3 * inverseSquared * progress * cp1.x +
+      3 * inverse * progressSquared * cp2.x +
+      progressSquared * progress * end.x,
+    y:
+      inverseSquared * inverse * start.y +
+      3 * inverseSquared * progress * cp1.y +
+      3 * inverse * progressSquared * cp2.y +
+      progressSquared * progress * end.y
+  };
+};
+
+const pushCollisionPoint = (points: Point[], point: Point) => {
+  const previous = points[points.length - 1];
+  if (!previous || getPointDistance(previous, point) > 0.25) {
+    points.push(point);
+  }
+};
+
+const sampleLineSegment = (start: Point, end: Point): Point[] => {
+  const length = getPointDistance(start, end);
+  const segmentCount = Math.max(1, Math.ceil(length / ANNOTATION_COLLISION_SAMPLE_STEP));
+  const points: Point[] = [];
+
+  for (let index = 1; index <= segmentCount; index += 1) {
+    points.push(interpolatePoint(start, end, index / segmentCount));
+  }
+
+  return points;
+};
+
+const sampleAnnotationCommands = (commands: AnnotationPathCommand[]): Point[] => {
+  const points: Point[] = [];
+  let currentPoint: Point | null = null;
+
+  commands.forEach((command) => {
+    if (command.type === "move") {
+      currentPoint = command.to;
+      pushCollisionPoint(points, command.to);
+      return;
+    }
+
+    if (!currentPoint) {
+      currentPoint = command.to;
+      pushCollisionPoint(points, command.to);
+      return;
+    }
+
+    if (command.type === "line") {
+      sampleLineSegment(currentPoint, command.to).forEach((point) =>
+        pushCollisionPoint(points, point)
+      );
+      currentPoint = command.to;
+      return;
+    }
+
+    const controlPolygonLength =
+      getPointDistance(currentPoint, command.cp1) +
+      getPointDistance(command.cp1, command.cp2) +
+      getPointDistance(command.cp2, command.to);
+    const segmentCount = Math.max(
+      3,
+      Math.ceil(controlPolygonLength / ANNOTATION_COLLISION_SAMPLE_STEP)
+    );
+
+    for (let index = 1; index <= segmentCount; index += 1) {
+      pushCollisionPoint(
+        points,
+        getCubicPoint(currentPoint, command.cp1, command.cp2, command.to, index / segmentCount)
+      );
+    }
+    currentPoint = command.to;
+  });
+
+  return points;
+};
+
+const getAnnotationCollisionShape = (annotation: ArrowAnnotation): AnnotationCollisionShape => {
+  const pathPoints = sampleAnnotationCommands(annotation.commands);
+  const headPolygon = annotation.head?.polygon;
+  const points = [...pathPoints, ...(headPolygon ?? [])];
+
+  const bounds = points.reduce(
+    (currentBounds, point) => ({
+      minX: Math.min(currentBounds.minX, point.x),
+      minY: Math.min(currentBounds.minY, point.y),
+      maxX: Math.max(currentBounds.maxX, point.x),
+      maxY: Math.max(currentBounds.maxY, point.y)
+    }),
+    {
+      minX: Number.POSITIVE_INFINITY,
+      minY: Number.POSITIVE_INFINITY,
+      maxX: Number.NEGATIVE_INFINITY,
+      maxY: Number.NEGATIVE_INFINITY
+    }
+  );
+
+  return {
+    pathPoints,
+    ...(headPolygon ? { headPolygon } : {}),
+    bounds
+  };
+};
+
+const doBoundsOverlap = (
+  a: AnnotationCollisionShape["bounds"],
+  b: AnnotationCollisionShape["bounds"],
+  padding: number
+): boolean =>
+  a.minX <= b.maxX + padding &&
+  a.maxX + padding >= b.minX &&
+  a.minY <= b.maxY + padding &&
+  a.maxY + padding >= b.minY;
+
+const getPointToSegmentDistance = (point: Point, start: Point, end: Point): number => {
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const lengthSquared = dx * dx + dy * dy;
+
+  if (lengthSquared === 0) {
+    return getPointDistance(point, start);
+  }
+
+  const progress = Math.max(
+    0,
+    Math.min(1, ((point.x - start.x) * dx + (point.y - start.y) * dy) / lengthSquared)
+  );
+  return getPointDistance(point, {
+    x: start.x + dx * progress,
+    y: start.y + dy * progress
+  });
+};
+
+const getPointToPolygonEdgeDistance = (point: Point, polygon: Point[]): number =>
+  polygon.reduce((minDistance, start, index) => {
+    const end = polygon[(index + 1) % polygon.length];
+    if (!end) {
+      return minDistance;
+    }
+
+    return Math.min(minDistance, getPointToSegmentDistance(point, start, end));
+  }, Number.POSITIVE_INFINITY);
+
+const isPointInPolygon = (point: Point, polygon: Point[]): boolean => {
+  let inside = false;
+
+  for (
+    let index = 0, previousIndex = polygon.length - 1;
+    index < polygon.length;
+    previousIndex = index, index += 1
+  ) {
+    const current = polygon[index];
+    const previous = polygon[previousIndex];
+    if (!current || !previous) {
+      continue;
+    }
+
+    const intersects =
+      current.y > point.y !== previous.y > point.y &&
+      point.x <
+        ((previous.x - current.x) * (point.y - current.y)) / (previous.y - current.y) +
+          current.x;
+
+    if (intersects) {
+      inside = !inside;
+    }
+  }
+
+  return inside;
+};
+
+const getOrientation = (a: Point, b: Point, c: Point): number =>
+  (b.y - a.y) * (c.x - b.x) - (b.x - a.x) * (c.y - b.y);
+
+const isPointOnSegment = (point: Point, start: Point, end: Point): boolean =>
+  point.x <= Math.max(start.x, end.x) &&
+  point.x >= Math.min(start.x, end.x) &&
+  point.y <= Math.max(start.y, end.y) &&
+  point.y >= Math.min(start.y, end.y);
+
+const doSegmentsIntersect = (aStart: Point, aEnd: Point, bStart: Point, bEnd: Point): boolean => {
+  const o1 = getOrientation(aStart, aEnd, bStart);
+  const o2 = getOrientation(aStart, aEnd, bEnd);
+  const o3 = getOrientation(bStart, bEnd, aStart);
+  const o4 = getOrientation(bStart, bEnd, aEnd);
+
+  if (o1 * o2 < 0 && o3 * o4 < 0) {
+    return true;
+  }
+
+  return (
+    (Math.abs(o1) < 0.001 && isPointOnSegment(bStart, aStart, aEnd)) ||
+    (Math.abs(o2) < 0.001 && isPointOnSegment(bEnd, aStart, aEnd)) ||
+    (Math.abs(o3) < 0.001 && isPointOnSegment(aStart, bStart, bEnd)) ||
+    (Math.abs(o4) < 0.001 && isPointOnSegment(aEnd, bStart, bEnd))
+  );
+};
+
+const doPolygonsOverlap = (a: Point[], b: Point[]): boolean => {
+  if (a.length < 3 || b.length < 3) {
+    return false;
+  }
+
+  const edgesIntersect = a.some((aStart, aIndex) => {
+    const aEnd = a[(aIndex + 1) % a.length];
+    return (
+      !!aEnd &&
+      b.some((bStart, bIndex) => {
+        const bEnd = b[(bIndex + 1) % b.length];
+        return !!bEnd && doSegmentsIntersect(aStart, aEnd, bStart, bEnd);
+      })
+    );
+  });
+
+  return (
+    edgesIntersect ||
+    isPointInPolygon(a[0] as Point, b) ||
+    isPointInPolygon(b[0] as Point, a)
+  );
+};
+
+const doPathStrokesOverlap = (aPoints: Point[], bPoints: Point[]): boolean => {
+  const overlapDistanceSquared = ANNOTATION_STROKE_WIDTH * ANNOTATION_STROKE_WIDTH;
+
+  return aPoints.some((aPoint) =>
+    bPoints.some((bPoint) => getSquaredPointDistance(aPoint, bPoint) <= overlapDistanceSquared)
+  );
+};
+
+const doesPathStrokeOverlapPolygon = (pathPoints: Point[], polygon: Point[]): boolean =>
+  polygon.length >= 3 &&
+  pathPoints.some(
+    (point) =>
+      isPointInPolygon(point, polygon) ||
+      getPointToPolygonEdgeDistance(point, polygon) <= ANNOTATION_STROKE_HALF_WIDTH
+  );
+
+const doAnnotationShapesOverlap = (
+  a: ArrowAnnotation,
+  b: ArrowAnnotation,
+  collisionShapeCache: Map<ArrowAnnotation, AnnotationCollisionShape>
+): boolean => {
+  const aShape = collisionShapeCache.get(a) ?? getAnnotationCollisionShape(a);
+  const bShape = collisionShapeCache.get(b) ?? getAnnotationCollisionShape(b);
+  collisionShapeCache.set(a, aShape);
+  collisionShapeCache.set(b, bShape);
+
+  if (
+    (aShape.pathPoints.length === 0 && !aShape.headPolygon) ||
+    (bShape.pathPoints.length === 0 && !bShape.headPolygon) ||
+    !doBoundsOverlap(aShape.bounds, bShape.bounds, ANNOTATION_STROKE_WIDTH)
+  ) {
+    return false;
+  }
+
+  return (
+    doPathStrokesOverlap(aShape.pathPoints, bShape.pathPoints) ||
+    (aShape.headPolygon
+      ? doesPathStrokeOverlapPolygon(bShape.pathPoints, aShape.headPolygon)
+      : false) ||
+    (bShape.headPolygon
+      ? doesPathStrokeOverlapPolygon(aShape.pathPoints, bShape.headPolygon)
+      : false) ||
+    (aShape.headPolygon && bShape.headPolygon
+      ? doPolygonsOverlap(aShape.headPolygon, bShape.headPolygon)
+      : false)
+  );
+};
+
+const resolveVisibleFormationAnnotations = (
+  annotations: FormationAnnotation[]
+): FormationAnnotation[] => {
+  const visibleAnnotations = annotations.filter(
+    (annotation) => annotationVisibility[annotation.kind]
+  );
+  const turningPointAnnotations = visibleAnnotations.filter(isTurningPointAnnotation);
+  const straightArrowAnnotations = visibleAnnotations
+    .filter(isStraightArrowAnnotation)
+    .sort((a, b) => getAnnotationPathDistance(a) - getAnnotationPathDistance(b));
+  const collisionShapeCache = new Map<ArrowAnnotation, AnnotationCollisionShape>();
+  const keptStraightArrowAnnotations: StraightArrowAnnotation[] = [];
+  const hiddenAnnotations = new Set<FormationAnnotation>();
+
+  straightArrowAnnotations.forEach((annotation) => {
+    const overlapsTurningPoint = turningPointAnnotations.some((turnAnnotation) =>
+      doAnnotationShapesOverlap(annotation, turnAnnotation, collisionShapeCache)
+    );
+
+    if (overlapsTurningPoint) {
+      hiddenAnnotations.add(annotation);
+      return;
+    }
+
+    const overlapsEarlierStraightArrow = keptStraightArrowAnnotations.some((keptAnnotation) =>
+      doAnnotationShapesOverlap(annotation, keptAnnotation, collisionShapeCache)
+    );
+
+    if (overlapsEarlierStraightArrow) {
+      hiddenAnnotations.add(annotation);
+      return;
+    }
+
+    keptStraightArrowAnnotations.push(annotation);
+  });
+
+  return visibleAnnotations.filter((annotation) => !hiddenAnnotations.has(annotation));
+};
 
 const renderAnnotationMarkup = (annotation: FormationAnnotation): string => {
   if (!annotationVisibility[annotation.kind]) {
@@ -253,7 +647,7 @@ const renderAnnotationMarkup = (annotation: FormationAnnotation): string => {
       d="${annotationCommandsToSvgPathData(annotation.commands)}"
     ></path>
     ${annotation.head
-      ? `<polygon class="writing-app__section-arrowhead writing-app__section-arrowhead--white writing-app__section-arrowhead--${annotation.kind}" points="${buildSvgPoints(annotation.head.polygon)}"></polygon>`
+      ? `<polygon class="writing-app__section-arrowhead writing-app__section-arrowhead--formation writing-app__section-arrowhead--${annotation.kind}" points="${buildSvgPoints(annotation.head.polygon)}"></polygon>`
       : ""
     }
   `;
@@ -498,14 +892,16 @@ const setupScene = (path: WritingPath, width: number, height: number, offsetY: n
       }
     }
   });
+  const visibleAnnotations = resolveVisibleFormationAnnotations(annotations);
   const annotationMarkup = [
-    ...annotations.filter((annotation) => annotation.kind !== "draw-order-number"),
-    ...annotations.filter((annotation) => annotation.kind === "draw-order-number")
+    ...visibleAnnotations.filter((annotation) => annotation.kind !== "draw-order-number"),
+    ...visibleAnnotations.filter((annotation) => annotation.kind === "draw-order-number")
   ]
     .map(renderAnnotationMarkup)
     .join("");
 
   traceSvg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+  traceSvg.style.setProperty("--formation-arrow-color", currentArrowColor);
   traceSvg.innerHTML = `
     <rect class="writing-app__bg" x="0" y="0" width="${width}" height="${height}"></rect>
     <line
@@ -570,10 +966,41 @@ const setupScene = (path: WritingPath, width: number, height: number, offsetY: n
   requestTraceRender();
 };
 
+const clearScene = () => {
+  stopDemoAnimation();
+  currentPath = null;
+  preparedTracingPath = null;
+  tracingSession = null;
+  activePointerId = null;
+  traceStrokeEls = [];
+  traceStrokeLengths = [];
+  traceCursorEl = null;
+  demoStrokeEls = [];
+  demoStrokeLengths = [];
+  demoNibEl = null;
+  traceSvg.innerHTML = "";
+  updateSuccessVisibility(false);
+};
+
+const normalizeWord = (word: string): string => word.trim().toLowerCase();
+
 const renderWord = (word: string) => {
   stopDemoAnimation();
-  wordLabel.textContent = word;
-  const layout = buildShiftedWordLayout(word);
+  currentWord = normalizeWord(word);
+  wordLabel.textContent = currentWord;
+
+  if (currentWord.length === 0) {
+    clearScene();
+    return;
+  }
+
+  let layout: ReturnType<typeof buildShiftedWordLayout>;
+  try {
+    layout = buildShiftedWordLayout(currentWord);
+  } catch {
+    clearScene();
+    return;
+  }
 
   currentPath = layout.path;
   setupScene(layout.path, layout.width, layout.height, layout.offsetY);
@@ -581,7 +1008,9 @@ const renderWord = (word: string) => {
 
 const goToNextWord = () => {
   currentWordIndex = chooseNextWordIndex(currentWordIndex);
-  renderWord(WORDS[currentWordIndex] ?? WORDS[0]);
+  const nextWord = WORDS[currentWordIndex] ?? WORDS[0];
+  wordInput.value = nextWord;
+  renderWord(nextWord);
 };
 
 const onPointerDown = (event: PointerEvent) => {
@@ -642,36 +1071,37 @@ traceSvg.addEventListener("pointerup", onPointerUp);
 traceSvg.addEventListener("pointercancel", onPointerCancel);
 showMeButton.addEventListener("click", playDemo);
 nextWordButton.addEventListener("click", goToNextWord);
+wordInput.addEventListener("input", () => {
+  currentWordIndex = -1;
+  renderWord(wordInput.value);
+});
 toleranceSlider.addEventListener("input", () => {
   currentTraceTolerance = Number(toleranceSlider.value);
   syncToleranceLabel();
-
-  if (currentWordIndex >= 0) {
-    renderWord(WORDS[currentWordIndex] ?? WORDS[0]);
-  }
+  renderWord(currentWord);
 });
 midpointDensitySlider.addEventListener("input", () => {
   currentMidpointDensity = Number(midpointDensitySlider.value);
   syncMidpointDensityLabel();
-
-  if (currentWordIndex >= 0) {
-    renderWord(WORDS[currentWordIndex] ?? WORDS[0]);
-  }
+  renderWord(currentWord);
 });
 turnRadiusSlider.addEventListener("input", () => {
   currentTurnRadius = Number(turnRadiusSlider.value);
   syncTurnRadiusLabel();
-
-  if (currentWordIndex >= 0) {
-    renderWord(WORDS[currentWordIndex] ?? WORDS[0]);
-  }
+  renderWord(currentWord);
 });
 offsetArrowLanesToggle.addEventListener("change", () => {
   shouldOffsetArrowLanes = offsetArrowLanesToggle.checked;
-
-  if (currentWordIndex >= 0) {
-    renderWord(WORDS[currentWordIndex] ?? WORDS[0]);
+  renderWord(currentWord);
+});
+arrowColorPicker.addEventListener("input", () => {
+  const nextArrowColor = normalizeArrowColor(arrowColorPicker.value);
+  if (!nextArrowColor) {
+    return;
   }
+
+  currentArrowColor = nextArrowColor;
+  traceSvg.style.setProperty("--formation-arrow-color", currentArrowColor);
 });
 annotationToggleEls.forEach((toggleEl) => {
   toggleEl.addEventListener("change", () => {
@@ -684,14 +1114,12 @@ annotationToggleEls.forEach((toggleEl) => {
       ...annotationVisibility,
       [annotationKind]: toggleEl.checked
     };
-
-    if (currentWordIndex >= 0) {
-      renderWord(WORDS[currentWordIndex] ?? WORDS[0]);
-    }
+    renderWord(currentWord);
   });
 });
 
 syncToleranceLabel();
 syncMidpointDensityLabel();
 syncTurnRadiusLabel();
-goToNextWord();
+wordInput.value = currentWord;
+renderWord(currentWord);
