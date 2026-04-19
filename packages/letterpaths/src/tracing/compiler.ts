@@ -18,6 +18,8 @@ export type PreparedTracingBoundary = {
   point: Point;
   previousSegment?: WritingPathSegment;
   nextSegment?: WritingPathSegment;
+  incomingTangent: Point;
+  outgoingTangent: Point;
   turnAngleDegrees: number;
 };
 
@@ -79,6 +81,8 @@ export function compileTracingPath(
           point: { x: curve.p3.x, y: curve.p3.y },
           previousSegment,
           nextSegment,
+          incomingTangent,
+          outgoingTangent,
           turnAngleDegrees: Math.acos(directionDot) * (180 / Math.PI)
         });
 

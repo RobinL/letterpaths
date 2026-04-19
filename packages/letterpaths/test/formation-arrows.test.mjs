@@ -11,6 +11,20 @@ import {
 const preparedSys = () =>
   compileTracingPath(buildHandwritingPath("sys", { style: "cursive" }));
 
+test("tracing boundaries expose incoming and outgoing tangents", () => {
+  const prepared = compileTracingPath(buildHandwritingPath("p", { style: "cursive" }));
+  const retraceBoundary = prepared.boundaries.find(
+    (boundary) =>
+      boundary.previousSegment === "descender" && boundary.nextSegment === "ascender"
+  );
+
+  assert.ok(retraceBoundary, "Expected p to expose the descender-to-ascender turn boundary.");
+  assert.ok(Math.abs(Math.hypot(retraceBoundary.incomingTangent.x, retraceBoundary.incomingTangent.y) - 1) < 0.001);
+  assert.ok(Math.abs(Math.hypot(retraceBoundary.outgoingTangent.x, retraceBoundary.outgoingTangent.y) - 1) < 0.001);
+  assert.ok(retraceBoundary.incomingTangent.y > 0.9);
+  assert.ok(retraceBoundary.outgoingTangent.y < -0.9);
+});
+
 test("formation arrows return renderer-agnostic retrace turn geometry", () => {
   const arrows = compileFormationArrows(preparedSys());
 

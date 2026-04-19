@@ -7,6 +7,7 @@ import {
   compileTracingPath,
   formationArrowCommandsToSvgPathData,
   type Point,
+  type PreparedTracingBoundary,
   type PreparedTracingPath,
   type PreparedStroke,
   type TracingGroup,
@@ -96,6 +97,7 @@ const SNAKE_EXIT_SPEED = 510;
 const SNAKE_CHEW_MS = 220;
 const SNAKE_RETRACTION_SPEED = 700;
 const SNAKE_RETRACTION_HIDE_GAP = 6;
+const SNAKE_TURN_COMMIT_DISTANCE = 12;
 const HEAD_SIZE = {
   width: 97.5,
   height: 60,
@@ -401,6 +403,7 @@ let dotTargetStrokeIndex: number | null = null;
 let dotTargetPoint: Point | null = null;
 let dotTargetPhaseStartedAt = 0;
 let queuedTurnTangent: Point | null = null;
+let queuedTurnBoundary: PreparedTracingBoundary | null = null;
 let isAwaitingSegmentRestart = false;
 let snakeChompSoundPlayer: HTMLAudioElement | null = null;
 let activeSnakeChompSounds: HTMLAudioElement[] = [];
@@ -733,6 +736,35 @@ const maybeResumeContinuousDrag = () => {
   tracingSession.update(activePointerPosition);
   requestTraceRender();
   return true;
+};
+
+const getQueuedTurnTravelDistance = (state: Pick<TracingState, "status" | "activeStrokeIndex" | "activeStrokeProgress">): number => {
+  if (!queuedTurnBoundary) {
+    return 0;
+  }
+
+  return Math.max(0, getOverallDistanceForState(state) - queuedTurnBoundary.overallDistance);
+};
+
+const getQueuedTurnPose = (
+  state: Pick<TracingState, "status" | "activeStrokeIndex" | "activeStrokeProgress">
+): { point: Point; tangent: Point } | null => {
+  if (!queuedTurnBoundary || !queuedTurnTangent) {
+    return null;
+  }
+
+  const travelDistance = getQueuedTurnTravelDistance(state);
+  if (!isAwaitingSegmentRestart && travelDistance >= SNAKE_TURN_COMMIT_DISTANCE) {
+    return null;
+  }
+
+  return {
+    point: {
+      x: queuedTurnBoundary.point.x + queuedTurnTangent.x * travelDistance,
+      y: queuedTurnBoundary.point.y + queuedTurnTangent.y * travelDistance
+    },
+    tangent: queuedTurnTangent
+  };
 };
 
 const syncSnakeUnretractionFromMovement = () => {
@@ -1501,27 +1533,25 @@ const syncNextSectionHighlight = () => {
   nextSectionEl.style.opacity = "1";
 };
 
-const getGroupStartTangent = (groupIndex: number): Point | null => {
-  const group = tracingGroups[groupIndex];
-  if (!group || !preparedTracingPath) {
+const getTracingBoundaryAtDistance = (overallDistance: number): PreparedTracingBoundary | null => {
+  if (!preparedTracingPath) {
     return null;
   }
 
-  const sampleDistance = Math.min(group.endDistance, group.startDistance + 24);
-  const samplePoint = getPointAtOverallDistance(preparedTracingPath, sampleDistance);
-  const tangent = normalizeVector({
-    x: samplePoint.x - group.startPoint.x,
-    y: samplePoint.y - group.startPoint.y
-  });
+  return (
+    preparedTracingPath.boundaries.find(
+      (boundary) => Math.abs(boundary.overallDistance - overallDistance) <= 0.5
+    ) ?? null
+  );
+};
 
-  if (Math.hypot(tangent.x, tangent.y) > 0.001) {
-    return tangent;
+const getTracingGroupBoundary = (groupIndex: number): PreparedTracingBoundary | null => {
+  const group = tracingGroups[groupIndex];
+  if (!group) {
+    return null;
   }
 
-  return normalizeVector({
-    x: group.endPoint.x - group.startPoint.x,
-    y: group.endPoint.y - group.startPoint.y
-  });
+  return getTracingBoundaryAtDistance(group.endDistance);
 };
 
 const advanceToNextTracingGroup = () => {
@@ -1548,6 +1578,7 @@ const maybePauseAtTracingGroupBoundary = (state: TracingState): boolean => {
   if (!currentGroup) {
     return false;
   }
+  const boundary = getTracingGroupBoundary(currentGroupIndex);
 
   const overallDistance = getOverallDistanceForState(state);
   if (overallDistance < currentGroup.endDistance - 8) {
@@ -1557,11 +1588,12 @@ const maybePauseAtTracingGroupBoundary = (state: TracingState): boolean => {
   isAwaitingSegmentRestart = true;
   snakeUnretractStartHeadDistance = null;
   snakeUnretractStartRetraction = 0;
-  parkedBoundaryDistance = currentGroup.endDistance;
-  queuedTurnTangent = getGroupStartTangent(currentGroupIndex + 1);
+  parkedBoundaryDistance = boundary?.overallDistance ?? currentGroup.endDistance;
+  queuedTurnBoundary = boundary;
+  queuedTurnTangent = boundary?.outgoingTangent ?? null;
   if (queuedTurnTangent) {
     snakeHeadAngle = toAngle(queuedTurnTangent);
-    appendSnakePose(currentGroup.endPoint, queuedTurnTangent, true);
+    appendSnakePose(boundary?.point ?? currentGroup.endPoint, queuedTurnTangent, true);
   }
 
   advanceToNextTracingGroup();
@@ -1813,6 +1845,7 @@ const resetSnakeTrail = (point: Point, tangent: Point, visible = true) => {
   snakeUnretractStartHeadDistance = null;
   snakeUnretractStartRetraction = 0;
   parkedBoundaryDistance = null;
+  queuedTurnBoundary = null;
   queuedTurnTangent = null;
   isAwaitingSegmentRestart = false;
   isSnakeExitComplete = false;
@@ -1910,6 +1943,7 @@ const startSnakeExit = (point: Point, tangent: Point) => {
   snakeUnretractStartHeadDistance = null;
   snakeUnretractStartRetraction = 0;
   parkedBoundaryDistance = null;
+  queuedTurnBoundary = null;
   queuedTurnTangent = null;
   isAwaitingSegmentRestart = false;
   const direction = normalizeVector(tangent);
@@ -2027,8 +2061,7 @@ const syncSnakeToState = (state: TracingState) => {
     parkedBoundaryDistance = null;
   }
 
-  const shouldUseQueuedTurn = queuedTurnTangent !== null && (isAwaitingSegmentRestart || state.isPenDown);
-  const headTangent = shouldUseQueuedTurn && queuedTurnTangent ? queuedTurnTangent : state.cursorTangent;
+  const queuedTurnPose = getQueuedTurnPose(state);
 
   if (isDeferredStrokeActive(state)) {
     const parkedPose = getParkedSnakePose(state);
@@ -2039,12 +2072,19 @@ const syncSnakeToState = (state: TracingState) => {
     ) {
       appendSnakePose(parkedPose.point, parkedPose.tangent, true);
     }
+  } else if (queuedTurnPose) {
+    appendSnakePose(queuedTurnPose.point, queuedTurnPose.tangent, true);
   } else {
-    appendSnakePose(state.cursorPoint, headTangent, true);
+    appendSnakePose(state.cursorPoint, state.cursorTangent, true);
   }
 
-  // Keep the queued turn active until the restarted segment has been written into the trail.
-  if (queuedTurnTangent && state.isPenDown && !isAwaitingSegmentRestart) {
+  if (
+    queuedTurnTangent &&
+    queuedTurnBoundary &&
+    !isAwaitingSegmentRestart &&
+    getQueuedTurnTravelDistance(state) >= SNAKE_TURN_COMMIT_DISTANCE
+  ) {
+    queuedTurnBoundary = null;
     queuedTurnTangent = null;
   }
 
@@ -2115,6 +2155,7 @@ const resetRoundProgress = () => {
   snakeUnretractStartHeadDistance = null;
   snakeUnretractStartRetraction = 0;
   parkedBoundaryDistance = null;
+  queuedTurnBoundary = null;
   queuedTurnTangent = null;
   isAwaitingSegmentRestart = false;
   const state = tracingSession?.getState();

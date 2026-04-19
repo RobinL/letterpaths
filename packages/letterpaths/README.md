@@ -269,6 +269,8 @@ type PreparedTracingPath = {
     point: Point;
     previousSegment?: WritingPathSegment;
     nextSegment?: WritingPathSegment;
+    incomingTangent: Point;
+    outgoingTangent: Point;
     turnAngleDegrees: number;
   }>;
   guides: LetterGuides;
@@ -290,12 +292,14 @@ Example prepared tracing data:
     overallDistance: 221.6,
     previousSegment: "descender",
     nextSegment: "ascender",
+    incomingTangent: { x: 0.01, y: 1 },
+    outgoingTangent: { x: -0.01, y: -1 },
     turnAngleDegrees: 179.8
   }
 }
 ```
 
-`boundaries` marks authored curve boundaries inside the flattened tracing path. This is useful when you want to place waypoints or detect true retrace points at semantic turning points rather than at arbitrary sample positions.
+`boundaries` marks authored curve boundaries inside the flattened tracing path. This is useful when you want to place waypoints or detect true retrace points at semantic turning points rather than at arbitrary sample positions. The incoming and outgoing tangents make each boundary self-describing for consumers that need to know how to face immediately before and after the turn.
 
 ### Retrace group analysis
 
