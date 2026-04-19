@@ -97,6 +97,21 @@ app.innerHTML = `
                 value="13"
               />
             </label>
+            <label class="writing-app__tolerance" for="number-offset-slider">
+              <span class="writing-app__tolerance-label">
+                Number offset
+                <span class="writing-app__tolerance-value" id="number-offset-value"></span>
+              </span>
+              <input
+                class="writing-app__tolerance-slider"
+                id="number-offset-slider"
+                type="range"
+                min="-80"
+                max="80"
+                step="1"
+                value="0"
+              />
+            </label>
             <fieldset class="writing-app__annotation-controls" aria-label="Formation annotations">
               <label class="writing-app__annotation-toggle">
                 <input type="checkbox" data-annotation-kind="turning-point" checked />
@@ -161,6 +176,8 @@ const midpointDensitySlider = document.querySelector<HTMLInputElement>("#midpoin
 const midpointDensityValue = document.querySelector<HTMLSpanElement>("#midpoint-density-value");
 const turnRadiusSlider = document.querySelector<HTMLInputElement>("#turn-radius-slider");
 const turnRadiusValue = document.querySelector<HTMLSpanElement>("#turn-radius-value");
+const numberOffsetSlider = document.querySelector<HTMLInputElement>("#number-offset-slider");
+const numberOffsetValue = document.querySelector<HTMLSpanElement>("#number-offset-value");
 const offsetArrowLanesToggle = document.querySelector<HTMLInputElement>("#offset-arrow-lanes");
 const arrowColorPicker = document.querySelector<HTMLInputElement>("#arrow-color-picker");
 const annotationToggleEls = Array.from(
@@ -180,6 +197,8 @@ if (
   !midpointDensityValue ||
   !turnRadiusSlider ||
   !turnRadiusValue ||
+  !numberOffsetSlider ||
+  !numberOffsetValue ||
   !offsetArrowLanesToggle ||
   !arrowColorPicker ||
   annotationToggleEls.length === 0
@@ -205,6 +224,7 @@ let isDemoPlaying = false;
 let currentTraceTolerance = DEFAULT_TRACE_TOLERANCE;
 let currentMidpointDensity = 320;
 let currentTurnRadius = 13;
+let currentNumberPathOffset = 0;
 let shouldOffsetArrowLanes = true;
 let currentArrowColor = "#ffffff";
 let annotationVisibility: Record<FormationAnnotation["kind"], boolean> = {
@@ -272,6 +292,10 @@ const syncMidpointDensityLabel = () => {
 
 const syncTurnRadiusLabel = () => {
   turnRadiusValue.textContent = `${currentTurnRadius}px`;
+};
+
+const syncNumberOffsetLabel = () => {
+  numberOffsetValue.textContent = `${currentNumberPathOffset}px`;
 };
 
 const normalizeArrowColor = (value: string): string | null =>
@@ -954,18 +978,27 @@ const resolveVisibleFormationAnnotations = (
   return visibleAnnotations.filter((annotation) => !hiddenAnnotations.has(annotation));
 };
 
+const getNumberRenderAnchor = (annotation: DrawOrderNumberAnnotation): Point => {
+  const direction = normalizeVector(annotation.direction);
+  return {
+    x: annotation.anchor.x + direction.x * currentNumberPathOffset,
+    y: annotation.anchor.y + direction.y * currentNumberPathOffset
+  };
+};
+
 const renderAnnotationMarkup = (annotation: FormationAnnotation): string => {
   if (!annotationVisibility[annotation.kind]) {
     return "";
   }
 
   if (annotation.kind === "draw-order-number") {
+    const numberAnchor = getNumberRenderAnchor(annotation);
     return `
       <g class="writing-app__annotation-number-badge">
         <text
           class="writing-app__annotation-number"
-          x="${annotation.anchor.x}"
-          y="${annotation.anchor.y}"
+          x="${numberAnchor.x}"
+          y="${numberAnchor.y}"
           font-size="${currentTurnRadius * 2}"
           text-anchor="middle"
           dominant-baseline="central"
@@ -1423,6 +1456,11 @@ turnRadiusSlider.addEventListener("input", () => {
   syncTurnRadiusLabel();
   renderWord(currentWord);
 });
+numberOffsetSlider.addEventListener("input", () => {
+  currentNumberPathOffset = Number(numberOffsetSlider.value);
+  syncNumberOffsetLabel();
+  renderWord(currentWord);
+});
 offsetArrowLanesToggle.addEventListener("change", () => {
   shouldOffsetArrowLanes = offsetArrowLanesToggle.checked;
   renderWord(currentWord);
@@ -1454,5 +1492,6 @@ annotationToggleEls.forEach((toggleEl) => {
 syncToleranceLabel();
 syncMidpointDensityLabel();
 syncTurnRadiusLabel();
+syncNumberOffsetLabel();
 wordInput.value = currentWord;
 renderWord(currentWord);
