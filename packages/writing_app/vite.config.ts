@@ -9,6 +9,10 @@ export default defineConfig(({ command }) => ({
     rollupOptions: {
       input: {
         main: path.resolve(__dirname, "index.html"),
+        cursiveWorksheetGenerator: path.resolve(
+          __dirname,
+          "cursive_worksheet_generator/index.html"
+        ),
         scorePoints: path.resolve(__dirname, "score_points/index.html"),
         snake: path.resolve(__dirname, "snake/index.html")
       }
