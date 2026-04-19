@@ -433,7 +433,7 @@ body {
 .writing-app__section-arrow {
   fill: none;
   stroke: var(--ink);
-  stroke-width: 8;
+  stroke-width: 5.6;
   stroke-linecap: butt;
   stroke-linejoin: round;
   pointer-events: none;
@@ -466,14 +466,8 @@ body {
   user-select: none;
 }
 
-.writing-app__annotation-number-circle {
-  fill: #ffffff;
-  stroke: none;
-}
-
 .writing-app__annotation-number {
   fill: #3f454b;
-  font-size: 16px;
   font-weight: 800;
   pointer-events: none;
   user-select: none;

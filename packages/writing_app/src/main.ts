@@ -220,7 +220,7 @@ const SECTION_ARROWHEAD_LENGTH = 26;
 const SECTION_ARROWHEAD_WIDTH = 22;
 const SECTION_ARROWHEAD_TIP_OVERHANG = 11;
 const ANNOTATION_COLLISION_SAMPLE_STEP = 4;
-const ANNOTATION_STROKE_WIDTH = 8;
+const ANNOTATION_STROKE_WIDTH = 6.5;
 const ANNOTATION_STROKE_HALF_WIDTH = ANNOTATION_STROKE_WIDTH / 2;
 
 type ArrowAnnotation = Extract<FormationAnnotation, { commands: AnnotationPathCommand[] }>;
@@ -622,8 +622,8 @@ const isPointInPolygon = (point: Point, polygon: Point[]): boolean => {
     const intersects =
       current.y > point.y !== previous.y > point.y &&
       point.x <
-        ((previous.x - current.x) * (point.y - current.y)) / (previous.y - current.y) +
-          current.x;
+      ((previous.x - current.x) * (point.y - current.y)) / (previous.y - current.y) +
+      current.x;
 
     if (intersects) {
       inside = !inside;
@@ -814,19 +814,19 @@ const relocateTurningPointAnnotation = (
       ),
       ...(annotation.head
         ? {
-            head: {
-              tip: transformPoint(
-                annotation.head.tip,
-                sourceAnchor,
-                targetAnchor,
-                angleRadians
-              ),
-              direction: normalizeVector(rotateVector(annotation.head.direction, angleRadians)),
-              polygon: annotation.head.polygon.map((point) =>
-                transformPoint(point, sourceAnchor, targetAnchor, angleRadians)
-              )
-            }
+          head: {
+            tip: transformPoint(
+              annotation.head.tip,
+              sourceAnchor,
+              targetAnchor,
+              angleRadians
+            ),
+            direction: normalizeVector(rotateVector(annotation.head.direction, angleRadians)),
+            polygon: annotation.head.polygon.map((point) =>
+              transformPoint(point, sourceAnchor, targetAnchor, angleRadians)
+            )
           }
+        }
         : {}),
       source: {
         ...annotation.source,
@@ -962,16 +962,11 @@ const renderAnnotationMarkup = (annotation: FormationAnnotation): string => {
   if (annotation.kind === "draw-order-number") {
     return `
       <g class="writing-app__annotation-number-badge">
-        <circle
-          class="writing-app__annotation-number-circle"
-          cx="${annotation.anchor.x}"
-          cy="${annotation.anchor.y}"
-          r="${currentTurnRadius}"
-        ></circle>
         <text
           class="writing-app__annotation-number"
           x="${annotation.anchor.x}"
           y="${annotation.anchor.y}"
+          font-size="${currentTurnRadius * 2}"
           text-anchor="middle"
           dominant-baseline="central"
         >${escapeSvgText(annotation.text)}</text>
