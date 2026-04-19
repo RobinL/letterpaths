@@ -43,6 +43,9 @@ import themeParkFrontSprite from "./assets/snake/skins/theme-park/front.png";
 import themeParkFrontUpsideDownSprite from "./assets/snake/skins/theme-park/front_upside_down.png";
 import themeParkRearSprite from "./assets/snake/skins/theme-park/rear.png";
 import themeParkRearUpsideDownSprite from "./assets/snake/skins/theme-park/rear_upside_down.png";
+import themeParkScreamSound from "./assets/snake/skins/theme-park/audio/rollercoaster_scream.mp3";
+import themeParkTrackOneSound from "./assets/snake/skins/theme-park/audio/rollercoaster_track_1.mp3";
+import themeParkTrackTwoSound from "./assets/snake/skins/theme-park/audio/rollercoaster_track_2.mp3";
 import {
   DEMO_PAUSE_MS,
   MAX_TRACE_TOLERANCE,
@@ -199,11 +202,15 @@ const EAGLE_STAND_SIZE = {
   anchorX: 0.5,
   anchorY: 1
 } as const;
-const SNAKE_MOVE_SOUND_SOURCES = [
+const CLASSIC_SNAKE_MOVE_SOUND_SOURCES = [
   sandMoving1Sound,
   sandMoving2Sound,
   sandMoving3Sound,
   sandMoving4Sound
+] as const;
+const THEME_PARK_MOVE_SOUND_SOURCES = [
+  themeParkTrackOneSound,
+  themeParkTrackTwoSound
 ] as const;
 const SECTION_ARROWHEAD_LENGTH = 26;
 const SECTION_ARROWHEAD_WIDTH = 22;
@@ -211,12 +218,12 @@ const SECTION_ARROWHEAD_TIP_OVERHANG = 11;
 const SNAKE_MIDPOINT_ARROW_DENSITY = 250;
 const SECTION_ANNOTATION_DISTANCE_EPSILON = 0.5;
 const DEFAULT_SNAKE_JOIN_SPACING = {
-  targetBendRate: 6,
-  minSidebearingGap: -210,
+  targetBendRate: 16,
+  minSidebearingGap: 80,
   bendSearchMinSidebearingGap: -30,
-  bendSearchMaxSidebearingGap: 80,
+  bendSearchMaxSidebearingGap: 240,
   exitHandleScale: 0.75,
-  entryHandleScale: 1
+  entryHandleScale: 0.75
 } as const satisfies Required<JoinSpacingOptions>;
 
 type FruitToken = {
@@ -281,6 +288,13 @@ type SnakeSkin = {
   instruction: string;
   successEyebrow: string;
   successCopy: string;
+  soundEffects: {
+    chompSrc: string;
+    chompVolume: number;
+    moveSrcs: readonly string[];
+    moveVolume: number;
+    moveChance: number;
+  };
   segmentSpacing: number;
   deferredScale: number;
   deferredSegmentSpacing: number;
@@ -307,6 +321,13 @@ const SNAKE_SKINS = {
     instruction: "Drag the snake around the letters.",
     successEyebrow: "Snake fed!",
     successCopy: "All the fruit is collected.",
+    soundEffects: {
+      chompSrc: chompSound,
+      chompVolume: SNAKE_CHOMP_SOUND_VOLUME,
+      moveSrcs: CLASSIC_SNAKE_MOVE_SOUND_SOURCES,
+      moveVolume: SNAKE_MOVE_SOUND_VOLUME,
+      moveChance: SNAKE_MOVE_SOUND_CHANCE
+    },
     segmentSpacing: SNAKE_SEGMENT_SPACING,
     deferredScale: 0.78,
     deferredSegmentSpacing: 44,
@@ -344,6 +365,13 @@ const SNAKE_SKINS = {
     instruction: "Drag the rollercoaster around the letters.",
     successEyebrow: "Ride complete!",
     successCopy: "All the fruit is collected.",
+    soundEffects: {
+      chompSrc: themeParkScreamSound,
+      chompVolume: 0.2,
+      moveSrcs: THEME_PARK_MOVE_SOUND_SOURCES,
+      moveVolume: 0.1,
+      moveChance: 0.36
+    },
     segmentSpacing: 106,
     deferredScale: 0.78,
     deferredSegmentSpacing: 56,
@@ -778,9 +806,11 @@ let queuedTurnTrailDistance: number | null = null;
 let isAwaitingSegmentRestart = false;
 let segmentRestartPointerStart: Point | null = null;
 let snakeChompSoundPlayer: HTMLAudioElement | null = null;
+let snakeChompSoundSkinId: SnakeSkinId | null = null;
 let activeSnakeChompSounds: HTMLAudioElement[] = [];
 let snakeChompSoundWarmed = false;
 let snakeMoveSoundPlayers: HTMLAudioElement[] | null = null;
+let snakeMoveSoundSkinId: SnakeSkinId | null = null;
 let activeSnakeMoveSounds: HTMLAudioElement[] = [];
 let snakeMoveSoundsWarmed = false;
 let snakeMoveSoundGroupIndex = -1;
@@ -871,52 +901,65 @@ const getNextUrlWord = (): string | null => {
   return nextWord ?? null;
 };
 
+const getActiveSnakeSoundEffects = () => getActiveSnakeSkin().soundEffects;
+
 const ensureSnakeMoveSoundPlayers = () => {
-  if (snakeMoveSoundPlayers) {
+  const skin = getActiveSnakeSkin();
+  const soundEffects = skin.soundEffects;
+  if (snakeMoveSoundPlayers && snakeMoveSoundSkinId === skin.id) {
     return snakeMoveSoundPlayers;
   }
 
-  snakeMoveSoundPlayers = SNAKE_MOVE_SOUND_SOURCES.map((src) => {
+  snakeMoveSoundPlayers = soundEffects.moveSrcs.map((src) => {
     const audio = new Audio(src);
     audio.preload = "auto";
-    audio.volume = SNAKE_MOVE_SOUND_VOLUME;
+    audio.volume = soundEffects.moveVolume;
     return audio;
   });
+  snakeMoveSoundSkinId = skin.id;
+  snakeMoveSoundsWarmed = false;
   return snakeMoveSoundPlayers;
 };
 
 const ensureSnakeChompSoundPlayer = () => {
-  if (snakeChompSoundPlayer) {
+  const skin = getActiveSnakeSkin();
+  const soundEffects = skin.soundEffects;
+  if (snakeChompSoundPlayer && snakeChompSoundSkinId === skin.id) {
     return snakeChompSoundPlayer;
   }
 
-  snakeChompSoundPlayer = new Audio(chompSound);
+  snakeChompSoundPlayer = new Audio(soundEffects.chompSrc);
   snakeChompSoundPlayer.preload = "auto";
-  snakeChompSoundPlayer.volume = SNAKE_CHOMP_SOUND_VOLUME;
+  snakeChompSoundPlayer.volume = soundEffects.chompVolume;
+  snakeChompSoundSkinId = skin.id;
+  snakeChompSoundWarmed = false;
   return snakeChompSoundPlayer;
 };
 
 const warmSnakeChompSound = () => {
+  const player = ensureSnakeChompSoundPlayer();
   if (snakeChompSoundWarmed) {
     return;
   }
 
-  ensureSnakeChompSoundPlayer().load();
+  player.load();
   snakeChompSoundWarmed = true;
 };
 
 const warmSnakeMoveSounds = () => {
+  const players = ensureSnakeMoveSoundPlayers();
   if (snakeMoveSoundsWarmed) {
     return;
   }
 
-  ensureSnakeMoveSoundPlayers().forEach((audio) => {
+  players.forEach((audio) => {
     audio.load();
   });
   snakeMoveSoundsWarmed = true;
 };
 
 const playSnakeChompSound = () => {
+  const soundEffects = getActiveSnakeSoundEffects();
   const template = ensureSnakeChompSoundPlayer();
   const src = template.currentSrc || template.src;
   if (!src) {
@@ -926,7 +969,7 @@ const playSnakeChompSound = () => {
   const player = new Audio(src);
   player.preload = "auto";
   player.currentTime = 0;
-  player.volume = SNAKE_CHOMP_SOUND_VOLUME;
+  player.volume = soundEffects.chompVolume;
   activeSnakeChompSounds.push(player);
   player.addEventListener("ended", () => {
     activeSnakeChompSounds = activeSnakeChompSounds.filter((audio) => audio !== player);
@@ -938,6 +981,7 @@ const playSnakeChompSound = () => {
 };
 
 const playRandomSnakeMoveSound = () => {
+  const soundEffects = getActiveSnakeSoundEffects();
   const players = ensureSnakeMoveSoundPlayers();
   const template = players[Math.floor(Math.random() * players.length)];
   const src = template?.currentSrc || template?.src;
@@ -948,7 +992,7 @@ const playRandomSnakeMoveSound = () => {
   const player = new Audio(src);
   player.preload = "auto";
   player.currentTime = 0;
-  player.volume = SNAKE_MOVE_SOUND_VOLUME;
+  player.volume = soundEffects.moveVolume;
   activeSnakeMoveSounds.push(player);
   player.addEventListener("ended", () => {
     activeSnakeMoveSounds = activeSnakeMoveSounds.filter((audio) => audio !== player);
@@ -994,7 +1038,7 @@ const maybePlaySnakeMoveSound = (
     overallDistance >= nextSnakeMoveSoundDistance &&
     nextSnakeMoveSoundDistance <= group.endDistance
   ) {
-    if (Math.random() < SNAKE_MOVE_SOUND_CHANCE) {
+    if (Math.random() < getActiveSnakeSoundEffects().moveChance) {
       shouldPlay = true;
     }
     nextSnakeMoveSoundDistance += getActiveSnakeSegmentSpacing();
@@ -3226,8 +3270,8 @@ const setupScene = (path: WritingPath, width: number, height: number, offsetY: n
       y2="${path.guides.baseline + offsetY}"
     ></line>
     ${backgroundPaths}
-    ${tracePaths}
     <path class="writing-app__stroke-next" id="next-section-stroke" d=""></path>
+    ${tracePaths}
     <g class="writing-app__section-annotations" id="section-annotations"></g>
     <text
       class="writing-app__boundary-star"

@@ -555,8 +555,8 @@ const playDemo = () => {
     const frame = player.getFrame(clampedElapsed);
     const completed = new Set(frame.completedStrokes);
 
-    demoStrokeEls.forEach((el, index) => {
-      const length = demoStrokeLengths[index] ?? 0.001;
+    traceStrokeEls.forEach((el, index) => {
+      const length = traceStrokeLengths[index] ?? 0.001;
       if (completed.has(index)) {
         el.style.strokeDashoffset = "0";
         return;
