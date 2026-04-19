@@ -2,7 +2,10 @@ import "./style.css";
 import {
   AnimationPlayer,
   TracingSession,
+  compileFormationArrows,
   compileTracingPath,
+  formationArrowCommandsToSvgPathData,
+  type Point,
   type PreparedTracingPath,
   type TracingState,
   type WritingPath
@@ -113,6 +116,12 @@ let currentTraceTolerance = DEFAULT_TRACE_TOLERANCE;
 
 const TRACE_CURSOR_TURN_COMMIT_DISTANCE = 12;
 const TRACE_CURSOR_TURN_LOOKAHEAD_DISTANCE = 2;
+const SECTION_ARROWHEAD_LENGTH = 26;
+const SECTION_ARROWHEAD_WIDTH = 22;
+const SECTION_ARROWHEAD_TIP_OVERHANG = 11;
+
+const buildSvgPoints = (points: Point[]): string =>
+  points.map((point) => `${point.x} ${point.y}`).join(" ");
 
 const syncToleranceLabel = () => {
   toleranceValue.textContent = `${currentTraceTolerance}px`;
@@ -321,6 +330,31 @@ const setupScene = (path: WritingPath, width: number, height: number, offsetY: n
   const demoPaths = drawableStrokes
     .map((stroke) => `<path class="writing-app__stroke-demo" d="${buildPathD(stroke.curves)}"></path>`)
     .join("");
+  const sectionArrowLength = Math.abs(path.guides.baseline - path.guides.xHeight) / 3;
+  const sectionArrowMarkup = compileFormationArrows(preparedPath, {
+    retraceTurns: {
+      offset: Math.min(sectionArrowLength * 0.24, 13),
+      stemLength: sectionArrowLength * 0.36,
+      head: {
+        length: SECTION_ARROWHEAD_LENGTH,
+        width: SECTION_ARROWHEAD_WIDTH,
+        tipExtension: SECTION_ARROWHEAD_TIP_OVERHANG
+      }
+    }
+  })
+    .map(
+      (arrow) => `
+        <path
+          class="writing-app__section-arrow writing-app__section-arrow--white"
+          d="${formationArrowCommandsToSvgPathData(arrow.commands)}"
+        ></path>
+        ${arrow.head
+          ? `<polygon class="writing-app__section-arrowhead writing-app__section-arrowhead--white" points="${buildSvgPoints(arrow.head.polygon)}"></polygon>`
+          : ""
+        }
+      `
+    )
+    .join("");
 
   traceSvg.setAttribute("viewBox", `0 0 ${width} ${height}`);
   traceSvg.innerHTML = `
@@ -341,6 +375,7 @@ const setupScene = (path: WritingPath, width: number, height: number, offsetY: n
     ></line>
     ${backgroundPaths}
     ${tracePaths}
+    ${sectionArrowMarkup}
     ${demoPaths}
     <circle class="writing-app__nib" id="demo-nib" cx="0" cy="0" r="15"></circle>
     <g class="writing-app__cursor" id="trace-cursor">

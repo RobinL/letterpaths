@@ -349,6 +349,14 @@ body {
   pointer-events: none;
 }
 
+.writing-app__section-arrow--white {
+  stroke: #ffffff;
+}
+
+.writing-app__section-arrowhead--white {
+  fill: #ffffff;
+}
+
 .writing-app__cursor {
   pointer-events: none;
   transition: opacity 0.18s ease;
