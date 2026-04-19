@@ -782,13 +782,24 @@ function getGuideHeight(path: PreparedTracingPath): number {
 
 function getPointAtOverallDistance(
   path: PreparedTracingPath,
-  targetDistance: number
+  targetDistance: number,
+  bias: PoseAtDistanceBias = "center"
 ): Point {
   let remaining = targetDistance;
 
   for (let index = 0; index < path.strokes.length; index += 1) {
     const stroke = path.strokes[index];
     if (!stroke) {
+      continue;
+    }
+
+    const isAtStrokeEnd = Math.abs(remaining - stroke.totalLength) <= DISTANCE_EPSILON;
+    if (
+      bias === "forward" &&
+      isAtStrokeEnd &&
+      index < path.strokes.length - 1
+    ) {
+      remaining = 0;
       continue;
     }
 
@@ -812,7 +823,7 @@ function getPoseAtOverallDistance(
 ): { point: Point; tangent: Point } {
   const totalLength = getTotalLength(path);
   const clampedDistance = Math.max(0, Math.min(targetDistance, totalLength));
-  const point = getPointAtOverallDistance(path, clampedDistance);
+  const point = getPointAtOverallDistance(path, clampedDistance, bias);
   const delta = Math.min(8, Math.max(2, totalLength / 200));
 
   let fromDistance = Math.max(0, clampedDistance - delta);
@@ -832,8 +843,16 @@ function getPoseAtOverallDistance(
     }
   }
 
-  const fromPoint = getPointAtOverallDistance(path, fromDistance);
-  const toPoint = getPointAtOverallDistance(path, toDistance);
+  const fromPoint = getPointAtOverallDistance(
+    path,
+    fromDistance,
+    bias === "forward" ? "forward" : "center"
+  );
+  const toPoint = getPointAtOverallDistance(
+    path,
+    toDistance,
+    bias === "backward" ? "backward" : "center"
+  );
 
   return {
     point,

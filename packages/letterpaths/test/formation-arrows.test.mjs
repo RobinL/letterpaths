@@ -103,6 +103,27 @@ test("tracing sections include retrace restarts for annotation placement", () =>
   });
 });
 
+test("tracing sections start lifted strokes at the next pen-down point", () => {
+  const prepared = compileTracingPath(buildHandwritingPath("x", { style: "cursive" }));
+  const analysis = analyzeTracingSections(prepared, { includeRetraceTurns: false });
+
+  assert.equal(analysis.sections.length, 2);
+  assert.equal(analysis.sections[1].startReason, "stroke-start");
+
+  const firstStrokeEnd = prepared.strokes[0].samples.at(-1);
+  const secondStrokeStart = prepared.strokes[1].samples[0];
+  assert.ok(firstStrokeEnd);
+  assert.ok(secondStrokeStart);
+  assert.ok(Math.hypot(
+    analysis.sections[0].endPoint.x - firstStrokeEnd.x,
+    analysis.sections[0].endPoint.y - firstStrokeEnd.y
+  ) < 0.001);
+  assert.ok(Math.hypot(
+    analysis.sections[1].startPoint.x - secondStrokeStart.x,
+    analysis.sections[1].startPoint.y - secondStrokeStart.y
+  ) < 0.001);
+});
+
 test("formation annotations include all supported annotation kinds by default", () => {
   const annotations = compileFormationAnnotations(preparedSys());
   const kinds = new Set(annotations.map((annotation) => annotation.kind));

@@ -3,6 +3,7 @@ import {
   AnimationPlayer,
   TracingSession,
   analyzeTracingGroups,
+  analyzeTracingSections,
   annotationCommandsToSvgPathData,
   compileFormationAnnotations,
   compileTracingPath,
@@ -232,12 +233,7 @@ type FruitToken = {
   pathDistance: number;
   emoji: string;
   captured: boolean;
-  groupIndex: number;
-};
-
-type WaypointMarker = {
-  x: number;
-  y: number;
+  sectionIndex: number;
 };
 
 type SnakePose = {
@@ -745,7 +741,7 @@ let traceStrokeEls: SVGPathElement[] = [];
 let traceStrokeLengths: number[] = [];
 let nextSectionEl: SVGPathElement | null = null;
 let sectionAnnotationEl: SVGGElement | null = null;
-let renderedSectionAnnotationGroupIndex: number | null = null;
+let renderedSectionAnnotationSectionIndex: number | null = null;
 let demoAnimationFrameId: number | null = null;
 let isDemoPlaying = false;
 let currentTraceTolerance = DEFAULT_SNAKE_TRACE_TOLERANCE;
@@ -757,9 +753,8 @@ let includeFinalLeadOut = true;
 let fruits: FruitToken[] = [];
 let fruitEls: SVGTextElement[] = [];
 let tracingGroups: TracingGroup[] = [];
-let waypointMarkers: WaypointMarker[] = [];
-let currentWaypointIndex: number | null = null;
-let visibleGroupCount = 1;
+let tracingSections: TracingSection[] = [];
+let visibleSectionCount = 1;
 let waypointEl: SVGTextElement | null = null;
 let currentSceneWidth = 1600;
 let currentSceneHeight = 900;
@@ -800,6 +795,9 @@ let dotTargetPhase: DotTargetPhase = "hidden";
 let dotTargetStrokeIndex: number | null = null;
 let dotTargetPoint: Point | null = null;
 let dotTargetPhaseStartedAt = 0;
+let queuedRestartPoint: Point | null = null;
+let queuedRestartTangent: Point | null = null;
+let queuedRestartAllowsContinuousDrag = false;
 let queuedTurnTangent: Point | null = null;
 let queuedTurnBoundary: PreparedTracingBoundary | null = null;
 let queuedTurnTrailDistance: number | null = null;
@@ -813,7 +811,7 @@ let snakeMoveSoundPlayers: HTMLAudioElement[] | null = null;
 let snakeMoveSoundSkinId: SnakeSkinId | null = null;
 let activeSnakeMoveSounds: HTMLAudioElement[] = [];
 let snakeMoveSoundsWarmed = false;
-let snakeMoveSoundGroupIndex = -1;
+let snakeMoveSoundSectionIndex = -1;
 let nextSnakeMoveSoundDistance = Number.POSITIVE_INFINITY;
 
 const syncToleranceLabel = () => {
@@ -1004,12 +1002,12 @@ const playRandomSnakeMoveSound = () => {
 };
 
 const resetSnakeMoveSoundProgress = () => {
-  const groupIndex = visibleGroupCount > 0 ? visibleGroupCount - 1 : -1;
-  const group = groupIndex >= 0 ? tracingGroups[groupIndex] : null;
+  const sectionIndex = visibleSectionCount > 0 ? visibleSectionCount - 1 : -1;
+  const section = sectionIndex >= 0 ? tracingSections[sectionIndex] : null;
 
-  snakeMoveSoundGroupIndex = groupIndex;
-  nextSnakeMoveSoundDistance = group
-    ? group.startDistance + getActiveSnakeSegmentSpacing()
+  snakeMoveSoundSectionIndex = sectionIndex;
+  nextSnakeMoveSoundDistance = section
+    ? section.startDistance + getActiveSnakeSegmentSpacing()
     : Number.POSITIVE_INFINITY;
 };
 
@@ -1020,15 +1018,15 @@ const maybePlaySnakeMoveSound = (
     return;
   }
 
-  const groupIndex = visibleGroupCount > 0 ? visibleGroupCount - 1 : -1;
-  const group = groupIndex >= 0 ? tracingGroups[groupIndex] : null;
-  if (!group) {
+  const sectionIndex = visibleSectionCount > 0 ? visibleSectionCount - 1 : -1;
+  const section = sectionIndex >= 0 ? tracingSections[sectionIndex] : null;
+  if (!section) {
     nextSnakeMoveSoundDistance = Number.POSITIVE_INFINITY;
-    snakeMoveSoundGroupIndex = groupIndex;
+    snakeMoveSoundSectionIndex = sectionIndex;
     return;
   }
 
-  if (groupIndex !== snakeMoveSoundGroupIndex) {
+  if (sectionIndex !== snakeMoveSoundSectionIndex) {
     resetSnakeMoveSoundProgress();
   }
 
@@ -1036,7 +1034,7 @@ const maybePlaySnakeMoveSound = (
   let shouldPlay = false;
   while (
     overallDistance >= nextSnakeMoveSoundDistance &&
-    nextSnakeMoveSoundDistance <= group.endDistance
+    nextSnakeMoveSoundDistance <= section.endDistance
   ) {
     if (Math.random() < getActiveSnakeSoundEffects().moveChance) {
       shouldPlay = true;
@@ -1054,7 +1052,8 @@ const syncFruitDisplay = () => {
 
   fruitEls.forEach((el) => {
     const fruit = fruits[Number(el.dataset.fruitIndex)];
-    const shouldHide = hideFruit || !fruit || fruit.captured || fruit.groupIndex >= visibleGroupCount;
+    const shouldHide =
+      hideFruit || !fruit || fruit.captured || fruit.sectionIndex >= visibleSectionCount;
     el.classList.toggle("writing-app__fruit--captured", Boolean(fruit?.captured));
     el.classList.toggle("writing-app__fruit--hidden", shouldHide);
   });
@@ -1180,8 +1179,12 @@ const completeSnakeRetraction = () => {
 };
 
 const hasSegmentRestartPullEvidence = (point: Point, state: TracingState): boolean => {
-  const tangent = normalizeVector(queuedTurnTangent ?? state.cursorTangent);
-  const startPoint = segmentRestartPointerStart ?? queuedTurnBoundary?.point ?? state.cursorPoint;
+  const tangent = normalizeVector(queuedRestartTangent ?? queuedTurnTangent ?? state.cursorTangent);
+  const startPoint =
+    segmentRestartPointerStart ??
+    queuedRestartPoint ??
+    queuedTurnBoundary?.point ??
+    state.cursorPoint;
   const delta = {
     x: point.x - startPoint.x,
     y: point.y - startPoint.y
@@ -1203,6 +1206,7 @@ const hasSegmentRestartPullEvidence = (point: Point, state: TracingState): boole
 const maybeResumeContinuousDrag = () => {
   if (
     !isAwaitingSegmentRestart ||
+    !queuedRestartAllowsContinuousDrag ||
     activePointerId === null ||
     !activePointerPosition ||
     !tracingSession ||
@@ -1212,8 +1216,8 @@ const maybeResumeContinuousDrag = () => {
   }
 
   const resumeState = tracingSession.getState();
-  const restartPoint = queuedTurnBoundary?.point ?? resumeState.cursorPoint;
-  const restartTangent = queuedTurnTangent ?? resumeState.cursorTangent;
+  const restartPoint = queuedRestartPoint ?? queuedTurnBoundary?.point ?? resumeState.cursorPoint;
+  const restartTangent = queuedRestartTangent ?? queuedTurnTangent ?? resumeState.cursorTangent;
   const started =
     resumeState.status === "tracing" || tracingSession.beginAt(resumeState.cursorPoint);
   if (!started) {
@@ -1335,6 +1339,14 @@ const getOverallDistanceForState = (
 
 const isDeferredStrokeActive = (state: Pick<TracingState, "activeStrokeIndex">): boolean =>
   getActiveDrawableStroke(state)?.deferred === true;
+
+const isSectionDeferred = (section: TracingSection): boolean =>
+  drawablePathStrokes[section.strokeIndex]?.deferred === true;
+
+const getCurrentTracingSection = (): TracingSection | null => {
+  const sectionIndex = visibleSectionCount > 0 ? visibleSectionCount - 1 : -1;
+  return sectionIndex >= 0 ? tracingSections[sectionIndex] ?? null : null;
+};
 
 const getVisibleSnakeSegments = (
   travelledDistance: number,
@@ -1717,7 +1729,7 @@ const completeActiveDotStroke = () => {
     tracingSession.beginAt(state.cursorPoint);
     const nextState = tracingSession.getState();
     captureFruitThroughDistance(getOverallDistanceForState(nextState));
-    maybePauseAtTracingGroupBoundary(nextState);
+    maybePauseAtTracingSectionBoundary(nextState);
   }
 };
 
@@ -1949,57 +1961,6 @@ const interpolateSamplePoint = (
   return last ? { x: last.x, y: last.y } : { x: 0, y: 0 };
 };
 
-const interpolateSamplePose = (
-  samples: TracingSample[],
-  distanceAlongStroke: number
-): { point: Point; tangent: Point } => {
-  if (samples.length === 0) {
-    return { point: { x: 0, y: 0 }, tangent: { x: 1, y: 0 } };
-  }
-
-  if (samples.length === 1 || distanceAlongStroke <= 0) {
-    const sample = samples[0];
-    return sample
-      ? {
-        point: { x: sample.x, y: sample.y },
-        tangent: normalizeVector(sample.tangent)
-      }
-      : { point: { x: 0, y: 0 }, tangent: { x: 1, y: 0 } };
-  }
-
-  for (let index = 1; index < samples.length; index += 1) {
-    const previous = samples[index - 1];
-    const current = samples[index];
-    if (!previous || !current) {
-      continue;
-    }
-    if (distanceAlongStroke > current.distanceAlongStroke) {
-      continue;
-    }
-
-    const span = current.distanceAlongStroke - previous.distanceAlongStroke;
-    const ratio = span > 0 ? (distanceAlongStroke - previous.distanceAlongStroke) / span : 0;
-    return {
-      point: {
-        x: previous.x + (current.x - previous.x) * ratio,
-        y: previous.y + (current.y - previous.y) * ratio
-      },
-      tangent: normalizeVector({
-        x: previous.tangent.x + (current.tangent.x - previous.tangent.x) * ratio,
-        y: previous.tangent.y + (current.tangent.y - previous.tangent.y) * ratio
-      })
-    };
-  }
-
-  const last = samples[samples.length - 1];
-  return last
-    ? {
-      point: { x: last.x, y: last.y },
-      tangent: normalizeVector(last.tangent)
-    }
-    : { point: { x: 0, y: 0 }, tangent: { x: 1, y: 0 } };
-};
-
 const getPointAtOverallDistance = (
   preparedPath: PreparedTracingPath,
   targetDistance: number
@@ -2023,54 +1984,6 @@ const getPointAtOverallDistance = (
   }
 
   return { x: 0, y: 0 };
-};
-
-const getPoseAtOverallDistance = (
-  preparedPath: PreparedTracingPath,
-  targetDistance: number
-): { point: Point; tangent: Point } => {
-  let remaining = targetDistance;
-
-  for (let index = 0; index < preparedPath.strokes.length; index += 1) {
-    const stroke = preparedPath.strokes[index];
-    if (!stroke) {
-      continue;
-    }
-
-    if (remaining <= stroke.totalLength || index === preparedPath.strokes.length - 1) {
-      return interpolateSamplePose(
-        stroke.samples,
-        Math.max(0, Math.min(remaining, stroke.totalLength))
-      );
-    }
-
-    remaining -= stroke.totalLength;
-  }
-
-  return { point: { x: 0, y: 0 }, tangent: { x: 1, y: 0 } };
-};
-
-const findStrokeIndexForOverallDistance = (
-  preparedPath: PreparedTracingPath,
-  targetDistance: number
-): number => {
-  let strokeStart = 0;
-
-  for (let index = 0; index < preparedPath.strokes.length; index += 1) {
-    const stroke = preparedPath.strokes[index];
-    if (!stroke) {
-      continue;
-    }
-
-    const strokeEnd = strokeStart + stroke.totalLength;
-    if (targetDistance <= strokeEnd || index === preparedPath.strokes.length - 1) {
-      return index;
-    }
-
-    strokeStart = strokeEnd;
-  }
-
-  return 0;
 };
 
 const buildPathDFromOverallDistanceRange = (
@@ -2153,52 +2066,26 @@ const renderSectionAnnotationMarkup = (annotation: FormationAnnotation): string 
   `;
 };
 
-const buildTracingSectionForGroup = (
-  preparedPath: PreparedTracingPath,
-  group: TracingGroup
-): TracingSection => {
-  const startPose = getPoseAtOverallDistance(preparedPath, group.startDistance);
-  const endPose = getPoseAtOverallDistance(preparedPath, group.endDistance);
-
-  return {
-    index: group.index,
-    strokeIndex: findStrokeIndexForOverallDistance(preparedPath, group.startDistance),
-    groupIndex: group.index,
-    startDistance: group.startDistance,
-    endDistance: group.endDistance,
-    startPoint: group.startPoint,
-    endPoint: group.endPoint,
-    startTangent: startPose.tangent,
-    endTangent: endPose.tangent,
-    startReason: group.index === 0 ? "path-start" : "retrace-turn",
-    kind: group.kind,
-    ...(group.matchedEarlierDistance === undefined
-      ? {}
-      : { matchedEarlierDistance: group.matchedEarlierDistance })
-  };
-};
-
 const syncCurrentSectionAnnotations = () => {
   if (!sectionAnnotationEl || !preparedTracingPath || !currentPath) {
     return;
   }
 
-  const currentGroup = tracingGroups[visibleGroupCount - 1];
-  if (!currentGroup) {
-    renderedSectionAnnotationGroupIndex = null;
+  const currentSection = getCurrentTracingSection();
+  if (!currentSection) {
+    renderedSectionAnnotationSectionIndex = null;
     sectionAnnotationEl.innerHTML = "";
     return;
   }
 
-  if (renderedSectionAnnotationGroupIndex === currentGroup.index) {
+  if (renderedSectionAnnotationSectionIndex === currentSection.index) {
     return;
   }
 
   const sectionArrowLength = Math.abs(currentPath.guides.baseline - currentPath.guides.xHeight) / 3;
   const arrowLaneOffset = shouldOffsetArrowLanes ? currentTurnRadius : 0;
-  const section = buildTracingSectionForGroup(preparedTracingPath, currentGroup);
   const annotations = compileFormationAnnotations(preparedTracingPath, {
-    sections: [section],
+    sections: [currentSection],
     drawOrderNumbers: false,
     startArrows: {
       length: sectionArrowLength * 0.42,
@@ -2233,12 +2120,12 @@ const syncCurrentSectionAnnotations = () => {
   }).filter(
     (annotation) =>
       annotation.kind !== "turning-point" ||
-      Math.abs(annotation.source.turnDistance - currentGroup.endDistance) <=
+      Math.abs(annotation.source.turnDistance - currentSection.endDistance) <=
       SECTION_ANNOTATION_DISTANCE_EPSILON
   );
 
   sectionAnnotationEl.innerHTML = annotations.map(renderSectionAnnotationMarkup).join("");
-  renderedSectionAnnotationGroupIndex = currentGroup.index;
+  renderedSectionAnnotationSectionIndex = currentSection.index;
 };
 
 const syncNextSectionHighlight = () => {
@@ -2246,8 +2133,8 @@ const syncNextSectionHighlight = () => {
     return;
   }
 
-  const currentGroup = tracingGroups[visibleGroupCount - 1];
-  if (!currentGroup) {
+  const currentSection = getCurrentTracingSection();
+  if (!currentSection) {
     nextSectionEl.setAttribute("d", "");
     nextSectionEl.style.opacity = "0";
     return;
@@ -2257,8 +2144,8 @@ const syncNextSectionHighlight = () => {
     "d",
     buildPathDFromOverallDistanceRange(
       preparedTracingPath,
-      currentGroup.startDistance,
-      currentGroup.endDistance
+      currentSection.startDistance,
+      currentSection.endDistance
     )
   );
   nextSectionEl.style.opacity = "1";
@@ -2276,62 +2163,77 @@ const getTracingBoundaryAtDistance = (overallDistance: number): PreparedTracingB
   );
 };
 
-const getTracingGroupBoundary = (groupIndex: number): PreparedTracingBoundary | null => {
-  const group = tracingGroups[groupIndex];
-  if (!group) {
+const getTracingSectionBoundary = (section: TracingSection): PreparedTracingBoundary | null => {
+  if (section.startReason !== "retrace-turn") {
     return null;
   }
 
-  return getTracingBoundaryAtDistance(group.endDistance);
+  return getTracingBoundaryAtDistance(section.startDistance);
 };
 
-const advanceToNextTracingGroup = () => {
-  visibleGroupCount = Math.min(visibleGroupCount + 1, tracingGroups.length);
-  currentWaypointIndex = visibleGroupCount - 1 < waypointMarkers.length ? visibleGroupCount - 1 : null;
+const advanceToNextTracingSection = () => {
+  visibleSectionCount = Math.min(visibleSectionCount + 1, tracingSections.length);
   updateWaypointMarker();
   syncFruitDisplay();
   syncCurrentSectionAnnotations();
   resetSnakeMoveSoundProgress();
 };
 
-const maybePauseAtTracingGroupBoundary = (state: TracingState): boolean => {
+const maybePauseAtTracingSectionBoundary = (state: TracingState): boolean => {
   if (
     isDemoPlaying ||
     isSnakeSlithering ||
     isSnakeExitComplete ||
     isAwaitingSegmentRestart ||
-    tracingGroups.length <= visibleGroupCount
+    tracingSections.length <= visibleSectionCount
   ) {
     return false;
   }
 
-  const currentGroupIndex = visibleGroupCount - 1;
-  const currentGroup = tracingGroups[currentGroupIndex];
-  if (!currentGroup) {
+  const currentSection = getCurrentTracingSection();
+  const nextSection = tracingSections[visibleSectionCount];
+  if (!currentSection || !nextSection) {
     return false;
   }
-  const boundary = getTracingGroupBoundary(currentGroupIndex);
 
   const overallDistance = getOverallDistanceForState(state);
-  if (overallDistance < currentGroup.endDistance - 8) {
+  const sectionLength = currentSection.endDistance - currentSection.startDistance;
+  const boundaryTolerance = Math.min(8, Math.max(0.1, sectionLength * 0.25));
+  if (overallDistance < currentSection.endDistance - boundaryTolerance) {
     return false;
   }
 
-  isAwaitingSegmentRestart = true;
+  const boundary = getTracingSectionBoundary(nextSection);
   snakeUnretractStartHeadDistance = null;
   snakeUnretractStartRetraction = 0;
-  parkedBoundaryDistance = boundary?.overallDistance ?? currentGroup.endDistance;
+  parkedBoundaryDistance = currentSection.endDistance;
+  queuedRestartPoint = nextSection.startPoint;
+  queuedRestartTangent = nextSection.startTangent;
+  queuedRestartAllowsContinuousDrag = nextSection.startReason === "retrace-turn";
   queuedTurnBoundary = boundary;
   queuedTurnTangent = boundary?.outgoingTangent ?? null;
   segmentRestartPointerStart = activePointerPosition ?? state.cursorPoint;
-  if (queuedTurnTangent) {
+
+  advanceToNextTracingSection();
+  tracingSession?.end();
+
+  if (isSectionDeferred(nextSection)) {
+    isAwaitingSegmentRestart = false;
+    queuedRestartPoint = null;
+    queuedRestartTangent = null;
+    queuedRestartAllowsContinuousDrag = false;
+    syncSnakeRetractionToState();
+    requestTraceRender();
+    return true;
+  }
+
+  isAwaitingSegmentRestart = true;
+  if (queuedTurnTangent && boundary) {
     snakeHeadAngle = toAngle(queuedTurnTangent);
-    appendSnakePose(boundary?.point ?? currentGroup.endPoint, queuedTurnTangent, true);
+    appendSnakePose(boundary.point, queuedTurnTangent, true);
     queuedTurnTrailDistance = snakeHeadDistance;
   }
 
-  advanceToNextTracingGroup();
-  tracingSession?.end();
   syncSnakeRetractionToState();
   requestTraceRender();
   return true;
@@ -2339,22 +2241,21 @@ const maybePauseAtTracingGroupBoundary = (state: TracingState): boolean => {
 
 const createFruitTokens = (
   _preparedPath: PreparedTracingPath,
-  groups: TracingGroup[]
+  sections: TracingSection[]
 ): FruitToken[] => {
-  return groups.slice(0, -1).map((group, groupIndex) => ({
-    x: group.endPoint.x,
-    y: group.endPoint.y,
-    pathDistance: group.endDistance,
+  return sections.slice(0, -1).map((section) => ({
+    x: section.endPoint.x,
+    y: section.endPoint.y,
+    pathDistance: section.endDistance,
     emoji: FRUIT_EMOJI,
     captured: false,
-    groupIndex
+    sectionIndex: section.index
   }));
 };
 
 const resetFruitState = () => {
-  visibleGroupCount = tracingGroups.length > 0 ? 1 : 0;
-  currentWaypointIndex = waypointMarkers.length > 0 ? 0 : null;
-  renderedSectionAnnotationGroupIndex = null;
+  visibleSectionCount = tracingSections.length > 0 ? 1 : 0;
+  renderedSectionAnnotationSectionIndex = null;
   syncCurrentSectionAnnotations();
   fruits.forEach((fruit) => {
     fruit.captured = false;
@@ -2605,6 +2506,9 @@ const resetSnakeTrail = (
   snakeUnretractStartHeadDistance = null;
   snakeUnretractStartRetraction = 0;
   parkedBoundaryDistance = null;
+  queuedRestartPoint = null;
+  queuedRestartTangent = null;
+  queuedRestartAllowsContinuousDrag = false;
   queuedTurnBoundary = nextQueuedTurnBoundary;
   queuedTurnTangent = nextQueuedTurnTangent;
   queuedTurnTrailDistance = null;
@@ -2714,6 +2618,9 @@ const startSnakeExit = (
   snakeUnretractStartHeadDistance = null;
   snakeUnretractStartRetraction = 0;
   parkedBoundaryDistance = null;
+  queuedRestartPoint = null;
+  queuedRestartTangent = null;
+  queuedRestartAllowsContinuousDrag = false;
   queuedTurnBoundary = null;
   queuedTurnTangent = null;
   queuedTurnTrailDistance = null;
@@ -2783,7 +2690,7 @@ const captureFruitThroughDistance = (overallDistance: number) => {
   let changed = false;
 
   fruits.forEach((fruit, index) => {
-    if (fruit.captured || fruit.groupIndex >= visibleGroupCount) {
+    if (fruit.captured || fruit.sectionIndex >= visibleSectionCount) {
       return;
     }
 
@@ -2812,17 +2719,16 @@ const updateWaypointMarker = () => {
     return;
   }
 
-  const marker =
-    currentWaypointIndex !== null ? waypointMarkers[currentWaypointIndex] : undefined;
+  const marker = tracingSections[visibleSectionCount];
 
-  if (!marker) {
+  if (!marker || isSectionDeferred(marker)) {
     waypointEl.classList.add("writing-app__boundary-star--hidden");
     return;
   }
 
   waypointEl.classList.remove("writing-app__boundary-star--hidden");
-  waypointEl.setAttribute("x", `${marker.x}`);
-  waypointEl.setAttribute("y", `${marker.y}`);
+  waypointEl.setAttribute("x", `${marker.startPoint.x}`);
+  waypointEl.setAttribute("y", `${marker.startPoint.y}`);
 };
 
 const syncSnakeToState = (state: TracingState) => {
@@ -2870,9 +2776,10 @@ const syncSnakeToState = (state: TracingState) => {
 
   if (!isDemoPlaying && state.isPenDown) {
     maybePlaySnakeMoveSound(state);
-    if (maybePauseAtTracingGroupBoundary(state)) {
-      return;
-    }
+  }
+
+  if (!isDemoPlaying && maybePauseAtTracingSectionBoundary(state)) {
+    return;
   }
 };
 
@@ -2921,6 +2828,9 @@ const resetRoundProgress = () => {
   snakeUnretractStartHeadDistance = null;
   snakeUnretractStartRetraction = 0;
   parkedBoundaryDistance = null;
+  queuedRestartPoint = null;
+  queuedRestartTangent = null;
+  queuedRestartAllowsContinuousDrag = false;
   queuedTurnBoundary = null;
   queuedTurnTangent = null;
   queuedTurnTrailDistance = null;
@@ -3201,25 +3111,21 @@ const setupScene = (path: WritingPath, width: number, height: number, offsetY: n
   currentPathLength = preparedPath.strokes.reduce((total, stroke) => total + stroke.totalLength, 0);
   const groupAnalysis = analyzeTracingGroups(preparedPath);
   tracingGroups = groupAnalysis.groups;
-  waypointMarkers = tracingGroups.slice(1).map((group) => ({
-    x: group.startPoint.x,
-    y: group.startPoint.y
-  }));
-  currentWaypointIndex = waypointMarkers.length > 0 ? 0 : null;
-  visibleGroupCount = tracingGroups.length > 0 ? 1 : 0;
+  tracingSections = analyzeTracingSections(preparedPath, { groups: tracingGroups }).sections;
+  visibleSectionCount = tracingSections.length > 0 ? 1 : 0;
 
   tracingSession = new TracingSession(preparedPath, {
     startTolerance: currentTraceTolerance,
     hitTolerance: currentTraceTolerance
   });
   activePointerId = null;
-  fruits = createFruitTokens(preparedPath, tracingGroups);
+  fruits = createFruitTokens(preparedPath, tracingSections);
 
   const drawableStrokes = drawablePathStrokes;
-  const backgroundPaths = tracingGroups
+  const backgroundPaths = tracingSections
     .map(
-      (group) =>
-        `<path class="writing-app__stroke-bg" d="${buildPathDFromOverallDistanceRange(preparedPath, group.startDistance, group.endDistance)}"></path>`
+      (section) =>
+        `<path class="writing-app__stroke-bg" d="${buildPathDFromOverallDistanceRange(preparedPath, section.startDistance, section.endDistance)}"></path>`
     )
     .join("");
   const tracePaths = drawableStrokes
@@ -3328,7 +3234,7 @@ const setupScene = (path: WritingPath, width: number, height: number, offsetY: n
   );
   nextSectionEl = traceSvg.querySelector<SVGPathElement>("#next-section-stroke");
   sectionAnnotationEl = traceSvg.querySelector<SVGGElement>("#section-annotations");
-  renderedSectionAnnotationGroupIndex = null;
+  renderedSectionAnnotationSectionIndex = null;
   fruitEls = Array.from(traceSvg.querySelectorAll<SVGTextElement>(".writing-app__fruit"));
   waypointEl = traceSvg.querySelector<SVGTextElement>("#waypoint-star");
   snakeLayerEl = traceSvg.querySelector<SVGGElement>("#trace-snake");
@@ -3434,8 +3340,8 @@ const onPointerDown = (event: PointerEvent) => {
   const state = tracingSession.getState();
   const activePreparedStroke = getActivePreparedStroke(state);
   const shouldRestartSnakeEmergence = isAwaitingSegmentRestart;
-  const restartPoint = queuedTurnBoundary?.point ?? state.cursorPoint;
-  const restartTangent = queuedTurnTangent ?? state.cursorTangent;
+  const restartPoint = queuedRestartPoint ?? queuedTurnBoundary?.point ?? state.cursorPoint;
+  const restartTangent = queuedRestartTangent ?? queuedTurnTangent ?? state.cursorTangent;
 
   if (isDeferredStrokeActive(state) && !isPointerOnDeferredTarget(pointer, state)) {
     return;
@@ -3444,6 +3350,14 @@ const onPointerDown = (event: PointerEvent) => {
   if (isDeferredStrokeActive(state) && activePreparedStroke?.isDot) {
     event.preventDefault();
     startDotPickupAnimation();
+    return;
+  }
+
+  if (
+    shouldRestartSnakeEmergence &&
+    !queuedRestartAllowsContinuousDrag &&
+    !isSnakeRetractionAtTarget()
+  ) {
     return;
   }
 
@@ -3481,7 +3395,11 @@ const onPointerMove = (event: PointerEvent) => {
   activePointerPosition = getPointerInSvg(traceSvg, event);
   if (isAwaitingSegmentRestart) {
     const state = tracingSession.getState();
-    if (!isSnakeRetractionAtTarget() && hasSegmentRestartPullEvidence(activePointerPosition, state)) {
+    if (
+      queuedRestartAllowsContinuousDrag &&
+      !isSnakeRetractionAtTarget() &&
+      hasSegmentRestartPullEvidence(activePointerPosition, state)
+    ) {
       completeSnakeRetraction();
     }
     maybeResumeContinuousDrag();
@@ -3533,12 +3451,12 @@ toleranceSlider.addEventListener("input", () => {
 turnRadiusSlider.addEventListener("input", () => {
   currentTurnRadius = Number(turnRadiusSlider.value);
   syncTurnRadiusLabel();
-  renderedSectionAnnotationGroupIndex = null;
+  renderedSectionAnnotationSectionIndex = null;
   syncCurrentSectionAnnotations();
 });
 offsetArrowLanesInput.addEventListener("change", () => {
   shouldOffsetArrowLanes = offsetArrowLanesInput.checked;
-  renderedSectionAnnotationGroupIndex = null;
+  renderedSectionAnnotationSectionIndex = null;
   syncCurrentSectionAnnotations();
 });
 themeParkToggle.addEventListener("change", () => {
