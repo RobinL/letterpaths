@@ -1124,6 +1124,40 @@ const completeQueuedStrokeStartJump = (): boolean => {
   return true;
 };
 
+const jumpSnakeHeadToQueuedStrokeStart = (): boolean => {
+  if (
+    !isAwaitingSegmentRestart ||
+    queuedRestartAllowsContinuousDrag ||
+    !queuedRestartPoint ||
+    !queuedRestartTangent
+  ) {
+    return false;
+  }
+
+  const direction = normalizeVector(queuedRestartTangent);
+  snakeHeadAngle = toAngle(direction);
+  snakeTrail = [
+    {
+      x: queuedRestartPoint.x,
+      y: queuedRestartPoint.y,
+      angle: snakeHeadAngle,
+      distance: 0,
+      visible: true
+    }
+  ];
+  snakeHeadDistance = 0;
+  snakeChewUntil = 0;
+  queuedRestartPoint = null;
+  queuedRestartTangent = null;
+  queuedRestartAllowsContinuousDrag = false;
+  queuedTurnBoundary = null;
+  queuedTurnTangent = null;
+  queuedTurnTrailDistance = null;
+  segmentRestartPointerStart = null;
+  renderSnake();
+  return true;
+};
+
 const animateSnakeRetraction = () => {
   cancelSnakeRetractionAnimation();
 
@@ -2257,6 +2291,7 @@ const maybePauseAtTracingSectionBoundary = (state: TracingState): boolean => {
   isAwaitingSegmentRestart = true;
 
   syncSnakeRetractionToState();
+  jumpSnakeHeadToQueuedStrokeStart();
   requestTraceRender();
   return true;
 };
