@@ -2,9 +2,10 @@ import "./style.css";
 import {
   AnimationPlayer,
   TracingSession,
-  compileFormationArrows,
+  annotationCommandsToSvgPathData,
+  compileFormationAnnotations,
   compileTracingPath,
-  formationArrowCommandsToSvgPathData,
+  type FormationAnnotation,
   type Point,
   type PreparedTracingPath,
   type TracingState,
@@ -38,21 +39,75 @@ app.innerHTML = `
             <p class="writing-app__eyebrow">Trace this word</p>
             <h1 class="writing-app__word" id="word-label"></h1>
           </div>
-          <label class="writing-app__tolerance" for="tolerance-slider">
-            <span class="writing-app__tolerance-label">
-              Tolerance
-              <span class="writing-app__tolerance-value" id="tolerance-value"></span>
-            </span>
-            <input
-              class="writing-app__tolerance-slider"
-              id="tolerance-slider"
-              type="range"
-              min="${MIN_TRACE_TOLERANCE}"
-              max="${MAX_TRACE_TOLERANCE}"
-              step="${TRACE_TOLERANCE_STEP}"
-              value="${DEFAULT_TRACE_TOLERANCE}"
-            />
-          </label>
+          <div class="writing-app__controls">
+            <label class="writing-app__tolerance" for="tolerance-slider">
+              <span class="writing-app__tolerance-label">
+                Tolerance
+                <span class="writing-app__tolerance-value" id="tolerance-value"></span>
+              </span>
+              <input
+                class="writing-app__tolerance-slider"
+                id="tolerance-slider"
+                type="range"
+                min="${MIN_TRACE_TOLERANCE}"
+                max="${MAX_TRACE_TOLERANCE}"
+                step="${TRACE_TOLERANCE_STEP}"
+                value="${DEFAULT_TRACE_TOLERANCE}"
+              />
+            </label>
+            <label class="writing-app__tolerance" for="midpoint-density-slider">
+              <span class="writing-app__tolerance-label">
+                Midpoint density
+                <span class="writing-app__tolerance-value" id="midpoint-density-value"></span>
+              </span>
+              <input
+                class="writing-app__tolerance-slider"
+                id="midpoint-density-slider"
+                type="range"
+                min="120"
+                max="600"
+                step="20"
+                value="320"
+              />
+            </label>
+            <label class="writing-app__tolerance" for="turn-radius-slider">
+              <span class="writing-app__tolerance-label">
+                Turn radius
+                <span class="writing-app__tolerance-value" id="turn-radius-value"></span>
+              </span>
+              <input
+                class="writing-app__tolerance-slider"
+                id="turn-radius-slider"
+                type="range"
+                min="0"
+                max="48"
+                step="1"
+                value="13"
+              />
+            </label>
+            <fieldset class="writing-app__annotation-controls" aria-label="Formation annotations">
+              <label class="writing-app__annotation-toggle">
+                <input type="checkbox" data-annotation-kind="turning-point" checked />
+                <span>Turns</span>
+              </label>
+              <label class="writing-app__annotation-toggle">
+                <input type="checkbox" data-annotation-kind="start-arrow" checked />
+                <span>Starts</span>
+              </label>
+              <label class="writing-app__annotation-toggle">
+                <input type="checkbox" data-annotation-kind="draw-order-number" checked />
+                <span>Numbers</span>
+              </label>
+              <label class="writing-app__annotation-toggle">
+                <input type="checkbox" data-annotation-kind="midpoint-arrow" checked />
+                <span>Midpoints</span>
+              </label>
+              <label class="writing-app__annotation-toggle">
+                <input id="offset-arrow-lanes" type="checkbox" checked />
+                <span>Offset lanes</span>
+              </label>
+            </fieldset>
+          </div>
           <button class="writing-app__button" id="show-me-button" type="button">
             Show me
           </button>
@@ -85,6 +140,14 @@ const successOverlay = document.querySelector<HTMLDivElement>("#success-overlay"
 const nextWordButton = document.querySelector<HTMLButtonElement>("#next-word-button");
 const toleranceSlider = document.querySelector<HTMLInputElement>("#tolerance-slider");
 const toleranceValue = document.querySelector<HTMLSpanElement>("#tolerance-value");
+const midpointDensitySlider = document.querySelector<HTMLInputElement>("#midpoint-density-slider");
+const midpointDensityValue = document.querySelector<HTMLSpanElement>("#midpoint-density-value");
+const turnRadiusSlider = document.querySelector<HTMLInputElement>("#turn-radius-slider");
+const turnRadiusValue = document.querySelector<HTMLSpanElement>("#turn-radius-value");
+const offsetArrowLanesToggle = document.querySelector<HTMLInputElement>("#offset-arrow-lanes");
+const annotationToggleEls = Array.from(
+  document.querySelectorAll<HTMLInputElement>("[data-annotation-kind]")
+);
 
 if (
   !wordLabel ||
@@ -93,7 +156,13 @@ if (
   !successOverlay ||
   !nextWordButton ||
   !toleranceSlider ||
-  !toleranceValue
+  !toleranceValue ||
+  !midpointDensitySlider ||
+  !midpointDensityValue ||
+  !turnRadiusSlider ||
+  !turnRadiusValue ||
+  !offsetArrowLanesToggle ||
+  annotationToggleEls.length === 0
 ) {
   throw new Error("Missing elements for writing app.");
 }
@@ -113,6 +182,15 @@ let demoNibEl: SVGCircleElement | null = null;
 let demoAnimationFrameId: number | null = null;
 let isDemoPlaying = false;
 let currentTraceTolerance = DEFAULT_TRACE_TOLERANCE;
+let currentMidpointDensity = 320;
+let currentTurnRadius = 13;
+let shouldOffsetArrowLanes = true;
+let annotationVisibility: Record<FormationAnnotation["kind"], boolean> = {
+  "turning-point": true,
+  "start-arrow": true,
+  "draw-order-number": true,
+  "midpoint-arrow": true
+};
 
 const TRACE_CURSOR_TURN_COMMIT_DISTANCE = 12;
 const TRACE_CURSOR_TURN_LOOKAHEAD_DISTANCE = 2;
@@ -123,8 +201,62 @@ const SECTION_ARROWHEAD_TIP_OVERHANG = 11;
 const buildSvgPoints = (points: Point[]): string =>
   points.map((point) => `${point.x} ${point.y}`).join(" ");
 
+const escapeSvgText = (value: string): string =>
+  value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+
 const syncToleranceLabel = () => {
   toleranceValue.textContent = `${currentTraceTolerance}px`;
+};
+
+const syncMidpointDensityLabel = () => {
+  midpointDensityValue.textContent = `1 per ${currentMidpointDensity}px`;
+};
+
+const syncTurnRadiusLabel = () => {
+  turnRadiusValue.textContent = `${currentTurnRadius}px`;
+};
+
+const getAnnotationClassName = (annotation: FormationAnnotation): string =>
+  `writing-app__section-arrow writing-app__section-arrow--white writing-app__section-arrow--${annotation.kind}`;
+
+const renderAnnotationMarkup = (annotation: FormationAnnotation): string => {
+  if (!annotationVisibility[annotation.kind]) {
+    return "";
+  }
+
+  if (annotation.kind === "draw-order-number") {
+    return `
+      <g class="writing-app__annotation-number-badge">
+        <circle
+          class="writing-app__annotation-number-circle"
+          cx="${annotation.anchor.x}"
+          cy="${annotation.anchor.y}"
+          r="${currentTurnRadius}"
+        ></circle>
+        <text
+          class="writing-app__annotation-number"
+          x="${annotation.anchor.x}"
+          y="${annotation.anchor.y}"
+          text-anchor="middle"
+          dominant-baseline="central"
+        >${escapeSvgText(annotation.text)}</text>
+      </g>
+    `;
+  }
+
+  return `
+    <path
+      class="${getAnnotationClassName(annotation)}"
+      d="${annotationCommandsToSvgPathData(annotation.commands)}"
+    ></path>
+    ${annotation.head
+      ? `<polygon class="writing-app__section-arrowhead writing-app__section-arrowhead--white writing-app__section-arrowhead--${annotation.kind}" points="${buildSvgPoints(annotation.head.polygon)}"></polygon>`
+      : ""
+    }
+  `;
 };
 
 const updateSuccessVisibility = (isVisible: boolean) => {
@@ -331,29 +463,46 @@ const setupScene = (path: WritingPath, width: number, height: number, offsetY: n
     .map((stroke) => `<path class="writing-app__stroke-demo" d="${buildPathD(stroke.curves)}"></path>`)
     .join("");
   const sectionArrowLength = Math.abs(path.guides.baseline - path.guides.xHeight) / 3;
-  const sectionArrowMarkup = compileFormationArrows(preparedPath, {
-    retraceTurns: {
-      offset: Math.min(sectionArrowLength * 0.24, 13),
+  const arrowLaneOffset = shouldOffsetArrowLanes ? currentTurnRadius : 0;
+  const annotations = compileFormationAnnotations(preparedPath, {
+    turningPoints: {
+      offset: currentTurnRadius,
       stemLength: sectionArrowLength * 0.36,
       head: {
         length: SECTION_ARROWHEAD_LENGTH,
         width: SECTION_ARROWHEAD_WIDTH,
         tipExtension: SECTION_ARROWHEAD_TIP_OVERHANG
       }
+    },
+    startArrows: {
+      length: sectionArrowLength * 0.42,
+      minLength: sectionArrowLength * 0.18,
+      offset: arrowLaneOffset,
+      head: {
+        length: SECTION_ARROWHEAD_LENGTH,
+        width: SECTION_ARROWHEAD_WIDTH,
+        tipExtension: SECTION_ARROWHEAD_TIP_OVERHANG
+      }
+    },
+    drawOrderNumbers: {
+      offset: 0
+    },
+    midpointArrows: {
+      density: currentMidpointDensity,
+      length: sectionArrowLength * 0.36,
+      offset: arrowLaneOffset,
+      head: {
+        length: SECTION_ARROWHEAD_LENGTH,
+        width: SECTION_ARROWHEAD_WIDTH,
+        tipExtension: SECTION_ARROWHEAD_TIP_OVERHANG
+      }
     }
-  })
-    .map(
-      (arrow) => `
-        <path
-          class="writing-app__section-arrow writing-app__section-arrow--white"
-          d="${formationArrowCommandsToSvgPathData(arrow.commands)}"
-        ></path>
-        ${arrow.head
-          ? `<polygon class="writing-app__section-arrowhead writing-app__section-arrowhead--white" points="${buildSvgPoints(arrow.head.polygon)}"></polygon>`
-          : ""
-        }
-      `
-    )
+  });
+  const annotationMarkup = [
+    ...annotations.filter((annotation) => annotation.kind !== "draw-order-number"),
+    ...annotations.filter((annotation) => annotation.kind === "draw-order-number")
+  ]
+    .map(renderAnnotationMarkup)
     .join("");
 
   traceSvg.setAttribute("viewBox", `0 0 ${width} ${height}`);
@@ -375,7 +524,7 @@ const setupScene = (path: WritingPath, width: number, height: number, offsetY: n
     ></line>
     ${backgroundPaths}
     ${tracePaths}
-    ${sectionArrowMarkup}
+    ${annotationMarkup}
     ${demoPaths}
     <circle class="writing-app__nib" id="demo-nib" cx="0" cy="0" r="15"></circle>
     <g class="writing-app__cursor" id="trace-cursor">
@@ -501,6 +650,48 @@ toleranceSlider.addEventListener("input", () => {
     renderWord(WORDS[currentWordIndex] ?? WORDS[0]);
   }
 });
+midpointDensitySlider.addEventListener("input", () => {
+  currentMidpointDensity = Number(midpointDensitySlider.value);
+  syncMidpointDensityLabel();
+
+  if (currentWordIndex >= 0) {
+    renderWord(WORDS[currentWordIndex] ?? WORDS[0]);
+  }
+});
+turnRadiusSlider.addEventListener("input", () => {
+  currentTurnRadius = Number(turnRadiusSlider.value);
+  syncTurnRadiusLabel();
+
+  if (currentWordIndex >= 0) {
+    renderWord(WORDS[currentWordIndex] ?? WORDS[0]);
+  }
+});
+offsetArrowLanesToggle.addEventListener("change", () => {
+  shouldOffsetArrowLanes = offsetArrowLanesToggle.checked;
+
+  if (currentWordIndex >= 0) {
+    renderWord(WORDS[currentWordIndex] ?? WORDS[0]);
+  }
+});
+annotationToggleEls.forEach((toggleEl) => {
+  toggleEl.addEventListener("change", () => {
+    const annotationKind = toggleEl.dataset.annotationKind as FormationAnnotation["kind"] | undefined;
+    if (!annotationKind) {
+      return;
+    }
+
+    annotationVisibility = {
+      ...annotationVisibility,
+      [annotationKind]: toggleEl.checked
+    };
+
+    if (currentWordIndex >= 0) {
+      renderWord(WORDS[currentWordIndex] ?? WORDS[0]);
+    }
+  });
+});
 
 syncToleranceLabel();
+syncMidpointDensityLabel();
+syncTurnRadiusLabel();
 goToNextWord();

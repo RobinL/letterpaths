@@ -7,6 +7,7 @@ It does not render anything itself. You give it text and options, and it gives y
 - `WritingPath` objects for rendering
 - `AnimationPlayer` objects for pen-motion playback
 - tracing data and session state for "follow the line" interactions
+- renderer-agnostic formation annotations such as arrows and draw-order numbers
 - raw built-in glyph definitions for advanced customization
 
 ## Main idea
@@ -367,43 +368,69 @@ Example:
 
 `analyzeTracingGroups()` looks for authored segment boundaries with a strong turn angle, then confirms that the following path substantially overlaps the earlier path. This avoids splitting at ordinary cusps like `v` or `w`, while still detecting true retracing such as a downstroke followed by an upstroke over the same corridor.
 
-### Formation arrows
+### Formation annotations
 
-Use `compileFormationArrows()` when you want renderer-agnostic direction hints for handwriting formation. The initial arrow type is a retrace U-turn arrow, intended for places where cursive formation doubles back through the same corridor.
+Use `compileFormationAnnotations()` when you want renderer-agnostic formation hints for handwriting. It returns pure geometry and metadata that a consumer can draw in SVG, Canvas, React Native, or any other renderer.
+
+The annotation kinds are:
+
+- `turning-point`: a retrace U-turn arrow for places where cursive formation doubles back through the same corridor
+- `start-arrow`: a forward arrow at the start of each tracing section
+- `draw-order-number`: a number at the start of each tracing section
+- `midpoint-arrow`: one or more directional arrows inside a tracing section
+
+In this API, a `TracingSection` is the next user-facing tracing range. Sections start at the beginning of the path, after drawable-stroke discontinuities, and at confirmed retrace restart points.
 
 ```ts
 import {
   buildHandwritingPath,
-  compileFormationArrows,
+  compileFormationAnnotations,
   compileTracingPath,
-  formationArrowCommandsToSvgPathData
+  annotationCommandsToSvgPathData
 } from "letterpaths";
 
 const path = buildHandwritingPath("sys", { style: "cursive" });
 const prepared = compileTracingPath(path);
-const arrows = compileFormationArrows(prepared, {
-  retraceTurns: {
+const annotations = compileFormationAnnotations(prepared, {
+  turningPoints: {
     offset: 13,
     stemLength: 46
+  },
+  startArrows: {
+    offset: 13
+  },
+  midpointArrows: {
+    density: 320,
+    offset: 13
   }
 });
 
-const svgPathData = formationArrowCommandsToSvgPathData(arrows[0]?.commands ?? []);
+const firstArrow = annotations.find(
+  (annotation) => annotation.kind === "start-arrow"
+);
+const svgPathData = annotationCommandsToSvgPathData(firstArrow?.commands ?? []);
 ```
 
-It returns pure geometry:
+The returned union is:
 
 ```ts
-type FormationArrow = {
-  kind: "retrace-turn";
-  commands: FormationArrowPathCommand[];
-  head?: FormationArrowHead;
-  source: {
+type FormationAnnotation =
+  | TurningPointAnnotation
+  | StartArrowAnnotation
+  | DrawOrderNumberAnnotation
+  | MidpointArrowAnnotation;
+
+type TurningPointAnnotation = {
+  kind: "turning-point";
+  turnKind: "retrace-u-turn";
+  commands: AnnotationPathCommand[];
+  head?: AnnotationArrowHead;
+  source: AnnotationSource & {
+    previousSectionIndex: number;
     previousGroupIndex: number;
     groupIndex: number;
-    startDistance: number;
     turnDistance: number;
-    endDistance: number;
+    matchedEarlierDistance?: number;
   };
   metrics: {
     offset: number;
@@ -415,27 +442,87 @@ type FormationArrow = {
   };
 };
 
-type FormationArrowHead = {
+type StartArrowAnnotation = {
+  kind: "start-arrow";
+  commands: AnnotationPathCommand[];
+  head?: AnnotationArrowHead;
+  anchor: Point;
+  direction: Point;
+  source: AnnotationSource & { distance: number };
+};
+
+type DrawOrderNumberAnnotation = {
+  kind: "draw-order-number";
+  value: number;
+  text: string;
+  point: Point;
+  anchor: Point;
+  direction: Point;
+  source: AnnotationSource & { distance: number };
+};
+
+type MidpointArrowAnnotation = {
+  kind: "midpoint-arrow";
+  commands: AnnotationPathCommand[];
+  head?: AnnotationArrowHead;
+  anchor: Point;
+  direction: Point;
+  source: AnnotationSource & {
+    distance: number;
+    ordinalInSection: number;
+    countInSection: number;
+  };
+};
+
+type AnnotationSource = {
+  sectionIndex: number;
+  strokeIndex: number;
+  startDistance: number;
+  endDistance: number;
+};
+
+type AnnotationArrowHead = {
   tip: Point;
   direction: Point;
   polygon: Point[];
 };
 
-type FormationArrowPathCommand =
+type AnnotationPathCommand =
   | { type: "move"; to: Point }
   | { type: "line"; to: Point }
   | { type: "cubic"; cp1: Point; cp2: Point; to: Point };
 ```
 
-`stemLength` controls the straight section outside the U-turn cap. A single number applies to both sides, or you can pass `{ incoming, outgoing }`. Requested stem lengths are clamped to the available tracing group distance.
+`turningPoints.offset` controls the perpendicular distance from the handwriting centreline, which determines the U-turn radius. Defaults are scaled from the guide height (`baseline - xHeight`) so annotations stay proportional when the writing path is scaled.
 
-`offset` controls the perpendicular distance from the handwriting centreline, which determines how wide the U-turn cap is. Defaults are scaled from the guide height (`baseline - xHeight`) so arrows stay proportional when the writing path is scaled.
+For `startArrows` and `midpointArrows`, `offset` moves arrows into a lane beside the handwriting centreline. Because the offset is relative to each arrow's tangent, arrows travelling in opposite directions move to opposite sides of the path. This is useful for overlapping/retraced strokes, where centreline arrows would draw on top of each other.
+
+`turningPoints.stemLength` controls the straight section outside the U-turn cap. A single number applies to both sides, or you can pass `{ incoming, outgoing }`. Requested stem lengths are clamped to the available tracing group distance.
+
+`midpointArrows.density` is a length threshold. If a tracing section is longer than `x`, it receives one midpoint arrow; longer than `2x`, two arrows; longer than `3x`, three arrows; and so on. The arrows are then placed at fractional midpoints: one at `1/2`, two at `1/3` and `2/3`, three at `1/4`, `2/4`, and `3/4`.
 
 The arrow body commands end at the computed arrow path endpoint. `head.tipExtension` moves the head tip forward along the local end direction so a thick stroked body sits under the head instead of blunting it.
 
-If you already called `analyzeTracingGroups()`, pass the groups to avoid recalculating them:
+If you already have tracing sections, pass them in to avoid recalculating:
 
 ```ts
+import { analyzeTracingSections, compileFormationAnnotations } from "letterpaths";
+
+const sectionAnalysis = analyzeTracingSections(prepared);
+const annotations = compileFormationAnnotations(prepared, {
+  sections: sectionAnalysis.sections,
+  drawOrderNumbers: false
+});
+```
+
+`compileFormationArrows()` remains available as a compatibility helper for callers that only want the original retrace U-turn arrows:
+
+```ts
+import {
+  compileFormationArrows,
+  formationArrowCommandsToSvgPathData
+} from "letterpaths";
+
 const formationArrows = compileFormationArrows(prepared, {
   retraceTurns: {
     groups: analysis.groups,
@@ -444,6 +531,10 @@ const formationArrows = compileFormationArrows(prepared, {
     head: { length: 26, width: 22, tipExtension: 11 }
   }
 });
+
+const svgPathData = formationArrowCommandsToSvgPathData(
+  formationArrows[0]?.commands ?? []
+);
 ```
 
 `TracingSession` is a small state machine:
@@ -515,7 +606,19 @@ Retrace group analysis options:
 - `retraceTurnAngleThreshold?: number`
 - `boundaryLookbackDistance?: number`
 
-Formation arrow options:
+Formation annotation options:
+
+- `sections?: TracingSection[]`
+- `sectionAnalysis?: AnalyzeTracingSectionsOptions`
+- `turningPoints?: false | TurningPointAnnotationOptions`
+- `startArrows?: false | StartArrowAnnotationOptions`
+- `drawOrderNumbers?: false | DrawOrderNumberAnnotationOptions`
+- `midpointArrows?: false | MidpointArrowAnnotationOptions`
+- `offset?: number` on arrow options, for lane placement beside the handwriting centreline
+- `density?: number` on midpoint arrows, as the path-length threshold for each arrow
+- `head?: false | { length?: number; width?: number; tipExtension?: number }`
+
+Legacy formation arrow options:
 
 - `retraceTurns?: false | RetraceTurnArrowOptions`
 - `offset?: number`
@@ -627,6 +730,8 @@ Most users only need these:
 - `compileAnimation`
 - `compileTracingPath`
 - `analyzeTracingGroups`
+- `analyzeTracingSections`
+- `compileFormationAnnotations`
 - `compileFormationArrows`
 - `TracingSession`
 
@@ -636,6 +741,7 @@ For lower-level control, the package also exports:
 - `buildPreCursiveWord`
 - `joinCursiveWord`
 - `CubicBezier`
+- `annotationCommandsToSvgPathData`
 - `formationArrowCommandsToSvgPathData`
 - built-in letter data and lookup helpers
 - all core public types

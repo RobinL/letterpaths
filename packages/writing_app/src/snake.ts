@@ -3,15 +3,18 @@ import {
   AnimationPlayer,
   TracingSession,
   analyzeTracingGroups,
-  compileFormationArrows,
+  annotationCommandsToSvgPathData,
+  compileFormationAnnotations,
   compileTracingPath,
-  formationArrowCommandsToSvgPathData,
+  type FormationAnnotation,
+  type JoinSpacingOptions,
   type Point,
   type PreparedTracingBoundary,
   type PreparedTracingPath,
   type PreparedStroke,
   type TracingGroup,
   type TracingSample,
+  type TracingSection,
   type TracingState,
   type WritingPath
 } from "letterpaths";
@@ -159,6 +162,16 @@ const SNAKE_MOVE_SOUND_SOURCES = [
 const SECTION_ARROWHEAD_LENGTH = 26;
 const SECTION_ARROWHEAD_WIDTH = 22;
 const SECTION_ARROWHEAD_TIP_OVERHANG = 11;
+const SNAKE_MIDPOINT_ARROW_DENSITY = 250;
+const SECTION_ANNOTATION_DISTANCE_EPSILON = 0.5;
+const DEFAULT_SNAKE_JOIN_SPACING = {
+  targetBendRate: 6,
+  minSidebearingGap: -210,
+  bendSearchMinSidebearingGap: -30,
+  bendSearchMaxSidebearingGap: 80,
+  exitHandleScale: 0.75,
+  entryHandleScale: 1
+} as const satisfies Required<JoinSpacingOptions>;
 
 type FruitToken = {
   x: number;
@@ -240,6 +253,119 @@ app.innerHTML = `
                     value="${DEFAULT_SNAKE_TRACE_TOLERANCE}"
                   />
                 </label>
+                <label class="writing-app__settings-field" for="turn-radius-slider">
+                  <span class="writing-app__settings-label">
+                    Turn radius
+                    <span class="writing-app__tolerance-value" id="turn-radius-value"></span>
+                  </span>
+                  <input
+                    class="writing-app__tolerance-slider"
+                    id="turn-radius-slider"
+                    type="range"
+                    min="0"
+                    max="48"
+                    step="1"
+                    value="13"
+                  />
+                </label>
+                <label class="writing-app__settings-toggle" for="offset-arrow-lanes">
+                  <input
+                    id="offset-arrow-lanes"
+                    type="checkbox"
+                    checked
+                  />
+                  <span>Offset lanes</span>
+                </label>
+                <label class="writing-app__settings-field" for="target-bend-rate-slider">
+                  <span class="writing-app__settings-label">
+                    Target maximum bend rate
+                    <span class="writing-app__tolerance-value" id="target-bend-rate-value"></span>
+                  </span>
+                  <input
+                    class="writing-app__tolerance-slider"
+                    id="target-bend-rate-slider"
+                    type="range"
+                    min="0"
+                    max="60"
+                    step="1"
+                    value="${DEFAULT_SNAKE_JOIN_SPACING.targetBendRate}"
+                  />
+                </label>
+                <label class="writing-app__settings-field" for="min-sidebearing-gap-slider">
+                  <span class="writing-app__settings-label">
+                    Minimum sidebearing gap
+                    <span class="writing-app__tolerance-value" id="min-sidebearing-gap-value"></span>
+                  </span>
+                  <input
+                    class="writing-app__tolerance-slider"
+                    id="min-sidebearing-gap-slider"
+                    type="range"
+                    min="-300"
+                    max="200"
+                    step="5"
+                    value="${DEFAULT_SNAKE_JOIN_SPACING.minSidebearingGap}"
+                  />
+                </label>
+                <label class="writing-app__settings-field" for="bend-search-min-sidebearing-gap-slider">
+                  <span class="writing-app__settings-label">
+                    Search minimum sidebearing gap
+                    <span class="writing-app__tolerance-value" id="bend-search-min-sidebearing-gap-value"></span>
+                  </span>
+                  <input
+                    class="writing-app__tolerance-slider"
+                    id="bend-search-min-sidebearing-gap-slider"
+                    type="range"
+                    min="-300"
+                    max="200"
+                    step="5"
+                    value="${DEFAULT_SNAKE_JOIN_SPACING.bendSearchMinSidebearingGap}"
+                  />
+                </label>
+                <label class="writing-app__settings-field" for="bend-search-max-sidebearing-gap-slider">
+                  <span class="writing-app__settings-label">
+                    Search maximum sidebearing gap
+                    <span class="writing-app__tolerance-value" id="bend-search-max-sidebearing-gap-value"></span>
+                  </span>
+                  <input
+                    class="writing-app__tolerance-slider"
+                    id="bend-search-max-sidebearing-gap-slider"
+                    type="range"
+                    min="-100"
+                    max="300"
+                    step="5"
+                    value="${DEFAULT_SNAKE_JOIN_SPACING.bendSearchMaxSidebearingGap}"
+                  />
+                </label>
+                <label class="writing-app__settings-field" for="exit-handle-scale-slider">
+                  <span class="writing-app__settings-label">
+                    p0-p1 handle scale
+                    <span class="writing-app__tolerance-value" id="exit-handle-scale-value"></span>
+                  </span>
+                  <input
+                    class="writing-app__tolerance-slider"
+                    id="exit-handle-scale-slider"
+                    type="range"
+                    min="0"
+                    max="2"
+                    step="0.05"
+                    value="${DEFAULT_SNAKE_JOIN_SPACING.exitHandleScale}"
+                  />
+                </label>
+                <label class="writing-app__settings-field" for="entry-handle-scale-slider">
+                  <span class="writing-app__settings-label">
+                    p2-p3 handle scale
+                    <span class="writing-app__tolerance-value" id="entry-handle-scale-value"></span>
+                  </span>
+                  <input
+                    class="writing-app__tolerance-slider"
+                    id="entry-handle-scale-slider"
+                    type="range"
+                    min="0"
+                    max="2"
+                    step="0.05"
+                    value="${DEFAULT_SNAKE_JOIN_SPACING.entryHandleScale}"
+                  />
+                </label>
                 <label class="writing-app__settings-toggle" for="include-initial-lead-in">
                   <input
                     id="include-initial-lead-in"
@@ -314,6 +440,29 @@ const showMeButton = document.querySelector<HTMLButtonElement>("#show-me-button"
 const settingsMenu = document.querySelector<HTMLDetailsElement>("#settings-menu");
 const toleranceSlider = document.querySelector<HTMLInputElement>("#tolerance-slider");
 const toleranceValue = document.querySelector<HTMLSpanElement>("#tolerance-value");
+const turnRadiusSlider = document.querySelector<HTMLInputElement>("#turn-radius-slider");
+const turnRadiusValue = document.querySelector<HTMLSpanElement>("#turn-radius-value");
+const offsetArrowLanesInput = document.querySelector<HTMLInputElement>("#offset-arrow-lanes");
+const targetBendRateSlider = document.querySelector<HTMLInputElement>("#target-bend-rate-slider");
+const targetBendRateValue = document.querySelector<HTMLSpanElement>("#target-bend-rate-value");
+const minSidebearingGapSlider = document.querySelector<HTMLInputElement>("#min-sidebearing-gap-slider");
+const minSidebearingGapValue = document.querySelector<HTMLSpanElement>("#min-sidebearing-gap-value");
+const bendSearchMinSidebearingGapSlider = document.querySelector<HTMLInputElement>(
+  "#bend-search-min-sidebearing-gap-slider"
+);
+const bendSearchMinSidebearingGapValue = document.querySelector<HTMLSpanElement>(
+  "#bend-search-min-sidebearing-gap-value"
+);
+const bendSearchMaxSidebearingGapSlider = document.querySelector<HTMLInputElement>(
+  "#bend-search-max-sidebearing-gap-slider"
+);
+const bendSearchMaxSidebearingGapValue = document.querySelector<HTMLSpanElement>(
+  "#bend-search-max-sidebearing-gap-value"
+);
+const exitHandleScaleSlider = document.querySelector<HTMLInputElement>("#exit-handle-scale-slider");
+const exitHandleScaleValue = document.querySelector<HTMLSpanElement>("#exit-handle-scale-value");
+const entryHandleScaleSlider = document.querySelector<HTMLInputElement>("#entry-handle-scale-slider");
+const entryHandleScaleValue = document.querySelector<HTMLSpanElement>("#entry-handle-scale-value");
 const includeInitialLeadInInput = document.querySelector<HTMLInputElement>("#include-initial-lead-in");
 const includeFinalLeadOutInput = document.querySelector<HTMLInputElement>("#include-final-lead-out");
 const successOverlay = document.querySelector<HTMLDivElement>("#success-overlay");
@@ -329,6 +478,21 @@ if (
   !settingsMenu ||
   !toleranceSlider ||
   !toleranceValue ||
+  !turnRadiusSlider ||
+  !turnRadiusValue ||
+  !offsetArrowLanesInput ||
+  !targetBendRateSlider ||
+  !targetBendRateValue ||
+  !minSidebearingGapSlider ||
+  !minSidebearingGapValue ||
+  !bendSearchMinSidebearingGapSlider ||
+  !bendSearchMinSidebearingGapValue ||
+  !bendSearchMaxSidebearingGapSlider ||
+  !bendSearchMaxSidebearingGapValue ||
+  !exitHandleScaleSlider ||
+  !exitHandleScaleValue ||
+  !entryHandleScaleSlider ||
+  !entryHandleScaleValue ||
   !includeInitialLeadInInput ||
   !includeFinalLeadOutInput ||
   !successOverlay ||
@@ -351,12 +515,17 @@ let traceRenderQueued = false;
 let traceStrokeEls: SVGPathElement[] = [];
 let traceStrokeLengths: number[] = [];
 let nextSectionEl: SVGPathElement | null = null;
+let sectionAnnotationEl: SVGGElement | null = null;
+let renderedSectionAnnotationGroupIndex: number | null = null;
 let demoStrokeEls: SVGPathElement[] = [];
 let demoStrokeLengths: number[] = [];
 let demoNibEl: SVGCircleElement | null = null;
 let demoAnimationFrameId: number | null = null;
 let isDemoPlaying = false;
 let currentTraceTolerance = DEFAULT_SNAKE_TRACE_TOLERANCE;
+let currentTurnRadius = 13;
+let shouldOffsetArrowLanes = true;
+let currentJoinSpacing: Required<JoinSpacingOptions> = { ...DEFAULT_SNAKE_JOIN_SPACING };
 let includeInitialLeadIn = true;
 let includeFinalLeadOut = true;
 let fruits: FruitToken[] = [];
@@ -421,6 +590,19 @@ let nextSnakeMoveSoundDistance = Number.POSITIVE_INFINITY;
 
 const syncToleranceLabel = () => {
   toleranceValue.textContent = `${currentTraceTolerance}px`;
+};
+
+const syncTurnRadiusLabel = () => {
+  turnRadiusValue.textContent = `${currentTurnRadius}px`;
+};
+
+const syncJoinSpacingLabels = () => {
+  targetBendRateValue.textContent = `${currentJoinSpacing.targetBendRate}`;
+  minSidebearingGapValue.textContent = `${currentJoinSpacing.minSidebearingGap}`;
+  bendSearchMinSidebearingGapValue.textContent = `${currentJoinSpacing.bendSearchMinSidebearingGap}`;
+  bendSearchMaxSidebearingGapValue.textContent = `${currentJoinSpacing.bendSearchMaxSidebearingGap}`;
+  exitHandleScaleValue.textContent = currentJoinSpacing.exitHandleScale.toFixed(2);
+  entryHandleScaleValue.textContent = currentJoinSpacing.entryHandleScale.toFixed(2);
 };
 
 const rerenderCurrentWord = () => {
@@ -1481,6 +1663,57 @@ const interpolateSamplePoint = (
   return last ? { x: last.x, y: last.y } : { x: 0, y: 0 };
 };
 
+const interpolateSamplePose = (
+  samples: TracingSample[],
+  distanceAlongStroke: number
+): { point: Point; tangent: Point } => {
+  if (samples.length === 0) {
+    return { point: { x: 0, y: 0 }, tangent: { x: 1, y: 0 } };
+  }
+
+  if (samples.length === 1 || distanceAlongStroke <= 0) {
+    const sample = samples[0];
+    return sample
+      ? {
+          point: { x: sample.x, y: sample.y },
+          tangent: normalizeVector(sample.tangent)
+        }
+      : { point: { x: 0, y: 0 }, tangent: { x: 1, y: 0 } };
+  }
+
+  for (let index = 1; index < samples.length; index += 1) {
+    const previous = samples[index - 1];
+    const current = samples[index];
+    if (!previous || !current) {
+      continue;
+    }
+    if (distanceAlongStroke > current.distanceAlongStroke) {
+      continue;
+    }
+
+    const span = current.distanceAlongStroke - previous.distanceAlongStroke;
+    const ratio = span > 0 ? (distanceAlongStroke - previous.distanceAlongStroke) / span : 0;
+    return {
+      point: {
+        x: previous.x + (current.x - previous.x) * ratio,
+        y: previous.y + (current.y - previous.y) * ratio
+      },
+      tangent: normalizeVector({
+        x: previous.tangent.x + (current.tangent.x - previous.tangent.x) * ratio,
+        y: previous.tangent.y + (current.tangent.y - previous.tangent.y) * ratio
+      })
+    };
+  }
+
+  const last = samples[samples.length - 1];
+  return last
+    ? {
+        point: { x: last.x, y: last.y },
+        tangent: normalizeVector(last.tangent)
+      }
+    : { point: { x: 0, y: 0 }, tangent: { x: 1, y: 0 } };
+};
+
 const getPointAtOverallDistance = (
   preparedPath: PreparedTracingPath,
   targetDistance: number
@@ -1504,6 +1737,54 @@ const getPointAtOverallDistance = (
   }
 
   return { x: 0, y: 0 };
+};
+
+const getPoseAtOverallDistance = (
+  preparedPath: PreparedTracingPath,
+  targetDistance: number
+): { point: Point; tangent: Point } => {
+  let remaining = targetDistance;
+
+  for (let index = 0; index < preparedPath.strokes.length; index += 1) {
+    const stroke = preparedPath.strokes[index];
+    if (!stroke) {
+      continue;
+    }
+
+    if (remaining <= stroke.totalLength || index === preparedPath.strokes.length - 1) {
+      return interpolateSamplePose(
+        stroke.samples,
+        Math.max(0, Math.min(remaining, stroke.totalLength))
+      );
+    }
+
+    remaining -= stroke.totalLength;
+  }
+
+  return { point: { x: 0, y: 0 }, tangent: { x: 1, y: 0 } };
+};
+
+const findStrokeIndexForOverallDistance = (
+  preparedPath: PreparedTracingPath,
+  targetDistance: number
+): number => {
+  let strokeStart = 0;
+
+  for (let index = 0; index < preparedPath.strokes.length; index += 1) {
+    const stroke = preparedPath.strokes[index];
+    if (!stroke) {
+      continue;
+    }
+
+    const strokeEnd = strokeStart + stroke.totalLength;
+    if (targetDistance <= strokeEnd || index === preparedPath.strokes.length - 1) {
+      return index;
+    }
+
+    strokeStart = strokeEnd;
+  }
+
+  return 0;
 };
 
 const buildPathDFromOverallDistanceRange = (
@@ -1566,6 +1847,114 @@ const buildPathDFromOverallDistanceRange = (
 const buildSvgPoints = (points: Point[]): string =>
   points.map((point) => `${point.x} ${point.y}`).join(" ");
 
+const getSectionAnnotationClassName = (annotation: FormationAnnotation): string =>
+  `writing-app__section-arrow writing-app__section-arrow--white writing-app__section-arrow--${annotation.kind}`;
+
+const renderSectionAnnotationMarkup = (annotation: FormationAnnotation): string => {
+  if (annotation.kind === "draw-order-number") {
+    return "";
+  }
+
+  return `
+    <path
+      class="${getSectionAnnotationClassName(annotation)}"
+      d="${annotationCommandsToSvgPathData(annotation.commands)}"
+    ></path>
+    ${annotation.head
+      ? `<polygon class="writing-app__section-arrowhead writing-app__section-arrowhead--white writing-app__section-arrowhead--${annotation.kind}" points="${buildSvgPoints(annotation.head.polygon)}"></polygon>`
+      : ""
+    }
+  `;
+};
+
+const buildTracingSectionForGroup = (
+  preparedPath: PreparedTracingPath,
+  group: TracingGroup
+): TracingSection => {
+  const startPose = getPoseAtOverallDistance(preparedPath, group.startDistance);
+  const endPose = getPoseAtOverallDistance(preparedPath, group.endDistance);
+
+  return {
+    index: group.index,
+    strokeIndex: findStrokeIndexForOverallDistance(preparedPath, group.startDistance),
+    groupIndex: group.index,
+    startDistance: group.startDistance,
+    endDistance: group.endDistance,
+    startPoint: group.startPoint,
+    endPoint: group.endPoint,
+    startTangent: startPose.tangent,
+    endTangent: endPose.tangent,
+    startReason: group.index === 0 ? "path-start" : "retrace-turn",
+    kind: group.kind,
+    ...(group.matchedEarlierDistance === undefined
+      ? {}
+      : { matchedEarlierDistance: group.matchedEarlierDistance })
+  };
+};
+
+const syncCurrentSectionAnnotations = () => {
+  if (!sectionAnnotationEl || !preparedTracingPath || !currentPath) {
+    return;
+  }
+
+  const currentGroup = tracingGroups[visibleGroupCount - 1];
+  if (!currentGroup) {
+    renderedSectionAnnotationGroupIndex = null;
+    sectionAnnotationEl.innerHTML = "";
+    return;
+  }
+
+  if (renderedSectionAnnotationGroupIndex === currentGroup.index) {
+    return;
+  }
+
+  const sectionArrowLength = Math.abs(currentPath.guides.baseline - currentPath.guides.xHeight) / 3;
+  const arrowLaneOffset = shouldOffsetArrowLanes ? currentTurnRadius : 0;
+  const section = buildTracingSectionForGroup(preparedTracingPath, currentGroup);
+  const annotations = compileFormationAnnotations(preparedTracingPath, {
+    sections: [section],
+    drawOrderNumbers: false,
+    startArrows: {
+      length: sectionArrowLength * 0.42,
+      minLength: sectionArrowLength * 0.18,
+      offset: arrowLaneOffset,
+      head: {
+        length: SECTION_ARROWHEAD_LENGTH,
+        width: SECTION_ARROWHEAD_WIDTH,
+        tipExtension: SECTION_ARROWHEAD_TIP_OVERHANG
+      }
+    },
+    midpointArrows: {
+      density: SNAKE_MIDPOINT_ARROW_DENSITY,
+      length: sectionArrowLength * 0.36,
+      offset: arrowLaneOffset,
+      head: {
+        length: SECTION_ARROWHEAD_LENGTH,
+        width: SECTION_ARROWHEAD_WIDTH,
+        tipExtension: SECTION_ARROWHEAD_TIP_OVERHANG
+      }
+    },
+    turningPoints: {
+      offset: currentTurnRadius,
+      stemLength: sectionArrowLength * 0.36,
+      head: {
+        length: SECTION_ARROWHEAD_LENGTH,
+        width: SECTION_ARROWHEAD_WIDTH,
+        tipExtension: SECTION_ARROWHEAD_TIP_OVERHANG
+      },
+      groups: tracingGroups
+    }
+  }).filter(
+    (annotation) =>
+      annotation.kind !== "turning-point" ||
+      Math.abs(annotation.source.turnDistance - currentGroup.endDistance) <=
+        SECTION_ANNOTATION_DISTANCE_EPSILON
+  );
+
+  sectionAnnotationEl.innerHTML = annotations.map(renderSectionAnnotationMarkup).join("");
+  renderedSectionAnnotationGroupIndex = currentGroup.index;
+};
+
 const syncNextSectionHighlight = () => {
   if (!nextSectionEl || !preparedTracingPath) {
     return;
@@ -1615,6 +2004,7 @@ const advanceToNextTracingGroup = () => {
   currentWaypointIndex = visibleGroupCount - 1 < waypointMarkers.length ? visibleGroupCount - 1 : null;
   updateWaypointMarker();
   syncFruitDisplay();
+  syncCurrentSectionAnnotations();
   resetSnakeMoveSoundProgress();
 };
 
@@ -1678,6 +2068,8 @@ const createFruitTokens = (
 const resetFruitState = () => {
   visibleGroupCount = tracingGroups.length > 0 ? 1 : 0;
   currentWaypointIndex = waypointMarkers.length > 0 ? 0 : null;
+  renderedSectionAnnotationGroupIndex = null;
+  syncCurrentSectionAnnotations();
   fruits.forEach((fruit) => {
     fruit.captured = false;
   });
@@ -2279,6 +2671,7 @@ const renderTraceFrame = () => {
   renderDeferredHead(state);
   renderCompletedDeferredHeads();
   syncNextSectionHighlight();
+  syncCurrentSectionAnnotations();
   const completed = new Set(state.completedStrokes);
 
   traceStrokeEls.forEach((el, index) => {
@@ -2398,36 +2791,10 @@ const setupScene = (path: WritingPath, width: number, height: number, offsetY: n
   fruits = createFruitTokens(preparedPath, tracingGroups);
 
   const drawableStrokes = drawablePathStrokes;
-  const sectionArrowLength = Math.abs(path.guides.baseline - path.guides.xHeight) / 3;
   const backgroundPaths = tracingGroups
     .map(
       (group) =>
         `<path class="writing-app__stroke-bg" d="${buildPathDFromOverallDistanceRange(preparedPath, group.startDistance, group.endDistance)}"></path>`
-    )
-    .join("");
-  const sectionArrowMarkup = compileFormationArrows(preparedPath, {
-    retraceTurns: {
-      offset: Math.min(sectionArrowLength * 0.24, 13),
-      stemLength: sectionArrowLength * 0.36,
-      head: {
-        length: SECTION_ARROWHEAD_LENGTH,
-        width: SECTION_ARROWHEAD_WIDTH,
-        tipExtension: SECTION_ARROWHEAD_TIP_OVERHANG
-      },
-      groups: tracingGroups
-    }
-  })
-    .map(
-      (arrow) => `
-        <path
-          class="writing-app__section-arrow"
-          d="${formationArrowCommandsToSvgPathData(arrow.commands)}"
-        ></path>
-        ${arrow.head
-          ? `<polygon class="writing-app__section-arrowhead" points="${buildSvgPoints(arrow.head.polygon)}"></polygon>`
-          : ""
-        }
-      `
     )
     .join("");
   const tracePaths = drawableStrokes
@@ -2483,7 +2850,7 @@ const setupScene = (path: WritingPath, width: number, height: number, offsetY: n
     ${backgroundPaths}
     ${tracePaths}
     <path class="writing-app__stroke-next" id="next-section-stroke" d=""></path>
-    ${sectionArrowMarkup}
+    <g class="writing-app__section-annotations" id="section-annotations"></g>
     ${demoPaths}
     <text
       class="writing-app__boundary-star"
@@ -2540,6 +2907,8 @@ const setupScene = (path: WritingPath, width: number, height: number, offsetY: n
     traceSvg.querySelectorAll<SVGPathElement>(".writing-app__stroke-trace")
   );
   nextSectionEl = traceSvg.querySelector<SVGPathElement>("#next-section-stroke");
+  sectionAnnotationEl = traceSvg.querySelector<SVGGElement>("#section-annotations");
+  renderedSectionAnnotationGroupIndex = null;
   demoStrokeEls = Array.from(
     traceSvg.querySelectorAll<SVGPathElement>(".writing-app__stroke-demo")
   );
@@ -2606,6 +2975,7 @@ const renderWord = (word: string, wordIndex = -1) => {
   stopDemoAnimation();
 
   const layout = buildShiftedWordLayout(word, {
+    joinSpacing: currentJoinSpacing,
     keepInitialLeadIn: includeInitialLeadIn,
     keepFinalLeadOut: includeFinalLeadOut
   });
@@ -2757,6 +3127,65 @@ toleranceSlider.addEventListener("input", () => {
   syncToleranceLabel();
   rerenderCurrentWord();
 });
+turnRadiusSlider.addEventListener("input", () => {
+  currentTurnRadius = Number(turnRadiusSlider.value);
+  syncTurnRadiusLabel();
+  renderedSectionAnnotationGroupIndex = null;
+  syncCurrentSectionAnnotations();
+});
+offsetArrowLanesInput.addEventListener("change", () => {
+  shouldOffsetArrowLanes = offsetArrowLanesInput.checked;
+  renderedSectionAnnotationGroupIndex = null;
+  syncCurrentSectionAnnotations();
+});
+targetBendRateSlider.addEventListener("input", () => {
+  currentJoinSpacing = {
+    ...currentJoinSpacing,
+    targetBendRate: Number(targetBendRateSlider.value)
+  };
+  syncJoinSpacingLabels();
+  rerenderCurrentWord();
+});
+minSidebearingGapSlider.addEventListener("input", () => {
+  currentJoinSpacing = {
+    ...currentJoinSpacing,
+    minSidebearingGap: Number(minSidebearingGapSlider.value)
+  };
+  syncJoinSpacingLabels();
+  rerenderCurrentWord();
+});
+bendSearchMinSidebearingGapSlider.addEventListener("input", () => {
+  currentJoinSpacing = {
+    ...currentJoinSpacing,
+    bendSearchMinSidebearingGap: Number(bendSearchMinSidebearingGapSlider.value)
+  };
+  syncJoinSpacingLabels();
+  rerenderCurrentWord();
+});
+bendSearchMaxSidebearingGapSlider.addEventListener("input", () => {
+  currentJoinSpacing = {
+    ...currentJoinSpacing,
+    bendSearchMaxSidebearingGap: Number(bendSearchMaxSidebearingGapSlider.value)
+  };
+  syncJoinSpacingLabels();
+  rerenderCurrentWord();
+});
+exitHandleScaleSlider.addEventListener("input", () => {
+  currentJoinSpacing = {
+    ...currentJoinSpacing,
+    exitHandleScale: Number(exitHandleScaleSlider.value)
+  };
+  syncJoinSpacingLabels();
+  rerenderCurrentWord();
+});
+entryHandleScaleSlider.addEventListener("input", () => {
+  currentJoinSpacing = {
+    ...currentJoinSpacing,
+    entryHandleScale: Number(entryHandleScaleSlider.value)
+  };
+  syncJoinSpacingLabels();
+  rerenderCurrentWord();
+});
 includeInitialLeadInInput.addEventListener("change", () => {
   includeInitialLeadIn = includeInitialLeadInInput.checked;
   rerenderCurrentWord();
@@ -2792,5 +3221,7 @@ document.addEventListener("keydown", (event) => {
   }
 });
 syncToleranceLabel();
+syncTurnRadiusLabel();
+syncJoinSpacingLabels();
 syncNextWordButtonLabel();
 goToNextWord();

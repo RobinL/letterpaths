@@ -33,7 +33,7 @@ export type ShiftedWordLayout = {
 
 export type ShiftedWordLayoutOptions = Pick<
   BuildHandwritingOptions,
-  "keepInitialLeadIn" | "keepFinalLeadOut"
+  "joinSpacing" | "keepInitialLeadIn" | "keepFinalLeadOut"
 >;
 
 export const chooseNextWordIndex = (previousIndex: number): number => {
@@ -92,7 +92,7 @@ export const buildShiftedWordLayout = (
   const writingPath = buildHandwritingPath(word, {
     style: "cursive",
     targetGuides: TARGET_GUIDES,
-    joinSpacing: JOIN_SPACING,
+    joinSpacing: options.joinSpacing ?? JOIN_SPACING,
     letters: lettersByVariantId,
     keepInitialLeadIn: options.keepInitialLeadIn,
     keepFinalLeadOut: options.keepFinalLeadOut

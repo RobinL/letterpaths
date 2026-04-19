@@ -63,7 +63,7 @@ body {
   right: 18px;
   z-index: 2;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(220px, 340px) auto;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 460px) auto;
   align-items: start;
   gap: 20px;
   pointer-events: none;
@@ -205,6 +205,13 @@ body {
   pointer-events: auto;
 }
 
+.writing-app__controls {
+  display: grid;
+  gap: 10px;
+  align-self: start;
+  pointer-events: auto;
+}
+
 .writing-app__tolerance {
   display: grid;
   gap: 8px;
@@ -241,6 +248,40 @@ body {
   width: 100%;
   margin: 0;
   accent-color: var(--accent);
+}
+
+.writing-app__annotation-controls {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 12px;
+  margin: 0;
+  padding: 12px 16px;
+  border: 0;
+  border-radius: 20px;
+  background: rgba(255, 252, 244, 0.88);
+  box-shadow: 0 12px 24px rgba(35, 49, 61, 0.08);
+}
+
+.writing-app__annotation-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--ink);
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.writing-app__annotation-toggle input {
+  flex: 0 0 auto;
+  margin: 0;
+  inline-size: 16px;
+  block-size: 16px;
+  accent-color: var(--accent);
+}
+
+.writing-app__annotation-toggle span {
+  overflow-wrap: anywhere;
 }
 
 .writing-app__stage {
@@ -355,6 +396,24 @@ body {
 
 .writing-app__section-arrowhead--white {
   fill: #ffffff;
+}
+
+.writing-app__annotation-number-badge {
+  pointer-events: none;
+  user-select: none;
+}
+
+.writing-app__annotation-number-circle {
+  fill: #ffffff;
+  stroke: none;
+}
+
+.writing-app__annotation-number {
+  fill: #3f454b;
+  font-size: 16px;
+  font-weight: 800;
+  pointer-events: none;
+  user-select: none;
 }
 
 .writing-app__cursor {
@@ -706,7 +765,7 @@ body {
     top: 14px;
     left: 14px;
     right: 14px;
-    grid-template-columns: minmax(0, 1fr) minmax(180px, 280px) auto;
+    grid-template-columns: minmax(0, 1fr) minmax(220px, 340px) auto;
   }
 
   .writing-app__topbar--score {
@@ -779,6 +838,11 @@ body {
 
   .writing-app__tolerance {
     grid-column: 1 / -1;
+    padding: 10px 14px;
+  }
+
+  .writing-app__annotation-controls {
+    grid-template-columns: 1fr;
     padding: 10px 14px;
   }
 

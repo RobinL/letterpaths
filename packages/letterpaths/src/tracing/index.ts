@@ -27,6 +27,31 @@ export type {
   RetraceTurnArrowOptions
 } from "./formation-arrows";
 
+export {
+  analyzeTracingSections,
+  annotationCommandsToSvgPathData,
+  compileFormationAnnotations
+} from "./annotations";
+export type {
+  AnalyzeTracingSectionsOptions,
+  AnnotationArrowHead,
+  AnnotationPathCommand,
+  AnnotationSource,
+  CompileFormationAnnotationsOptions,
+  DrawOrderNumberAnnotation,
+  DrawOrderNumberAnnotationOptions,
+  FormationAnnotation,
+  MidpointArrowAnnotation,
+  MidpointArrowAnnotationOptions,
+  StartArrowAnnotation,
+  StartArrowAnnotationOptions,
+  TracingSection,
+  TracingSectionAnalysis,
+  TracingSectionStartReason,
+  TurningPointAnnotation,
+  TurningPointAnnotationOptions
+} from "./annotations";
+
 export { TracingSession } from "./session";
 export type {
   TracingStatus,
