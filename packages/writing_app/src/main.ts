@@ -789,29 +789,41 @@ const relocateTurningPointAnnotation = (
   path: PreparedTracingPath
 ): TurningPointRelocation => {
   const totalLength = getTotalPreparedPathLength(path);
-  const sourcePose = getPreparedPoseAtOverallDistance(path, annotation.source.turnDistance);
+  const sourcePose = getPreparedPoseAtOverallDistance(
+    path,
+    annotation.source.turnDistance,
+    "forward"
+  );
   const targetDistance = Math.max(
     annotation.source.turnDistance,
     Math.min(totalLength, annotation.source.endDistance)
   );
-  const targetPose = getPreparedPoseAtOverallDistance(path, targetDistance);
+  const targetPose = getPreparedPoseAtOverallDistance(path, targetDistance, "backward");
   const sourceAnchor = sourcePose.point;
   const targetAnchor = targetPose.point;
+  const angleRadians =
+    Math.atan2(targetPose.tangent.y, targetPose.tangent.x) -
+    Math.atan2(sourcePose.tangent.y, sourcePose.tangent.x);
   const distanceShift = targetDistance - annotation.source.turnDistance;
 
   return {
     annotation: {
       ...annotation,
       commands: annotation.commands.map((command) =>
-        transformAnnotationCommand(command, sourceAnchor, targetAnchor, 0)
+        transformAnnotationCommand(command, sourceAnchor, targetAnchor, angleRadians)
       ),
       ...(annotation.head
         ? {
             head: {
-              tip: transformPoint(annotation.head.tip, sourceAnchor, targetAnchor, 0),
-              direction: annotation.head.direction,
+              tip: transformPoint(
+                annotation.head.tip,
+                sourceAnchor,
+                targetAnchor,
+                angleRadians
+              ),
+              direction: normalizeVector(rotateVector(annotation.head.direction, angleRadians)),
               polygon: annotation.head.polygon.map((point) =>
-                transformPoint(point, sourceAnchor, targetAnchor, 0)
+                transformPoint(point, sourceAnchor, targetAnchor, angleRadians)
               )
             }
           }
