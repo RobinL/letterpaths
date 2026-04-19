@@ -3,6 +3,8 @@ import {
   AnimationPlayer,
   TracingSession,
   compileTracingPath,
+  type PreparedTracingPath,
+  type TracingState,
   type WritingPath
 } from "letterpaths";
 import {
@@ -96,6 +98,7 @@ if (
 let currentWordIndex = -1;
 let currentPath: WritingPath | null = null;
 let tracingSession: TracingSession | null = null;
+let preparedTracingPath: PreparedTracingPath | null = null;
 let activePointerId: number | null = null;
 let traceRenderQueued = false;
 let traceStrokeEls: SVGPathElement[] = [];
@@ -107,6 +110,9 @@ let demoNibEl: SVGCircleElement | null = null;
 let demoAnimationFrameId: number | null = null;
 let isDemoPlaying = false;
 let currentTraceTolerance = DEFAULT_TRACE_TOLERANCE;
+
+const TRACE_CURSOR_TURN_COMMIT_DISTANCE = 12;
+const TRACE_CURSOR_TURN_LOOKAHEAD_DISTANCE = 2;
 
 const syncToleranceLabel = () => {
   toleranceValue.textContent = `${currentTraceTolerance}px`;
@@ -165,13 +171,53 @@ const requestTraceRender = () => {
   });
 };
 
+const getOverallDistanceForState = (
+  state: Pick<TracingState, "status" | "activeStrokeIndex" | "activeStrokeProgress">
+): number => {
+  if (!preparedTracingPath) {
+    return 0;
+  }
+
+  if (state.status === "complete") {
+    return preparedTracingPath.strokes.reduce((sum, stroke) => sum + stroke.totalLength, 0);
+  }
+
+  let total = 0;
+  for (let index = 0; index < state.activeStrokeIndex; index += 1) {
+    total += preparedTracingPath.strokes[index]?.totalLength ?? 0;
+  }
+
+  const activeStroke = preparedTracingPath.strokes[state.activeStrokeIndex];
+  return total + (activeStroke?.totalLength ?? 0) * state.activeStrokeProgress;
+};
+
+const getCommittedCursorTangent = (state: TracingState) => {
+  if (!preparedTracingPath) {
+    return state.cursorTangent;
+  }
+
+  const overallDistance = getOverallDistanceForState(state);
+  const activeTurnBoundary = [...preparedTracingPath.boundaries]
+    .reverse()
+    .find(
+      (boundary) =>
+        boundary.previousSegment !== boundary.nextSegment &&
+        boundary.turnAngleDegrees >= 150 &&
+        overallDistance >= boundary.overallDistance - TRACE_CURSOR_TURN_LOOKAHEAD_DISTANCE &&
+        overallDistance - boundary.overallDistance < TRACE_CURSOR_TURN_COMMIT_DISTANCE
+    );
+
+  return activeTurnBoundary?.outgoingTangent ?? state.cursorTangent;
+};
+
 const renderTraceFrame = () => {
   if (!tracingSession || !traceCursorEl) {
     return;
   }
 
   const state = tracingSession.getState();
-  const angle = Math.atan2(state.cursorTangent.y, state.cursorTangent.x) * (180 / Math.PI);
+  const cursorTangent = getCommittedCursorTangent(state);
+  const angle = Math.atan2(cursorTangent.y, cursorTangent.x) * (180 / Math.PI);
 
   traceCursorEl.setAttribute(
     "transform",
@@ -258,6 +304,7 @@ const playDemo = () => {
 
 const setupScene = (path: WritingPath, width: number, height: number, offsetY: number) => {
   const preparedPath = compileTracingPath(path);
+  preparedTracingPath = preparedPath;
   tracingSession = new TracingSession(preparedPath, {
     startTolerance: currentTraceTolerance,
     hitTolerance: currentTraceTolerance

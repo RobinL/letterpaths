@@ -67,13 +67,13 @@ test("formation arrow stem lengths clamp to available tracing group ranges", () 
     assert.ok(
       Math.abs(
         arrow.metrics.incomingStemLength -
-          (arrow.source.turnDistance - arrow.source.startDistance)
+        (arrow.source.turnDistance - arrow.source.startDistance)
       ) < 0.001
     );
     assert.ok(
       Math.abs(
         arrow.metrics.outgoingStemLength -
-          (arrow.source.endDistance - arrow.source.turnDistance)
+        (arrow.source.endDistance - arrow.source.turnDistance)
       ) < 0.001
     );
   });
