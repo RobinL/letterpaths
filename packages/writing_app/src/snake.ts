@@ -34,10 +34,15 @@ import sandMoving1Sound from "./assets/snake/sand_moving_1.mp3";
 import sandMoving2Sound from "./assets/snake/sand_moving_2.mp3";
 import sandMoving3Sound from "./assets/snake/sand_moving_3.mp3";
 import sandMoving4Sound from "./assets/snake/sand_moving_4.mp3";
-import themeParkBackSprite from "./assets/snake/skins/theme-park/back.png";
 import themeParkBackgroundImage from "./assets/snake/skins/theme-park/theme_park_bg.png";
-import themeParkCarriageSprite from "./assets/snake/skins/theme-park/carriage_1.png";
+import themeParkCarriageOneSprite from "./assets/snake/skins/theme-park/carriage_1.png";
+import themeParkCarriageOneUpsideDownSprite from "./assets/snake/skins/theme-park/carriage_1_upside_down.png";
+import themeParkCarriageTwoSprite from "./assets/snake/skins/theme-park/carriage_2.png";
+import themeParkCarriageTwoUpsideDownSprite from "./assets/snake/skins/theme-park/carriage_2_upside_down.png";
 import themeParkFrontSprite from "./assets/snake/skins/theme-park/front.png";
+import themeParkFrontUpsideDownSprite from "./assets/snake/skins/theme-park/front_upside_down.png";
+import themeParkRearSprite from "./assets/snake/skins/theme-park/rear.png";
+import themeParkRearUpsideDownSprite from "./assets/snake/skins/theme-park/rear_upside_down.png";
 import {
   DEMO_PAUSE_MS,
   MAX_TRACE_TOLERANCE,
@@ -92,7 +97,7 @@ const registerSnakeServiceWorker = () => {
 
 const FRUIT_EMOJI = "🍎";
 const DEFAULT_SNAKE_TRACE_TOLERANCE = 150;
-const SHOW_ME_SPEED_MULTIPLIER = 0.2;
+const SHOW_ME_SPEED_MULTIPLIER = 0.7;
 const SNAKE_SEGMENT_SPACING = 76;
 const SNAKE_GROWTH_DISTANCE = 115;
 const BULGE_BODY_SPRITE_CHANCE = 0.25;
@@ -142,24 +147,40 @@ const CLASSIC_DOT_TARGET_SIZE = {
 } as const;
 const THEME_PARK_FRONT_SIZE = {
   width: 94,
-  height: 75.5,
+  height: 76.5,
   anchorX: 0.5,
   anchorY: 0.54,
   rotationOffset: 0
+} as const;
+const THEME_PARK_FRONT_UPSIDE_DOWN_SIZE = {
+  ...THEME_PARK_FRONT_SIZE,
+  height: 79.3
 } as const;
 const THEME_PARK_CARRIAGE_SIZE = {
   width: 100,
-  height: 72.4,
+  height: 82.8,
   anchorX: 0.5,
   anchorY: 0.54,
   rotationOffset: 0
 } as const;
+const THEME_PARK_CARRIAGE_ONE_UPSIDE_DOWN_SIZE = {
+  ...THEME_PARK_CARRIAGE_SIZE,
+  height: 87.9
+} as const;
+const THEME_PARK_CARRIAGE_TWO_UPSIDE_DOWN_SIZE = {
+  ...THEME_PARK_CARRIAGE_SIZE,
+  height: 87.7
+} as const;
 const THEME_PARK_BACK_SIZE = {
   width: 92,
-  height: 64.8,
+  height: 76.5,
   anchorX: 0.5,
   anchorY: 0.54,
   rotationOffset: 0
+} as const;
+const THEME_PARK_REAR_UPSIDE_DOWN_SIZE = {
+  ...THEME_PARK_BACK_SIZE,
+  height: 79.9
 } as const;
 const EAGLE_FLY_MS = 700;
 const EAGLE_STAND_MS = 260;
@@ -241,10 +262,14 @@ type SpriteMetrics = {
   rotationOffset: number;
 };
 
-type BodySprite = {
-  id: string;
+type SpriteAsset = {
   href: string;
   metrics: SpriteMetrics;
+  upsideDown?: SpriteAsset;
+};
+
+type BodySprite = SpriteAsset & {
+  id: string;
 };
 
 type SnakeSkinId = "classic" | "themePark";
@@ -263,12 +288,10 @@ type SnakeSkin = {
     href: string;
     chewHref: string;
     metrics: SpriteMetrics;
+    upsideDown?: SpriteAsset;
   };
   bodySprites: readonly BodySprite[];
-  tail: {
-    href: string;
-    metrics: SpriteMetrics;
-  };
+  tail: SpriteAsset;
   dotTarget: {
     happyHref: string;
     angryHref: string;
@@ -280,7 +303,7 @@ const SNAKE_SKINS = {
   classic: {
     id: "classic",
     boardImage: classicSnakeBackgroundImage,
-    boardOverlay: "linear-gradient(180deg, rgba(255, 252, 244, 0.58), rgba(255, 248, 235, 0.78))",
+    boardOverlay: "linear-gradient(180deg, rgba(255, 252, 244, 0.72), rgba(255, 248, 235, 0.86))",
     instruction: "Drag the snake around the letters.",
     successEyebrow: "Snake fed!",
     successCopy: "All the fruit is collected.",
@@ -317,7 +340,7 @@ const SNAKE_SKINS = {
   themePark: {
     id: "themePark",
     boardImage: themeParkBackgroundImage,
-    boardOverlay: "linear-gradient(180deg, rgba(255, 255, 255, 0.48), rgba(255, 249, 230, 0.66))",
+    boardOverlay: "linear-gradient(180deg, rgba(255, 255, 255, 0.64), rgba(255, 249, 230, 0.78))",
     instruction: "Drag the rollercoaster around the letters.",
     successEyebrow: "Ride complete!",
     successCopy: "All the fruit is collected.",
@@ -327,18 +350,39 @@ const SNAKE_SKINS = {
     head: {
       href: themeParkFrontSprite,
       chewHref: themeParkFrontSprite,
-      metrics: THEME_PARK_FRONT_SIZE
+      metrics: THEME_PARK_FRONT_SIZE,
+      upsideDown: {
+        href: themeParkFrontUpsideDownSprite,
+        metrics: THEME_PARK_FRONT_UPSIDE_DOWN_SIZE
+      }
     },
     bodySprites: [
       {
-        id: "carriage",
-        href: themeParkCarriageSprite,
-        metrics: THEME_PARK_CARRIAGE_SIZE
+        id: "carriage-1",
+        href: themeParkCarriageOneSprite,
+        metrics: THEME_PARK_CARRIAGE_SIZE,
+        upsideDown: {
+          href: themeParkCarriageOneUpsideDownSprite,
+          metrics: THEME_PARK_CARRIAGE_ONE_UPSIDE_DOWN_SIZE
+        }
+      },
+      {
+        id: "carriage-2",
+        href: themeParkCarriageTwoSprite,
+        metrics: THEME_PARK_CARRIAGE_SIZE,
+        upsideDown: {
+          href: themeParkCarriageTwoUpsideDownSprite,
+          metrics: THEME_PARK_CARRIAGE_TWO_UPSIDE_DOWN_SIZE
+        }
       }
     ],
     tail: {
-      href: themeParkBackSprite,
-      metrics: THEME_PARK_BACK_SIZE
+      href: themeParkRearSprite,
+      metrics: THEME_PARK_BACK_SIZE,
+      upsideDown: {
+        href: themeParkRearUpsideDownSprite,
+        metrics: THEME_PARK_REAR_UPSIDE_DOWN_SIZE
+      }
     },
     dotTarget: {
       happyHref: themeParkFrontSprite,
@@ -992,6 +1036,21 @@ const normalizeVector = (vector: Point): Point => {
 
 const toAngle = (vector: Point): number => Math.atan2(vector.y, vector.x) * (180 / Math.PI);
 
+const normalizeAngleDegrees = (angle: number): number => ((angle % 360) + 360) % 360;
+
+const isUpsideDownAngle = (angle: number): boolean => {
+  const normalizedAngle = normalizeAngleDegrees(angle);
+  return normalizedAngle > 90 && normalizedAngle < 270;
+};
+
+const resolveSpriteAssetForPose = (asset: SpriteAsset, poseAngle: number): SpriteAsset => {
+  if (!asset.upsideDown || !isUpsideDownAngle(poseAngle + asset.metrics.rotationOffset)) {
+    return asset;
+  }
+
+  return asset.upsideDown;
+};
+
 const pointFromAngle = (angle: number): Point => {
   const radians = (angle * Math.PI) / 180;
   return {
@@ -1375,9 +1434,13 @@ const renderDeferredSnake = (
   const bodySprite = skin.bodySprites[0] ?? SNAKE_SKINS.classic.bodySprites[0];
   const deferredScale = skin.deferredScale;
   const deferredSegmentSpacing = skin.deferredSegmentSpacing;
+  const headAsset =
+    options.headHref === undefined
+      ? resolveSpriteAssetForPose(skin.head, pose.angle)
+      : { href: options.headHref, metrics: skin.head.metrics };
 
   rootEl.style.opacity = "1";
-  headImageEl.setAttribute("href", options.headHref ?? skin.head.href);
+  headImageEl.setAttribute("href", headAsset.href);
   setSpritePose(
     headGroupEl,
     headImageEl,
@@ -1388,11 +1451,11 @@ const renderDeferredSnake = (
       distance: 0,
       visible: true
     },
-    skin.head.metrics.width * deferredScale,
-    skin.head.metrics.height * deferredScale,
-    skin.head.metrics.anchorX,
-    skin.head.metrics.anchorY,
-    skin.head.metrics.rotationOffset
+    headAsset.metrics.width * deferredScale,
+    headAsset.metrics.height * deferredScale,
+    headAsset.metrics.anchorX,
+    headAsset.metrics.anchorY,
+    headAsset.metrics.rotationOffset
   );
 
   if (options.isDot) {
@@ -1430,7 +1493,8 @@ const renderDeferredSnake = (
   };
 
   if (bodyGroupEl && bodyImageEl) {
-    bodyImageEl.setAttribute("href", bodySprite.href);
+    const bodyAsset = resolveSpriteAssetForPose(bodySprite, pose.angle);
+    bodyImageEl.setAttribute("href", bodyAsset.href);
     setSpritePose(
       bodyGroupEl,
       bodyImageEl,
@@ -1441,16 +1505,17 @@ const renderDeferredSnake = (
         distance: 0,
         visible: true
       },
-      bodySprite.metrics.width * deferredScale,
-      bodySprite.metrics.height * deferredScale,
-      bodySprite.metrics.anchorX,
-      bodySprite.metrics.anchorY,
-      bodySprite.metrics.rotationOffset
+      bodyAsset.metrics.width * deferredScale,
+      bodyAsset.metrics.height * deferredScale,
+      bodyAsset.metrics.anchorX,
+      bodyAsset.metrics.anchorY,
+      bodyAsset.metrics.rotationOffset
     );
   }
 
   if (tailGroupEl && tailImageEl && segmentVisibility.showTail) {
-    tailImageEl.setAttribute("href", skin.tail.href);
+    const tailAsset = resolveSpriteAssetForPose(skin.tail, pose.angle);
+    tailImageEl.setAttribute("href", tailAsset.href);
     setSpritePose(
       tailGroupEl,
       tailImageEl,
@@ -1461,11 +1526,11 @@ const renderDeferredSnake = (
         distance: 0,
         visible: true
       },
-      skin.tail.metrics.width * deferredScale,
-      skin.tail.metrics.height * deferredScale,
-      skin.tail.metrics.anchorX,
-      skin.tail.metrics.anchorY,
-      skin.tail.metrics.rotationOffset
+      tailAsset.metrics.width * deferredScale,
+      tailAsset.metrics.height * deferredScale,
+      tailAsset.metrics.anchorX,
+      tailAsset.metrics.anchorY,
+      tailAsset.metrics.rotationOffset
     );
   } else if (tailGroupEl) {
     tailGroupEl.style.opacity = "0";
@@ -2389,7 +2454,11 @@ const renderSnake = (now = performance.now()) => {
   );
   const bodyCount = segmentVisibility.bodyCount;
   const headPose = sampleSnakePoseAtDistance(snakeHeadDistance);
-  snakeHeadImageEl.setAttribute("href", now < snakeChewUntil ? skin.head.chewHref : skin.head.href);
+  const headAsset = resolveSpriteAssetForPose(skin.head, snakeHeadAngle);
+  snakeHeadImageEl.setAttribute(
+    "href",
+    now < snakeChewUntil && headAsset === skin.head ? skin.head.chewHref : headAsset.href
+  );
   setSpritePose(
     snakeHeadEl,
     snakeHeadImageEl,
@@ -2397,11 +2466,11 @@ const renderSnake = (now = performance.now()) => {
       ...headPose,
       angle: snakeHeadAngle
     },
-    skin.head.metrics.width,
-    skin.head.metrics.height,
-    skin.head.metrics.anchorX,
-    skin.head.metrics.anchorY,
-    skin.head.metrics.rotationOffset
+    headAsset.metrics.width,
+    headAsset.metrics.height,
+    headAsset.metrics.anchorX,
+    headAsset.metrics.anchorY,
+    headAsset.metrics.rotationOffset
   );
 
   snakeBodyEls.forEach((el, index) => {
@@ -2426,16 +2495,17 @@ const renderSnake = (now = performance.now()) => {
       skin.bodySprites.find((sprite) => sprite.id === el.dataset.snakeBodyVariant) ??
       skin.bodySprites[0] ??
       SNAKE_SKINS.classic.bodySprites[0];
-    imageEl.setAttribute("href", bodySprite.href);
+    const bodyAsset = resolveSpriteAssetForPose(bodySprite, pose.angle);
+    imageEl.setAttribute("href", bodyAsset.href);
     setSpritePose(
       el,
       imageEl,
       pose,
-      bodySprite.metrics.width,
-      bodySprite.metrics.height,
-      bodySprite.metrics.anchorX,
-      bodySprite.metrics.anchorY,
-      bodySprite.metrics.rotationOffset
+      bodyAsset.metrics.width,
+      bodyAsset.metrics.height,
+      bodyAsset.metrics.anchorX,
+      bodyAsset.metrics.anchorY,
+      bodyAsset.metrics.rotationOffset
     );
   });
 
@@ -2449,16 +2519,17 @@ const renderSnake = (now = performance.now()) => {
     return;
   }
   const tailPose = sampleSnakePoseAtDistance(Math.max(0, snakeHeadDistance - tailGapFromHead));
-  tailImageEl.setAttribute("href", skin.tail.href);
+  const tailAsset = resolveSpriteAssetForPose(skin.tail, tailPose.angle);
+  tailImageEl.setAttribute("href", tailAsset.href);
   setSpritePose(
     snakeTailEl,
     tailImageEl,
     tailPose,
-    skin.tail.metrics.width,
-    skin.tail.metrics.height,
-    skin.tail.metrics.anchorX,
-    skin.tail.metrics.anchorY,
-    skin.tail.metrics.rotationOffset
+    tailAsset.metrics.width,
+    tailAsset.metrics.height,
+    tailAsset.metrics.anchorX,
+    tailAsset.metrics.anchorY,
+    tailAsset.metrics.rotationOffset
   );
 };
 
@@ -3065,6 +3136,10 @@ const playDemo = () => {
 const chooseBodySpriteForSegment = (skin: SnakeSkin): BodySprite => {
   const primary = skin.bodySprites[0] ?? SNAKE_SKINS.classic.bodySprites[0];
   const alternate = skin.bodySprites[1];
+  if (skin.id === "themePark" && skin.bodySprites.length > 1) {
+    return skin.bodySprites[Math.floor(Math.random() * skin.bodySprites.length)] ?? primary;
+  }
+
   if (!alternate || Math.random() >= BULGE_BODY_SPRITE_CHANCE) {
     return primary;
   }

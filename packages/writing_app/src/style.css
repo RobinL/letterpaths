@@ -12,8 +12,8 @@
   --mint: #5ab6a8;
   --sky: #7ab4ff;
   --sky-soft: rgba(122, 180, 255, 0.22);
-  --trace-bg: #d6dce6;
-  --trace-next: #c2cad7;
+  --trace-bg: #c2c2c2;
+  --trace-next: #95ddff;
   --trace-done: #4a90e2;
   --trace-demo: #f26d4f;
   --line: rgba(35, 49, 61, 0.12);
@@ -362,7 +362,7 @@ body {
   border-radius: 0;
   box-shadow: none;
   background:
-    var(--snake-board-overlay, linear-gradient(180deg, rgba(255, 252, 244, 0.58), rgba(255, 248, 235, 0.78))),
+    var(--snake-board-overlay, linear-gradient(180deg, rgba(255, 252, 244, 0.72), rgba(255, 248, 235, 0.86))),
     var(--snake-board-image) center / cover no-repeat,
     var(--board-bg);
 }
@@ -380,7 +380,7 @@ body {
 }
 
 .writing-app--snake .writing-app__bg {
-  fill: rgba(255, 255, 255, 0.16);
+  fill: rgba(255, 255, 255, 0.32);
 }
 
 .writing-app__guide {
@@ -413,11 +413,11 @@ body {
 
 .writing-app__stroke-next {
   fill: none;
-  stroke: var(--trace-done);
+  stroke: var(--trace-next);
   stroke-width: 54;
   stroke-linecap: round;
   stroke-linejoin: round;
-  stroke-opacity: 0.3;
+  stroke-opacity: 0.78;
 }
 
 .writing-app__stroke-trace {
