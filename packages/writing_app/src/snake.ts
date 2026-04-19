@@ -98,6 +98,8 @@ const SNAKE_CHEW_MS = 220;
 const SNAKE_RETRACTION_SPEED = 700;
 const SNAKE_RETRACTION_HIDE_GAP = 6;
 const SNAKE_TURN_COMMIT_DISTANCE = 12;
+const SNAKE_RESTART_PULL_DISTANCE = 24;
+const SNAKE_RESTART_PULL_DIRECTION_DOT = 0.65;
 const HEAD_SIZE = {
   width: 97.5,
   height: 60,
@@ -407,6 +409,7 @@ let queuedTurnTangent: Point | null = null;
 let queuedTurnBoundary: PreparedTracingBoundary | null = null;
 let queuedTurnTrailDistance: number | null = null;
 let isAwaitingSegmentRestart = false;
+let segmentRestartPointerStart: Point | null = null;
 let snakeChompSoundPlayer: HTMLAudioElement | null = null;
 let activeSnakeChompSounds: HTMLAudioElement[] = [];
 let snakeChompSoundWarmed = false;
@@ -717,6 +720,37 @@ const beginSnakeUnretractFromCurrentState = () => {
 const isSnakeRetractionAtTarget = () =>
   Math.abs(snakeRetractionDistance - snakeRetractionTarget) < 0.5;
 
+const completeSnakeRetraction = () => {
+  if (isSnakeRetractionAtTarget()) {
+    return;
+  }
+
+  cancelSnakeRetractionAnimation();
+  snakeRetractionDistance = snakeRetractionTarget;
+  renderSnake();
+};
+
+const hasSegmentRestartPullEvidence = (point: Point, state: TracingState): boolean => {
+  const tangent = normalizeVector(queuedTurnTangent ?? state.cursorTangent);
+  const startPoint = segmentRestartPointerStart ?? queuedTurnBoundary?.point ?? state.cursorPoint;
+  const delta = {
+    x: point.x - startPoint.x,
+    y: point.y - startPoint.y
+  };
+  const distance = Math.hypot(delta.x, delta.y);
+  if (distance < SNAKE_RESTART_PULL_DISTANCE) {
+    return false;
+  }
+
+  const pullDirection = normalizeVector(delta);
+  const directionDot = pullDirection.x * tangent.x + pullDirection.y * tangent.y;
+  const forwardDistance = delta.x * tangent.x + delta.y * tangent.y;
+  return (
+    directionDot >= SNAKE_RESTART_PULL_DIRECTION_DOT &&
+    forwardDistance >= SNAKE_RESTART_PULL_DISTANCE
+  );
+};
+
 const maybeResumeContinuousDrag = () => {
   if (
     !isAwaitingSegmentRestart ||
@@ -731,7 +765,8 @@ const maybeResumeContinuousDrag = () => {
   const resumeState = tracingSession.getState();
   const restartPoint = queuedTurnBoundary?.point ?? resumeState.cursorPoint;
   const restartTangent = queuedTurnTangent ?? resumeState.cursorTangent;
-  const started = tracingSession.beginAt(resumeState.cursorPoint);
+  const started =
+    resumeState.status === "tracing" || tracingSession.beginAt(resumeState.cursorPoint);
   if (!started) {
     return false;
   }
@@ -1612,6 +1647,7 @@ const maybePauseAtTracingGroupBoundary = (state: TracingState): boolean => {
   parkedBoundaryDistance = boundary?.overallDistance ?? currentGroup.endDistance;
   queuedTurnBoundary = boundary;
   queuedTurnTangent = boundary?.outgoingTangent ?? null;
+  segmentRestartPointerStart = activePointerPosition ?? state.cursorPoint;
   if (queuedTurnTangent) {
     snakeHeadAngle = toAngle(queuedTurnTangent);
     appendSnakePose(boundary?.point ?? currentGroup.endPoint, queuedTurnTangent, true);
@@ -1882,6 +1918,7 @@ const resetSnakeTrail = (
   queuedTurnBoundary = nextQueuedTurnBoundary;
   queuedTurnTangent = nextQueuedTurnTangent;
   queuedTurnTrailDistance = null;
+  segmentRestartPointerStart = null;
   isAwaitingSegmentRestart = false;
   isSnakeExitComplete = false;
   isSnakeSlithering = false;
@@ -1986,6 +2023,7 @@ const startSnakeExit = (point: Point, tangent: Point) => {
   queuedTurnBoundary = null;
   queuedTurnTangent = null;
   queuedTurnTrailDistance = null;
+  segmentRestartPointerStart = null;
   isAwaitingSegmentRestart = false;
   const direction = normalizeVector(tangent);
   const exitStartTime = performance.now();
@@ -2128,6 +2166,7 @@ const syncSnakeToState = (state: TracingState) => {
     queuedTurnBoundary = null;
     queuedTurnTangent = null;
     queuedTurnTrailDistance = null;
+    segmentRestartPointerStart = null;
   }
 
   if (!isDemoPlaying) {
@@ -2200,6 +2239,7 @@ const resetRoundProgress = () => {
   queuedTurnBoundary = null;
   queuedTurnTangent = null;
   queuedTurnTrailDistance = null;
+  segmentRestartPointerStart = null;
   isAwaitingSegmentRestart = false;
   const state = tracingSession?.getState();
   if (state) {
@@ -2624,11 +2664,6 @@ const onPointerDown = (event: PointerEvent) => {
   const restartPoint = queuedTurnBoundary?.point ?? state.cursorPoint;
   const restartTangent = queuedTurnTangent ?? state.cursorTangent;
 
-  if (shouldRestartSnakeEmergence && !isSnakeRetractionAtTarget()) {
-    event.preventDefault();
-    return;
-  }
-
   if (isDeferredStrokeActive(state) && !isPointerOnDeferredTarget(pointer, state)) {
     return;
   }
@@ -2645,13 +2680,16 @@ const onPointerDown = (event: PointerEvent) => {
   }
 
   event.preventDefault();
+  if (shouldRestartSnakeEmergence) {
+    segmentRestartPointerStart = pointer;
+  }
   activePointerId = event.pointerId;
   activePointerPosition = pointer;
   warmSnakeChompSound();
   warmSnakeMoveSounds();
-  if (shouldRestartSnakeEmergence) {
+  if (shouldRestartSnakeEmergence && isSnakeRetractionAtTarget()) {
     restartSnakeEmergence(restartPoint, restartTangent);
-  } else {
+  } else if (!shouldRestartSnakeEmergence) {
     isAwaitingSegmentRestart = false;
   }
   if (!shouldRestartSnakeEmergence && snakeRetractionDistance > 0.5) {
@@ -2669,6 +2707,10 @@ const onPointerMove = (event: PointerEvent) => {
   event.preventDefault();
   activePointerPosition = getPointerInSvg(traceSvg, event);
   if (isAwaitingSegmentRestart) {
+    const state = tracingSession.getState();
+    if (!isSnakeRetractionAtTarget() && hasSegmentRestartPullEvidence(activePointerPosition, state)) {
+      completeSnakeRetraction();
+    }
     maybeResumeContinuousDrag();
     requestTraceRender();
     return;
