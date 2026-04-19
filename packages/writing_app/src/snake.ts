@@ -1109,12 +1109,28 @@ const cancelSnakeRetractionAnimation = () => {
   }
 };
 
+const completeQueuedStrokeStartJump = (): boolean => {
+  if (
+    !isAwaitingSegmentRestart ||
+    queuedRestartAllowsContinuousDrag ||
+    !queuedRestartPoint ||
+    !queuedRestartTangent
+  ) {
+    return false;
+  }
+
+  restartSnakeEmergence(queuedRestartPoint, queuedRestartTangent);
+  requestTraceRender();
+  return true;
+};
+
 const animateSnakeRetraction = () => {
   cancelSnakeRetractionAnimation();
 
   if (Math.abs(snakeRetractionDistance - snakeRetractionTarget) < 0.5) {
     snakeRetractionDistance = snakeRetractionTarget;
     renderSnake();
+    completeQueuedStrokeStartJump();
     return;
   }
 
@@ -1136,7 +1152,9 @@ const animateSnakeRetraction = () => {
       snakeRetractionDistance = snakeRetractionTarget;
       snakeRetractionAnimationFrameId = null;
       renderSnake();
-      maybeResumeContinuousDrag();
+      if (!completeQueuedStrokeStartJump()) {
+        maybeResumeContinuousDrag();
+      }
       return;
     }
 
@@ -2214,6 +2232,15 @@ const maybePauseAtTracingSectionBoundary = (state: TracingState): boolean => {
   queuedTurnTangent = boundary?.outgoingTangent ?? null;
   segmentRestartPointerStart = activePointerPosition ?? state.cursorPoint;
 
+  appendSnakePose(
+    currentSection.endPoint,
+    isSectionDeferred(nextSection) ? currentSection.endTangent : nextSection.startTangent,
+    true
+  );
+  if (queuedTurnTangent && boundary) {
+    queuedTurnTrailDistance = snakeHeadDistance;
+  }
+
   advanceToNextTracingSection();
   tracingSession?.end();
 
@@ -2228,11 +2255,6 @@ const maybePauseAtTracingSectionBoundary = (state: TracingState): boolean => {
   }
 
   isAwaitingSegmentRestart = true;
-  if (queuedTurnTangent && boundary) {
-    snakeHeadAngle = toAngle(queuedTurnTangent);
-    appendSnakePose(boundary.point, queuedTurnTangent, true);
-    queuedTurnTrailDistance = snakeHeadDistance;
-  }
 
   syncSnakeRetractionToState();
   requestTraceRender();
@@ -2741,6 +2763,14 @@ const syncSnakeToState = (state: TracingState) => {
     parkedBoundaryDistance = null;
   }
 
+  if (!isDemoPlaying) {
+    captureFruitThroughDistance(getOverallDistanceForState(state));
+  }
+
+  if (!isDemoPlaying && maybePauseAtTracingSectionBoundary(state)) {
+    return;
+  }
+
   const queuedTurnPose = getQueuedTurnPose(state);
 
   if (isDeferredStrokeActive(state)) {
@@ -2770,16 +2800,8 @@ const syncSnakeToState = (state: TracingState) => {
     segmentRestartPointerStart = null;
   }
 
-  if (!isDemoPlaying) {
-    captureFruitThroughDistance(getOverallDistanceForState(state));
-  }
-
   if (!isDemoPlaying && state.isPenDown) {
     maybePlaySnakeMoveSound(state);
-  }
-
-  if (!isDemoPlaying && maybePauseAtTracingSectionBoundary(state)) {
-    return;
   }
 };
 
