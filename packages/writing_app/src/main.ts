@@ -229,6 +229,18 @@ type StraightArrowAnnotation = Extract<
   { kind: "start-arrow" | "midpoint-arrow" }
 >;
 type TurningPointAnnotation = Extract<FormationAnnotation, { kind: "turning-point" }>;
+type DrawOrderNumberAnnotation = Extract<FormationAnnotation, { kind: "draw-order-number" }>;
+type PreparedPoseBias = "forward" | "backward" | "center";
+
+type TurningPointRelocation = {
+  annotation: TurningPointAnnotation;
+  distanceShift: number;
+  targetDistance: number;
+  targetPose: {
+    point: Point;
+    tangent: Point;
+  };
+};
 
 type AnnotationCollisionShape = {
   pathPoints: Point[];
@@ -277,12 +289,117 @@ const isTurningPointAnnotation = (
   annotation: FormationAnnotation
 ): annotation is TurningPointAnnotation => annotation.kind === "turning-point";
 
+const isDrawOrderNumberAnnotation = (
+  annotation: FormationAnnotation
+): annotation is DrawOrderNumberAnnotation => annotation.kind === "draw-order-number";
+
 const getAnnotationPathDistance = (annotation: FormationAnnotation): number => {
   if ("distance" in annotation.source) {
     return annotation.source.distance;
   }
 
   return annotation.source.turnDistance;
+};
+
+const getTotalPreparedPathLength = (path: PreparedTracingPath): number =>
+  path.strokes.reduce((sum, stroke) => sum + stroke.totalLength, 0);
+
+const interpolatePreparedSamplePoint = (
+  samples: PreparedTracingPath["strokes"][number]["samples"],
+  distanceAlongStroke: number
+): Point => {
+  if (samples.length === 0) {
+    return { x: 0, y: 0 };
+  }
+
+  for (let index = 1; index < samples.length; index += 1) {
+    const previous = samples[index - 1];
+    const current = samples[index];
+    if (!previous || !current) {
+      continue;
+    }
+
+    if (current.distanceAlongStroke >= distanceAlongStroke) {
+      const span = current.distanceAlongStroke - previous.distanceAlongStroke;
+      const ratio = span > 0 ? (distanceAlongStroke - previous.distanceAlongStroke) / span : 0;
+      return {
+        x: previous.x + (current.x - previous.x) * ratio,
+        y: previous.y + (current.y - previous.y) * ratio
+      };
+    }
+  }
+
+  const last = samples[samples.length - 1];
+  return last ? { x: last.x, y: last.y } : { x: 0, y: 0 };
+};
+
+const getPreparedPointAtOverallDistance = (
+  path: PreparedTracingPath,
+  targetDistance: number
+): Point => {
+  let remaining = targetDistance;
+
+  for (let index = 0; index < path.strokes.length; index += 1) {
+    const stroke = path.strokes[index];
+    if (!stroke) {
+      continue;
+    }
+
+    if (remaining <= stroke.totalLength || index === path.strokes.length - 1) {
+      return interpolatePreparedSamplePoint(
+        stroke.samples,
+        Math.max(0, Math.min(remaining, stroke.totalLength))
+      );
+    }
+
+    remaining -= stroke.totalLength;
+  }
+
+  return { x: 0, y: 0 };
+};
+
+const normalizeVector = (vector: Point): Point => {
+  const length = Math.hypot(vector.x, vector.y);
+  return length > 0 ? { x: vector.x / length, y: vector.y / length } : { x: 1, y: 0 };
+};
+
+const getPreparedPoseAtOverallDistance = (
+  path: PreparedTracingPath,
+  targetDistance: number,
+  bias: PreparedPoseBias = "center"
+): { point: Point; tangent: Point } => {
+  const totalLength = getTotalPreparedPathLength(path);
+  const clampedDistance = Math.max(0, Math.min(targetDistance, totalLength));
+  const point = getPreparedPointAtOverallDistance(path, clampedDistance);
+  const delta = Math.min(8, Math.max(2, totalLength / 200));
+
+  let fromDistance = Math.max(0, clampedDistance - delta);
+  let toDistance = Math.min(totalLength, clampedDistance + delta);
+
+  if (bias === "forward") {
+    fromDistance = clampedDistance;
+  } else if (bias === "backward") {
+    toDistance = clampedDistance;
+  }
+
+  if (Math.abs(toDistance - fromDistance) < 0.001) {
+    if (clampedDistance <= delta) {
+      toDistance = Math.min(totalLength, clampedDistance + delta);
+    } else {
+      fromDistance = Math.max(0, clampedDistance - delta);
+    }
+  }
+
+  const fromPoint = getPreparedPointAtOverallDistance(path, fromDistance);
+  const toPoint = getPreparedPointAtOverallDistance(path, toDistance);
+
+  return {
+    point,
+    tangent: normalizeVector({
+      x: toPoint.x - fromPoint.x,
+      y: toPoint.y - fromPoint.y
+    })
+  };
 };
 
 const getPointDistance = (a: Point, b: Point): number => Math.hypot(a.x - b.x, a.y - b.y);
@@ -294,6 +411,43 @@ const interpolatePoint = (start: Point, end: Point, progress: number): Point => 
   x: start.x + (end.x - start.x) * progress,
   y: start.y + (end.y - start.y) * progress
 });
+
+const offsetPosePoint = (pose: { point: Point; tangent: Point }, lateralOffset: number): Point => {
+  const normal = { x: -pose.tangent.y, y: pose.tangent.x };
+  return {
+    x: pose.point.x + normal.x * lateralOffset,
+    y: pose.point.y + normal.y * lateralOffset
+  };
+};
+
+const rotateVector = (vector: Point, angleRadians: number): Point => {
+  const cos = Math.cos(angleRadians);
+  const sin = Math.sin(angleRadians);
+  return {
+    x: vector.x * cos - vector.y * sin,
+    y: vector.x * sin + vector.y * cos
+  };
+};
+
+const transformPoint = (
+  point: Point,
+  sourceAnchor: Point,
+  targetAnchor: Point,
+  angleRadians: number
+): Point => {
+  const rotated = rotateVector(
+    {
+      x: point.x - sourceAnchor.x,
+      y: point.y - sourceAnchor.y
+    },
+    angleRadians
+  );
+
+  return {
+    x: targetAnchor.x + rotated.x,
+    y: targetAnchor.y + rotated.y
+  };
+};
 
 const getCubicPoint = (
   start: Point,
@@ -577,11 +731,183 @@ const doAnnotationShapesOverlap = (
   );
 };
 
-const resolveVisibleFormationAnnotations = (
-  annotations: FormationAnnotation[]
+const getHowFarAwayFromBottomOrTop = (
+  annotation: TurningPointAnnotation,
+  path: PreparedTracingPath
+): number => {
+  const turnPoint = getPreparedPointAtOverallDistance(path, annotation.source.turnDistance);
+  return Math.min(
+    Math.abs(turnPoint.y - path.bounds.minY),
+    Math.abs(path.bounds.maxY - turnPoint.y)
+  );
+};
+
+const compareTurningPointPriority = (
+  a: TurningPointAnnotation,
+  b: TurningPointAnnotation,
+  path: PreparedTracingPath
+): number => {
+  const priorityDifference =
+    getHowFarAwayFromBottomOrTop(a, path) - getHowFarAwayFromBottomOrTop(b, path);
+  if (Math.abs(priorityDifference) > 0.001) {
+    return priorityDifference;
+  }
+
+  return a.source.turnDistance - b.source.turnDistance;
+};
+
+const transformAnnotationCommand = (
+  command: AnnotationPathCommand,
+  sourceAnchor: Point,
+  targetAnchor: Point,
+  angleRadians: number
+): AnnotationPathCommand => {
+  if (command.type === "move") {
+    return {
+      type: "move",
+      to: transformPoint(command.to, sourceAnchor, targetAnchor, angleRadians)
+    };
+  }
+
+  if (command.type === "line") {
+    return {
+      type: "line",
+      to: transformPoint(command.to, sourceAnchor, targetAnchor, angleRadians)
+    };
+  }
+
+  return {
+    type: "cubic",
+    cp1: transformPoint(command.cp1, sourceAnchor, targetAnchor, angleRadians),
+    cp2: transformPoint(command.cp2, sourceAnchor, targetAnchor, angleRadians),
+    to: transformPoint(command.to, sourceAnchor, targetAnchor, angleRadians)
+  };
+};
+
+const relocateTurningPointAnnotation = (
+  annotation: TurningPointAnnotation,
+  path: PreparedTracingPath
+): TurningPointRelocation => {
+  const totalLength = getTotalPreparedPathLength(path);
+  const sourcePose = getPreparedPoseAtOverallDistance(path, annotation.source.turnDistance);
+  const targetDistance = Math.max(
+    annotation.source.turnDistance,
+    Math.min(totalLength, annotation.source.endDistance)
+  );
+  const targetPose = getPreparedPoseAtOverallDistance(path, targetDistance);
+  const sourceAnchor = sourcePose.point;
+  const targetAnchor = targetPose.point;
+  const distanceShift = targetDistance - annotation.source.turnDistance;
+
+  return {
+    annotation: {
+      ...annotation,
+      commands: annotation.commands.map((command) =>
+        transformAnnotationCommand(command, sourceAnchor, targetAnchor, 0)
+      ),
+      ...(annotation.head
+        ? {
+            head: {
+              tip: transformPoint(annotation.head.tip, sourceAnchor, targetAnchor, 0),
+              direction: annotation.head.direction,
+              polygon: annotation.head.polygon.map((point) =>
+                transformPoint(point, sourceAnchor, targetAnchor, 0)
+              )
+            }
+          }
+        : {}),
+      source: {
+        ...annotation.source,
+        startDistance: Math.min(totalLength, annotation.source.startDistance + distanceShift),
+        turnDistance: targetDistance,
+        endDistance: Math.min(totalLength, annotation.source.endDistance + distanceShift)
+      }
+    },
+    distanceShift,
+    targetDistance,
+    targetPose
+  };
+};
+
+const relocateDrawOrderNumberAnnotation = (
+  annotation: DrawOrderNumberAnnotation,
+  relocation: TurningPointRelocation,
+  totalLength: number
+): DrawOrderNumberAnnotation => ({
+  ...annotation,
+  point: relocation.targetPose.point,
+  anchor: offsetPosePoint(relocation.targetPose, annotation.metrics.offset),
+  direction: relocation.targetPose.tangent,
+  source: {
+    ...annotation.source,
+    startDistance: Math.min(totalLength, annotation.source.startDistance + relocation.distanceShift),
+    endDistance: Math.min(totalLength, annotation.source.endDistance + relocation.distanceShift),
+    distance: relocation.targetDistance
+  }
+});
+
+const relocateOverlappingTurningPointAnnotations = (
+  annotations: FormationAnnotation[],
+  path: PreparedTracingPath
 ): FormationAnnotation[] => {
-  const visibleAnnotations = annotations.filter(
-    (annotation) => annotationVisibility[annotation.kind]
+  const turningPointAnnotations = annotations.filter(isTurningPointAnnotation);
+  if (turningPointAnnotations.length < 2) {
+    return annotations;
+  }
+
+  const collisionShapeCache = new Map<ArrowAnnotation, AnnotationCollisionShape>();
+  const relocatedAnnotations = new Map<TurningPointAnnotation, TurningPointRelocation>();
+  const prioritySortedTurningPoints = [...turningPointAnnotations].sort((a, b) =>
+    compareTurningPointPriority(a, b, path)
+  );
+  const priorityAnnotations: TurningPointAnnotation[] = [];
+
+  prioritySortedTurningPoints.forEach((annotation) => {
+    const overlapsHigherPriorityAnnotation = priorityAnnotations.some((priorityAnnotation) =>
+      doAnnotationShapesOverlap(annotation, priorityAnnotation, collisionShapeCache)
+    );
+
+    if (overlapsHigherPriorityAnnotation) {
+      relocatedAnnotations.set(annotation, relocateTurningPointAnnotation(annotation, path));
+      return;
+    }
+
+    priorityAnnotations.push(annotation);
+  });
+
+  if (relocatedAnnotations.size === 0) {
+    return annotations;
+  }
+
+  const totalLength = getTotalPreparedPathLength(path);
+  const relocatedAnnotationsBySectionIndex = new Map<number, TurningPointRelocation>();
+  relocatedAnnotations.forEach((relocation, annotation) => {
+    relocatedAnnotationsBySectionIndex.set(annotation.source.sectionIndex, relocation);
+  });
+
+  return annotations.map((annotation) => {
+    if (isTurningPointAnnotation(annotation)) {
+      return relocatedAnnotations.get(annotation)?.annotation ?? annotation;
+    }
+
+    if (isDrawOrderNumberAnnotation(annotation)) {
+      const relocation = relocatedAnnotationsBySectionIndex.get(annotation.source.sectionIndex);
+      return relocation
+        ? relocateDrawOrderNumberAnnotation(annotation, relocation, totalLength)
+        : annotation;
+    }
+
+    return annotation;
+  });
+};
+
+const resolveVisibleFormationAnnotations = (
+  annotations: FormationAnnotation[],
+  path: PreparedTracingPath
+): FormationAnnotation[] => {
+  const visibleAnnotations = relocateOverlappingTurningPointAnnotations(
+    annotations.filter((annotation) => annotationVisibility[annotation.kind]),
+    path
   );
   const turningPointAnnotations = visibleAnnotations.filter(isTurningPointAnnotation);
   const straightArrowAnnotations = visibleAnnotations
@@ -892,7 +1218,7 @@ const setupScene = (path: WritingPath, width: number, height: number, offsetY: n
       }
     }
   });
-  const visibleAnnotations = resolveVisibleFormationAnnotations(annotations);
+  const visibleAnnotations = resolveVisibleFormationAnnotations(annotations, preparedPath);
   const annotationMarkup = [
     ...visibleAnnotations.filter((annotation) => annotation.kind !== "draw-order-number"),
     ...visibleAnnotations.filter((annotation) => annotation.kind === "draw-order-number")
