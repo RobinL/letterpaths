@@ -2095,6 +2095,25 @@ const buildPathDFromOverallDistanceRange = (
   return commands.join(" ");
 };
 
+const buildTracingSectionPathD = (
+  preparedPath: PreparedTracingPath,
+  section: TracingSection,
+  strokes: WritingPath["strokes"]
+): string => {
+  const preparedStroke = preparedPath.strokes[section.strokeIndex];
+  const drawableStroke = strokes[section.strokeIndex];
+
+  if (preparedStroke?.isDot && drawableStroke) {
+    return buildPathD(drawableStroke.curves);
+  }
+
+  return buildPathDFromOverallDistanceRange(
+    preparedPath,
+    section.startDistance,
+    section.endDistance
+  );
+};
+
 const buildSvgPoints = (points: Point[]): string =>
   points.map((point) => `${point.x} ${point.y}`).join(" ");
 
@@ -2194,11 +2213,7 @@ const syncNextSectionHighlight = () => {
 
   nextSectionEl.setAttribute(
     "d",
-    buildPathDFromOverallDistanceRange(
-      preparedTracingPath,
-      currentSection.startDistance,
-      currentSection.endDistance
-    )
+    buildTracingSectionPathD(preparedTracingPath, currentSection, drawablePathStrokes)
   );
   nextSectionEl.style.opacity = "1";
 };
@@ -3185,7 +3200,11 @@ const setupScene = (path: WritingPath, width: number, height: number, offsetY: n
   const backgroundPaths = tracingSections
     .map(
       (section) =>
-        `<path class="writing-app__stroke-bg" d="${buildPathDFromOverallDistanceRange(preparedPath, section.startDistance, section.endDistance)}"></path>`
+        `<path class="writing-app__stroke-bg" d="${buildTracingSectionPathD(
+          preparedPath,
+          section,
+          drawableStrokes
+        )}"></path>`
     )
     .join("");
   const tracePaths = drawableStrokes
