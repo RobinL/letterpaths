@@ -108,11 +108,11 @@ const SNAKE_CHOMP_SOUND_VOLUME = 0.3;
 const SNAKE_MOVE_SOUND_VOLUME = 0.12;
 const SNAKE_MOVE_SOUND_CHANCE = 0.42;
 const MAX_SNAKE_BODY_SEGMENTS = 10;
-const SNAKE_EXIT_MARGIN = 260;
-const SNAKE_EXIT_SPEED = 510;
 const SNAKE_CHEW_MS = 220;
 const SNAKE_RETRACTION_SPEED = 700;
 const SNAKE_RETRACTION_HIDE_GAP = 6;
+const CLASSIC_DEFERRED_SEGMENT_SPACING = 44;
+const THEME_PARK_DEFERRED_SEGMENT_SPACING = 56;
 const CLASSIC_HEAD_SIZE = {
   width: 97.5,
   height: 60,
@@ -254,20 +254,11 @@ type RetiringSnake = {
   headDistance: number;
   headAngle: number;
   bodyCount: number;
+  segmentSpacing: number;
   retractionDistance: number;
   retractionTarget: number;
+  showTail: boolean;
   animationFrameId: number | null;
-};
-
-type DeferredSnakeHead = {
-  strokeIndex: number;
-  point: Point;
-  tangent: Point;
-  angle: number;
-};
-
-type DeferredSnakeExitHead = DeferredSnakeHead & {
-  travelDistance: number;
 };
 
 type DotTargetPhase = "hidden" | "waiting" | "eagle_in" | "eagle_stand" | "eagle_out";
@@ -307,7 +298,6 @@ type SnakeSkin = {
     moveChance: number;
   };
   segmentSpacing: number;
-  deferredScale: number;
   deferredSegmentSpacing: number;
   head: {
     href: string;
@@ -340,8 +330,7 @@ const SNAKE_SKINS = {
       moveChance: SNAKE_MOVE_SOUND_CHANCE
     },
     segmentSpacing: SNAKE_SEGMENT_SPACING,
-    deferredScale: 0.78,
-    deferredSegmentSpacing: 44,
+    deferredSegmentSpacing: CLASSIC_DEFERRED_SEGMENT_SPACING,
     head: {
       href: classicSnakeHeadSprite,
       chewHref: classicSnakeHeadAltSprite,
@@ -384,8 +373,7 @@ const SNAKE_SKINS = {
       moveChance: 0.36
     },
     segmentSpacing: 106,
-    deferredScale: 0.78,
-    deferredSegmentSpacing: 56,
+    deferredSegmentSpacing: THEME_PARK_DEFERRED_SEGMENT_SPACING,
     head: {
       href: themeParkFrontSprite,
       chewHref: themeParkFrontSprite,
@@ -436,6 +424,15 @@ let currentSnakeSkinId: SnakeSkinId = "classic";
 const getActiveSnakeSkin = (): SnakeSkin => SNAKE_SKINS[currentSnakeSkinId];
 
 const getActiveSnakeSegmentSpacing = () => getActiveSnakeSkin().segmentSpacing;
+
+const getActiveDeferredSnakeSegmentSpacing = (state: Pick<TracingState, "activeStrokeIndex">) => {
+  const strokeLength = preparedTracingPath?.strokes[state.activeStrokeIndex]?.totalLength ?? 0;
+  const maxSpacingForTail = strokeLength > 0 ? strokeLength / 3 : Number.POSITIVE_INFINITY;
+  return Math.max(
+    1,
+    Math.min(getActiveSnakeSkin().deferredSegmentSpacing, maxSpacingForTail)
+  );
+};
 
 const app = document.querySelector<HTMLDivElement>("#app");
 
@@ -759,6 +756,7 @@ let sectionAnnotationEl: SVGGElement | null = null;
 let renderedSectionAnnotationSectionIndex: number | null = null;
 let demoAnimationFrameId: number | null = null;
 let isDemoPlaying = false;
+let isDemoShortDeferredSnake = false;
 let currentTraceTolerance = DEFAULT_SNAKE_TRACE_TOLERANCE;
 let currentTurnRadius = 13;
 let shouldOffsetArrowLanes = true;
@@ -772,7 +770,6 @@ let tracingSections: TracingSection[] = [];
 let visibleSectionCount = 1;
 let waypointEl: SVGTextElement | null = null;
 let currentSceneWidth = 1600;
-let currentSceneHeight = 900;
 let currentPathLength = 0;
 let preparedTracingPath: PreparedTracingPath | null = null;
 let drawablePathStrokes: WritingPath["strokes"] = [];
@@ -781,8 +778,6 @@ let snakeHeadEl: SVGGElement | null = null;
 let snakeHeadImageEl: SVGImageElement | null = null;
 let snakeBodyEls: SVGGElement[] = [];
 let snakeTailEl: SVGGElement | null = null;
-let deferredHeadEl: SVGGElement | null = null;
-let deferredTrailHeadEls = new Map<number, SVGGElement>();
 let dotSnakeEl: SVGGElement | null = null;
 let dotSnakeImageEl: SVGImageElement | null = null;
 let eagleEl: SVGGElement | null = null;
@@ -793,14 +788,8 @@ let snakeGrowthDistance = 0;
 let snakeHeadAngle = 0;
 let snakeChewUntil = 0;
 let retiringSnakes: RetiringSnake[] = [];
-let snakeExitAnimationFrameId: number | null = null;
+let isCompletionRetractionPending = false;
 let dotTargetAnimationFrameId: number | null = null;
-let isSnakeSlithering = false;
-let isSnakeExitComplete = false;
-let snakeExitBodyCount = 0;
-let completedDeferredHeads: DeferredSnakeHead[] = [];
-let completedDeferredHeadIndices = new Set<number>();
-let deferredExitHeads: DeferredSnakeExitHead[] = [];
 let dotTargetPhase: DotTargetPhase = "hidden";
 let dotTargetStrokeIndex: number | null = null;
 let dotTargetPoint: Point | null = null;
@@ -1018,7 +1007,7 @@ const resetSnakeMoveSoundProgress = () => {
 const maybePlaySnakeMoveSound = (
   state: Pick<TracingState, "status" | "activeStrokeIndex" | "activeStrokeProgress" | "isPenDown">
 ) => {
-  if (!state.isPenDown || isDemoPlaying || isSnakeSlithering || isSnakeExitComplete || isAwaitingSegmentRestart) {
+  if (!state.isPenDown || isDemoPlaying || isAwaitingSegmentRestart) {
     return;
   }
 
@@ -1069,6 +1058,20 @@ const updateSuccessVisibility = (isVisible: boolean) => {
   successOverlay.hidden = !isVisible;
 };
 
+const maybeShowCompletionSuccess = () => {
+  const state = tracingSession?.getState();
+  if (state?.status !== "complete" || !isCompletionRetractionPending) {
+    return;
+  }
+
+  if (retiringSnakes.length > 0) {
+    updateSuccessVisibility(false);
+    return;
+  }
+
+  updateSuccessVisibility(true);
+};
+
 const normalizeVector = (vector: Point): Point => {
   const length = Math.hypot(vector.x, vector.y);
   if (length <= 0.001) {
@@ -1096,14 +1099,6 @@ const resolveSpriteAssetForPose = (asset: SpriteAsset, poseAngle: number): Sprit
   }
 
   return asset.upsideDown;
-};
-
-const pointFromAngle = (angle: number): Point => {
-  const radians = (angle * Math.PI) / 180;
-  return {
-    x: Math.cos(radians),
-    y: Math.sin(radians)
-  };
 };
 
 const getSnakeLayerParts = (layerEl: SVGGElement): SnakeLayerParts | null => {
@@ -1235,56 +1230,6 @@ const getVisibleSnakeSegments = (
   };
 };
 
-const getStrokeTerminalPose = (strokeIndex: number): { point: Point; tangent: Point } | null => {
-  const stroke = preparedTracingPath?.strokes[strokeIndex];
-  const sample = stroke?.samples[stroke.samples.length - 1];
-  if (!sample) {
-    return null;
-  }
-
-  return {
-    point: { x: sample.x, y: sample.y },
-    tangent: sample.tangent
-  };
-};
-
-const getParkedSnakePose = (
-  state: Pick<TracingState, "activeStrokeIndex">
-): { point: Point; tangent: Point } | null => {
-  for (let index = state.activeStrokeIndex - 1; index >= 0; index -= 1) {
-    const stroke = drawablePathStrokes[index];
-    if (!stroke || stroke.deferred) {
-      continue;
-    }
-
-    return getStrokeTerminalPose(index);
-  }
-
-  return null;
-};
-
-const getSnakeExitPose = (state: TracingState): { point: Point; tangent: Point } => {
-  if (isDeferredStrokeActive(state)) {
-    const parkedPose = getParkedSnakePose(state);
-    if (parkedPose) {
-      return parkedPose;
-    }
-  }
-
-  const lastPose = [...snakeTrail].reverse().find((pose) => pose.visible);
-  if (lastPose) {
-    return {
-      point: { x: lastPose.x, y: lastPose.y },
-      tangent: pointFromAngle(lastPose.angle)
-    };
-  }
-
-  return {
-    point: state.cursorPoint,
-    tangent: state.cursorTangent
-  };
-};
-
 const getDeferredHeadState = (
   state: TracingState
 ): { strokeIndex: number; point: Point; tangent: Point; isDot: boolean } | null => {
@@ -1313,177 +1258,6 @@ const isDotStrokeAnimating = (
   getActivePreparedStroke(state)?.isDot === true &&
   dotTargetPhase !== "hidden" &&
   dotTargetPhase !== "waiting";
-
-const renderDeferredHead = (state: TracingState) => {
-  if (!deferredHeadEl) {
-    return;
-  }
-
-  const deferredHead = getDeferredHeadState(state);
-  if (!deferredHead) {
-    deferredHeadEl.style.opacity = "0";
-    return;
-  }
-
-  if (deferredHead.isDot) {
-    deferredHeadEl.style.opacity = "0";
-    return;
-  }
-
-  renderDeferredSnake(
-    deferredHeadEl,
-    {
-      point: deferredHead.point,
-      tangent: deferredHead.tangent,
-      angle: toAngle(deferredHead.tangent)
-    },
-    {
-      isDot: false,
-      travelledDistance: getActiveStrokeTravelDistance(state)
-    }
-  );
-};
-
-const renderDeferredSnake = (
-  rootEl: SVGGElement,
-  pose: { point: Point; tangent: Point; angle: number },
-  options: { isDot: boolean; headHref?: string; travelledDistance?: number } = { isDot: false }
-) => {
-  const headGroupEl = rootEl.querySelector<SVGGElement>("[data-deferred-part='head']");
-  const bodyGroupEl = rootEl.querySelector<SVGGElement>("[data-deferred-part='body']");
-  const tailGroupEl = rootEl.querySelector<SVGGElement>("[data-deferred-part='tail']");
-  const headImageEl = headGroupEl?.querySelector<SVGImageElement>("image");
-  const bodyImageEl = bodyGroupEl?.querySelector<SVGImageElement>("image");
-  const tailImageEl = tailGroupEl?.querySelector<SVGImageElement>("image");
-
-  if (!headGroupEl || !headImageEl) {
-    return;
-  }
-
-  const skin = getActiveSnakeSkin();
-  const bodySprite = skin.bodySprites[0] ?? SNAKE_SKINS.classic.bodySprites[0];
-  const deferredScale = skin.deferredScale;
-  const deferredSegmentSpacing = skin.deferredSegmentSpacing;
-  const headAsset =
-    options.headHref === undefined
-      ? resolveSpriteAssetForPose(skin.head, pose.angle)
-      : { href: options.headHref, metrics: skin.head.metrics };
-
-  rootEl.style.opacity = "1";
-  headImageEl.setAttribute("href", headAsset.href);
-  setSpritePose(
-    headGroupEl,
-    headImageEl,
-    {
-      x: pose.point.x,
-      y: pose.point.y,
-      angle: pose.angle,
-      distance: 0,
-      visible: true
-    },
-    headAsset.metrics.width * deferredScale,
-    headAsset.metrics.height * deferredScale,
-    headAsset.metrics.anchorX,
-    headAsset.metrics.anchorY,
-    headAsset.metrics.rotationOffset
-  );
-
-  if (options.isDot) {
-    if (bodyGroupEl) {
-      bodyGroupEl.style.opacity = "0";
-    }
-    if (tailGroupEl) {
-      tailGroupEl.style.opacity = "0";
-    }
-    return;
-  }
-
-  const segmentVisibility = getVisibleSnakeSegments(
-    options.travelledDistance ?? Number.POSITIVE_INFINITY,
-    1,
-    deferredSegmentSpacing
-  );
-  if (segmentVisibility.bodyCount === 0) {
-    if (bodyGroupEl) {
-      bodyGroupEl.style.opacity = "0";
-    }
-    if (tailGroupEl) {
-      tailGroupEl.style.opacity = "0";
-    }
-    return;
-  }
-
-  const bodyPoint = {
-    x: pose.point.x - pose.tangent.x * deferredSegmentSpacing,
-    y: pose.point.y - pose.tangent.y * deferredSegmentSpacing
-  };
-  const tailPoint = {
-    x: pose.point.x - pose.tangent.x * deferredSegmentSpacing * 2,
-    y: pose.point.y - pose.tangent.y * deferredSegmentSpacing * 2
-  };
-
-  if (bodyGroupEl && bodyImageEl) {
-    const bodyAsset = resolveSpriteAssetForPose(bodySprite, pose.angle);
-    bodyImageEl.setAttribute("href", bodyAsset.href);
-    setSpritePose(
-      bodyGroupEl,
-      bodyImageEl,
-      {
-        x: bodyPoint.x,
-        y: bodyPoint.y,
-        angle: pose.angle,
-        distance: 0,
-        visible: true
-      },
-      bodyAsset.metrics.width * deferredScale,
-      bodyAsset.metrics.height * deferredScale,
-      bodyAsset.metrics.anchorX,
-      bodyAsset.metrics.anchorY,
-      bodyAsset.metrics.rotationOffset
-    );
-  }
-
-  if (tailGroupEl && tailImageEl && segmentVisibility.showTail) {
-    const tailAsset = resolveSpriteAssetForPose(skin.tail, pose.angle);
-    tailImageEl.setAttribute("href", tailAsset.href);
-    setSpritePose(
-      tailGroupEl,
-      tailImageEl,
-      {
-        x: tailPoint.x,
-        y: tailPoint.y,
-        angle: pose.angle,
-        distance: 0,
-        visible: true
-      },
-      tailAsset.metrics.width * deferredScale,
-      tailAsset.metrics.height * deferredScale,
-      tailAsset.metrics.anchorX,
-      tailAsset.metrics.anchorY,
-      tailAsset.metrics.rotationOffset
-    );
-  } else if (tailGroupEl) {
-    tailGroupEl.style.opacity = "0";
-  }
-};
-
-const createDeferredSnakeMarkup = (attributes: string): string => {
-  const skin = getActiveSnakeSkin();
-  const bodySprite = skin.bodySprites[0] ?? SNAKE_SKINS.classic.bodySprites[0];
-  return `
-    <g ${attributes}>
-      <g class="writing-app__deferred-head-part" data-deferred-part="tail">
-        <image href="${skin.tail.href}" preserveAspectRatio="none"></image>
-      </g>
-      <g class="writing-app__deferred-head-part" data-deferred-part="body">
-        <image href="${bodySprite.href}" preserveAspectRatio="none"></image>
-      </g>
-      <g class="writing-app__deferred-head-part" data-deferred-part="head">
-        <image href="${skin.head.href}" preserveAspectRatio="none"></image>
-      </g>
-    </g>
-  `;
-};
 
 const hideDotTarget = () => {
   if (dotTargetAnimationFrameId !== null) {
@@ -1752,55 +1526,6 @@ const isPointerOnDeferredTarget = (point: Point, state: TracingState): boolean =
   return Math.hypot(point.x - deferredHead.point.x, point.y - deferredHead.point.y) <= hitRadius;
 };
 
-const registerCompletedDeferredHeads = (state: TracingState) => {
-  state.completedStrokes.forEach((strokeIndex) => {
-    if (completedDeferredHeadIndices.has(strokeIndex)) {
-      return;
-    }
-
-    completedDeferredHeadIndices.add(strokeIndex);
-    const drawableStroke = drawablePathStrokes[strokeIndex];
-    const preparedStroke = preparedTracingPath?.strokes[strokeIndex];
-    if (!drawableStroke?.deferred || preparedStroke?.isDot) {
-      return;
-    }
-
-    const terminalPose = getStrokeTerminalPose(strokeIndex);
-    if (!terminalPose) {
-      return;
-    }
-
-    completedDeferredHeads.push({
-      strokeIndex,
-      point: terminalPose.point,
-      tangent: terminalPose.tangent,
-      angle: toAngle(terminalPose.tangent)
-    });
-  });
-};
-
-const renderCompletedDeferredHeads = () => {
-  deferredTrailHeadEls.forEach((el, strokeIndex) => {
-    const head = completedDeferredHeads.find((item) => item.strokeIndex === strokeIndex);
-    if (!head) {
-      el.style.opacity = "0";
-      return;
-    }
-
-    renderDeferredSnake(el, {
-      point: head.point,
-      tangent: head.tangent,
-      angle: head.angle
-    });
-  });
-};
-
-const hideCompletedDeferredHeads = () => {
-  deferredTrailHeadEls.forEach((el) => {
-    el.style.opacity = "0";
-  });
-};
-
 const interpolateSamplePoint = (
   samples: TracingSample[],
   distanceAlongStroke: number
@@ -2049,13 +1774,7 @@ const advanceToNextTracingSection = () => {
 };
 
 const maybePauseAtTracingSectionBoundary = (state: TracingState): boolean => {
-  if (
-    isDemoPlaying ||
-    isSnakeSlithering ||
-    isSnakeExitComplete ||
-    isAwaitingSegmentRestart ||
-    tracingSections.length <= visibleSectionCount
-  ) {
+  if (isDemoPlaying || isAwaitingSegmentRestart || tracingSections.length <= visibleSectionCount) {
     return false;
   }
 
@@ -2076,16 +1795,18 @@ const maybePauseAtTracingSectionBoundary = (state: TracingState): boolean => {
   }
 
   const currentSectionDeferred = isSectionDeferred(currentSection);
+  const currentSectionIsDot = preparedTracingPath?.strokes[currentSection.strokeIndex]?.isDot === true;
   const nextSectionDeferred = isSectionDeferred(nextSection);
+  const nextSectionIsDot = preparedTracingPath?.strokes[nextSection.strokeIndex]?.isDot === true;
 
-  if (!currentSectionDeferred) {
+  if (!currentSectionDeferred || !currentSectionIsDot) {
     appendSnakePose(currentSection.endPoint, currentSection.endTangent, true);
     retireActiveSnake();
   }
 
   advanceToNextTracingSection();
   tracingSession?.end();
-  resetSnakeTrail(nextSection.startPoint, nextSection.startTangent, !nextSectionDeferred, {
+  resetSnakeTrail(nextSection.startPoint, nextSection.startTangent, !nextSectionIsDot, {
     preserveGrowth: true
   });
 
@@ -2180,6 +1901,16 @@ const sampleSnakePoseAtDistanceFromTrail = (
     visible: true
   };
 
+  if (targetDistance < 0) {
+    const radians = (firstPose.angle * Math.PI) / 180;
+    return {
+      ...firstPose,
+      x: firstPose.x + Math.cos(radians) * targetDistance,
+      y: firstPose.y + Math.sin(radians) * targetDistance,
+      distance: targetDistance
+    };
+  }
+
   if (trail.length <= 1 || targetDistance <= 0) {
     return {
       ...firstPose,
@@ -2235,9 +1966,11 @@ const renderSnakeLayer = (
     headDistance: number;
     headAngle: number;
     bodyCount: number;
+    segmentSpacing?: number;
     retractionDistance: number;
     chewUntil?: number;
     getAngleOverride?: (targetDistance: number) => number | null;
+    showTail?: boolean;
   },
   now = performance.now()
 ) => {
@@ -2248,7 +1981,7 @@ const renderSnakeLayer = (
 
   parts.layerEl.style.opacity = "1";
   const skin = getActiveSnakeSkin();
-  const segmentSpacing = skin.segmentSpacing;
+  const segmentSpacing = model.segmentSpacing ?? skin.segmentSpacing;
   const segmentVisibility = getVisibleSnakeSegments(
     model.headDistance,
     model.bodyCount,
@@ -2257,6 +1990,8 @@ const renderSnakeLayer = (
   const bodyCount = segmentVisibility.bodyCount;
   const getRetractingTargetDistance = (gapFromHead: number) =>
     model.headDistance + model.retractionDistance - gapFromHead;
+  const getRenderableTargetDistance = (targetDistance: number) =>
+    Math.max(0, Math.min(model.headDistance, targetDistance));
   const isInsideRetractionEndpoint = (targetDistance: number) =>
     model.retractionDistance > 0 &&
     targetDistance >= model.headDistance - SNAKE_RETRACTION_HIDE_GAP;
@@ -2305,7 +2040,7 @@ const renderSnakeLayer = (
 
     const pose = sampleSnakePoseAtDistanceFromTrail(
       model.trail,
-      Math.max(0, Math.min(model.headDistance, targetDistance)),
+      getRenderableTargetDistance(targetDistance),
       model.getAngleOverride
     );
     const bodySprite =
@@ -2330,15 +2065,22 @@ const renderSnakeLayer = (
   if (!tailImageEl) {
     return;
   }
+  if (model.showTail === false) {
+    parts.tailEl.style.opacity = "0";
+    return;
+  }
   const tailGapFromHead = (bodyCount + 1) * segmentSpacing;
   const tailTargetDistance = getRetractingTargetDistance(tailGapFromHead);
-  if (!segmentVisibility.showTail || isInsideRetractionEndpoint(tailTargetDistance)) {
+  if (
+    !segmentVisibility.showTail ||
+    isInsideRetractionEndpoint(tailTargetDistance)
+  ) {
     parts.tailEl.style.opacity = "0";
     return;
   }
   const tailPose = sampleSnakePoseAtDistanceFromTrail(
     model.trail,
-    Math.max(0, Math.min(model.headDistance, tailTargetDistance)),
+    getRenderableTargetDistance(tailTargetDistance),
     model.getAngleOverride
   );
   const tailAsset = resolveSpriteAssetForPose(skin.tail, tailPose.angle);
@@ -2361,20 +2103,37 @@ const renderSnake = (now = performance.now()) => {
     return;
   }
 
-  if (isSnakeExitComplete) {
-    parts.layerEl.style.opacity = "0";
+  const state = tracingSession?.getState();
+  const isDotSnakeOnly =
+    (dotTargetPhase !== "hidden" &&
+      state !== undefined &&
+      dotTargetStrokeIndex === state.activeStrokeIndex) ||
+    (state !== undefined && getActivePreparedStroke(state)?.isDot === true);
+  if (isDotSnakeOnly) {
+    hideSnakeSprites();
     return;
   }
 
+  const isShortDeferredSnake =
+    isDemoShortDeferredSnake ||
+    state !== undefined &&
+    isDeferredStrokeActive(state) &&
+    getActivePreparedStroke(state)?.isDot !== true;
+  const segmentSpacing =
+    isShortDeferredSnake && state !== undefined
+      ? getActiveDeferredSnakeSegmentSpacing(state)
+      : getActiveSnakeSegmentSpacing();
   renderSnakeLayer(
     parts,
     {
       trail: snakeTrail,
       headDistance: snakeHeadDistance,
       headAngle: snakeHeadAngle,
-      bodyCount: isSnakeSlithering ? snakeExitBodyCount : getCurrentBodyCount(),
+      bodyCount: isShortDeferredSnake ? 1 : getCurrentBodyCount(),
+      segmentSpacing,
       retractionDistance: 0,
-      chewUntil: snakeChewUntil
+      chewUntil: snakeChewUntil,
+      showTail: true
     },
     now
   );
@@ -2387,6 +2146,7 @@ const removeRetiringSnake = (snake: RetiringSnake) => {
   }
   snake.parts.layerEl.remove();
   retiringSnakes = retiringSnakes.filter((candidate) => candidate !== snake);
+  maybeShowCompletionSuccess();
 };
 
 const renderRetiringSnake = (snake: RetiringSnake) => {
@@ -2395,7 +2155,9 @@ const renderRetiringSnake = (snake: RetiringSnake) => {
     headDistance: snake.headDistance,
     headAngle: snake.headAngle,
     bodyCount: snake.bodyCount,
-    retractionDistance: snake.retractionDistance
+    segmentSpacing: snake.segmentSpacing,
+    retractionDistance: snake.retractionDistance,
+    showTail: snake.showTail
   });
 };
 
@@ -2449,11 +2211,19 @@ const retireActiveSnake = () => {
     return;
   }
 
-  const bodyCount = getCurrentBodyCount();
+  const state = tracingSession?.getState();
+  const isShortDeferredSnake =
+    state !== undefined &&
+    isDeferredStrokeActive(state) &&
+    getActivePreparedStroke(state)?.isDot !== true;
+  const bodyCount = isShortDeferredSnake ? 1 : getCurrentBodyCount();
+  const segmentSpacing = isShortDeferredSnake
+    ? getActiveDeferredSnakeSegmentSpacing(state)
+    : getActiveSnakeSegmentSpacing();
   const availableBodyCount = getVisibleSnakeSegments(
     snakeHeadDistance,
     bodyCount,
-    getActiveSnakeSegmentSpacing()
+    segmentSpacing
   ).bodyCount;
   const retiringSnake: RetiringSnake = {
     parts,
@@ -2461,8 +2231,10 @@ const retireActiveSnake = () => {
     headDistance: snakeHeadDistance,
     headAngle: snakeHeadAngle,
     bodyCount,
+    segmentSpacing,
     retractionDistance: 0,
-    retractionTarget: (availableBodyCount + 1) * getActiveSnakeSegmentSpacing(),
+    retractionTarget: (availableBodyCount + 1) * segmentSpacing,
+    showTail: true,
     animationFrameId: null
   };
 
@@ -2505,13 +2277,6 @@ const resetSnakeTrail = (
   snakeChewUntil = 0;
   queuedRestartAllowsContinuousDrag = false;
   isAwaitingSegmentRestart = false;
-  isSnakeExitComplete = false;
-  isSnakeSlithering = false;
-  snakeExitBodyCount = 0;
-  if (snakeExitAnimationFrameId !== null) {
-    cancelAnimationFrame(snakeExitAnimationFrameId);
-    snakeExitAnimationFrameId = null;
-  }
   renderSnake();
 };
 
@@ -2561,108 +2326,6 @@ const appendSnakePose = (point: Point, tangent: Point, visible: boolean) => {
   renderSnake();
 };
 
-const getExitTravelDistance = (startPoint: Point, direction: Point, bodyCount: number) => {
-  const normalizedDirection = normalizeVector(direction);
-  const candidates: number[] = [];
-
-  if (normalizedDirection.x > 0.001) {
-    candidates.push((currentSceneWidth + SNAKE_EXIT_MARGIN - startPoint.x) / normalizedDirection.x);
-  } else if (normalizedDirection.x < -0.001) {
-    candidates.push((-SNAKE_EXIT_MARGIN - startPoint.x) / normalizedDirection.x);
-  }
-
-  if (normalizedDirection.y > 0.001) {
-    candidates.push((currentSceneHeight + SNAKE_EXIT_MARGIN - startPoint.y) / normalizedDirection.y);
-  } else if (normalizedDirection.y < -0.001) {
-    candidates.push((-SNAKE_EXIT_MARGIN - startPoint.y) / normalizedDirection.y);
-  }
-
-  const exitToEdge = candidates
-    .filter((value) => Number.isFinite(value) && value > 0)
-    .reduce((smallest, value) => Math.min(smallest, value), Number.POSITIVE_INFINITY);
-
-  const baseExit = Number.isFinite(exitToEdge)
-    ? exitToEdge
-    : Math.max(currentSceneWidth, currentSceneHeight) + SNAKE_EXIT_MARGIN;
-
-  return baseExit + (bodyCount + 2) * getActiveSnakeSegmentSpacing() + SNAKE_EXIT_MARGIN;
-};
-
-const startSnakeExit = (
-  point: Point,
-  tangent: Point,
-  options: { showSuccess?: boolean; onComplete?: () => void } = {}
-) => {
-  if (isSnakeSlithering || isSnakeExitComplete) {
-    return;
-  }
-
-  queuedRestartAllowsContinuousDrag = false;
-  isAwaitingSegmentRestart = false;
-  const direction = normalizeVector(tangent);
-  if (!snakeTrail.some((pose) => pose.visible)) {
-    resetSnakeTrail(point, direction, true, { preserveGrowth: true });
-  }
-  const exitStartTime = performance.now();
-  snakeExitBodyCount = getCurrentBodyCount();
-  const totalTravelDistance = getExitTravelDistance(point, direction, snakeExitBodyCount);
-  deferredExitHeads = completedDeferredHeads.map((head) => ({
-    ...head,
-    travelDistance: getExitTravelDistance(head.point, head.tangent, 0)
-  }));
-  isSnakeSlithering = true;
-  updateSuccessVisibility(false);
-
-  const tick = (now: number) => {
-    const elapsedSeconds = Math.max(0, now - exitStartTime) / 1000;
-    const travelled = Math.min(totalTravelDistance, elapsedSeconds * SNAKE_EXIT_SPEED);
-    appendSnakePose(
-      {
-        x: point.x + direction.x * travelled,
-        y: point.y + direction.y * travelled
-      },
-      direction,
-      true
-    );
-
-    deferredExitHeads.forEach((head) => {
-      const el = deferredTrailHeadEls.get(head.strokeIndex);
-      if (!el) {
-        return;
-      }
-
-      const headTravelled = Math.min(head.travelDistance, elapsedSeconds * SNAKE_EXIT_SPEED);
-      renderDeferredSnake(el, {
-        point: {
-          x: head.point.x + head.tangent.x * headTravelled,
-          y: head.point.y + head.tangent.y * headTravelled
-        },
-        tangent: head.tangent,
-        angle: head.angle
-      });
-    });
-
-    const deferredHeadsDone = deferredExitHeads.every(
-      (head) => elapsedSeconds * SNAKE_EXIT_SPEED >= head.travelDistance
-    );
-    if (travelled >= totalTravelDistance && deferredHeadsDone) {
-      isSnakeSlithering = false;
-      isSnakeExitComplete = true;
-      snakeExitAnimationFrameId = null;
-      clearRetiringSnakes();
-      hideSnakeSprites();
-      hideCompletedDeferredHeads();
-      updateSuccessVisibility(options.showSuccess ?? true);
-      options.onComplete?.();
-      return;
-    }
-
-    snakeExitAnimationFrameId = requestAnimationFrame(tick);
-  };
-
-  snakeExitAnimationFrameId = requestAnimationFrame(tick);
-};
-
 const captureFruitThroughDistance = (overallDistance: number) => {
   let changed = false;
 
@@ -2696,7 +2359,7 @@ const updateWaypointMarker = () => {
     return;
   }
 
-  const marker = tracingSections[visibleSectionCount];
+  const marker = getCurrentTracingSection();
 
   if (!marker || isSectionDeferred(marker)) {
     waypointEl.classList.add("writing-app__boundary-star--hidden");
@@ -2704,8 +2367,8 @@ const updateWaypointMarker = () => {
   }
 
   waypointEl.classList.remove("writing-app__boundary-star--hidden");
-  waypointEl.setAttribute("x", `${marker.startPoint.x}`);
-  waypointEl.setAttribute("y", `${marker.startPoint.y}`);
+  waypointEl.setAttribute("x", `${marker.endPoint.x}`);
+  waypointEl.setAttribute("y", `${marker.endPoint.y}`);
 };
 
 const syncSnakeToState = (state: TracingState) => {
@@ -2717,7 +2380,7 @@ const syncSnakeToState = (state: TracingState) => {
     return;
   }
 
-  if (isDeferredStrokeActive(state)) {
+  if (isDeferredStrokeActive(state) && getActivePreparedStroke(state)?.isDot === true) {
     renderSnake();
     return;
   }
@@ -2736,6 +2399,7 @@ const stopDemoAnimation = () => {
   }
 
   isDemoPlaying = false;
+  isDemoShortDeferredSnake = false;
   showMeButton.disabled = false;
   showMeButton.textContent = "Demo";
 
@@ -2748,20 +2412,11 @@ const resetRoundProgress = () => {
   tracingSession?.reset();
   activePointerId = null;
   activePointerPosition = null;
+  isCompletionRetractionPending = false;
   updateSuccessVisibility(false);
-  isSnakeExitComplete = false;
-  isSnakeSlithering = false;
-  snakeExitBodyCount = 0;
-  completedDeferredHeads = [];
-  completedDeferredHeadIndices = new Set<number>();
-  deferredExitHeads = [];
+  isDemoShortDeferredSnake = false;
   hideDotTarget();
   clearRetiringSnakes();
-
-  if (snakeExitAnimationFrameId !== null) {
-    cancelAnimationFrame(snakeExitAnimationFrameId);
-    snakeExitAnimationFrameId = null;
-  }
 
   traceStrokeEls.forEach((el, index) => {
     const length = traceStrokeLengths[index] ?? 0.001;
@@ -2777,8 +2432,6 @@ const resetRoundProgress = () => {
   } else {
     hideSnakeSprites();
   }
-  hideCompletedDeferredHeads();
-
   resetFruitState();
   resetSnakeMoveSoundProgress();
   requestTraceRender();
@@ -2802,11 +2455,8 @@ const renderTraceFrame = () => {
   }
 
   const state = tracingSession.getState();
-  registerCompletedDeferredHeads(state);
   syncDotTargetToState(state);
   renderDotTarget();
-  renderDeferredHead(state);
-  renderCompletedDeferredHeads();
   syncNextSectionHighlight();
   syncCurrentSectionAnnotations();
   const completed = new Set(state.completedStrokes);
@@ -2825,21 +2475,24 @@ const renderTraceFrame = () => {
     el.style.strokeDashoffset = `${length}`;
   });
 
-  if (!isDemoPlaying && !isSnakeSlithering && !isSnakeExitComplete && !isAwaitingSegmentRestart) {
+  if (state.status === "complete") {
+    if (!isCompletionRetractionPending) {
+      isCompletionRetractionPending = true;
+      appendSnakePose(state.cursorPoint, state.cursorTangent, true);
+      retireActiveSnake();
+    }
+    hideSnakeSprites();
+    maybeShowCompletionSuccess();
+    return;
+  }
+
+  if (!isDemoPlaying && !isAwaitingSegmentRestart) {
     syncSnakeToState(state);
   } else {
     renderSnake();
   }
 
-  if (state.status === "complete") {
-    if (!isDemoPlaying && !isSnakeSlithering && !isSnakeExitComplete) {
-      const exitPose = getSnakeExitPose(state);
-      startSnakeExit(exitPose.point, exitPose.tangent);
-    }
-    updateSuccessVisibility(isSnakeExitComplete);
-    return;
-  }
-
+  isCompletionRetractionPending = false;
   updateSuccessVisibility(false);
 };
 
@@ -2870,49 +2523,18 @@ const renderDemoTraceFrame = (frame: AnimationFrame) => {
   });
 };
 
-const registerDemoCompletedDeferredHeads = (completedStrokes: number[]) => {
-  completedStrokes.forEach((strokeIndex) => {
-    if (completedDeferredHeadIndices.has(strokeIndex)) {
-      return;
-    }
-
-    completedDeferredHeadIndices.add(strokeIndex);
-    const drawableStroke = drawablePathStrokes[strokeIndex];
-    const preparedStroke = preparedTracingPath?.strokes[strokeIndex];
-    if (!drawableStroke?.deferred || preparedStroke?.isDot) {
-      return;
-    }
-
-    const terminalPose = getStrokeTerminalPose(strokeIndex);
-    if (!terminalPose) {
-      return;
-    }
-
-    completedDeferredHeads.push({
-      strokeIndex,
-      point: terminalPose.point,
-      tangent: terminalPose.tangent,
-      angle: toAngle(terminalPose.tangent)
-    });
-  });
-};
-
 const renderDemoDeferredFrame = (frame: AnimationFrame, tangent: Point) => {
   const activeStroke = drawablePathStrokes[frame.activeStrokeIndex];
   const activePreparedStroke = preparedTracingPath?.strokes[frame.activeStrokeIndex];
 
   if (!activeStroke?.deferred || frame.activeStrokeIndex < 0 || !frame.isPenDown) {
-    if (deferredHeadEl) {
-      deferredHeadEl.style.opacity = "0";
-    }
+    isDemoShortDeferredSnake = false;
     hideDotTarget();
     return false;
   }
 
   if (activePreparedStroke?.isDot) {
-    if (deferredHeadEl) {
-      deferredHeadEl.style.opacity = "0";
-    }
+    isDemoShortDeferredSnake = false;
     dotTargetStrokeIndex = frame.activeStrokeIndex;
     dotTargetPoint = frame.point;
     dotTargetPhase = "waiting";
@@ -2921,37 +2543,9 @@ const renderDemoDeferredFrame = (frame: AnimationFrame, tangent: Point) => {
   }
 
   hideDotTarget();
-  if (deferredHeadEl) {
-    renderDeferredSnake(
-      deferredHeadEl,
-      {
-        point: frame.point,
-        tangent,
-        angle: toAngle(tangent)
-      },
-      {
-        isDot: false,
-        travelledDistance: (activePreparedStroke?.totalLength ?? 0) * frame.activeStrokeProgress
-      }
-    );
-  }
+  isDemoShortDeferredSnake = true;
 
-  return true;
-};
-
-const getCurrentSnakeExitPose = (fallbackPoint: Point, fallbackTangent: Point): { point: Point; tangent: Point } => {
-  const lastPose = [...snakeTrail].reverse().find((pose) => pose.visible);
-  if (!lastPose) {
-    return {
-      point: fallbackPoint,
-      tangent: fallbackTangent
-    };
-  }
-
-  return {
-    point: { x: lastPose.x, y: lastPose.y },
-    tangent: pointFromAngle(lastPose.angle)
-  };
+  return false;
 };
 
 const playDemo = () => {
@@ -2985,8 +2579,6 @@ const playDemo = () => {
     const isDeferredFrame = renderDemoDeferredFrame(frame, demoTangent);
 
     renderDemoTraceFrame(frame);
-    registerDemoCompletedDeferredHeads(frame.completedStrokes);
-    renderCompletedDeferredHeads();
     if (frame.isPenDown && !isDeferredFrame) {
       appendSnakePose(frame.point, demoTangent, true);
       lastDemoTangent = demoTangent;
@@ -3001,20 +2593,11 @@ const playDemo = () => {
 
     demoAnimationFrameId = null;
     hideDotTarget();
-    if (deferredHeadEl) {
-      deferredHeadEl.style.opacity = "0";
-    }
-    const exitPose = getCurrentSnakeExitPose(frame.point, demoTangent);
-    startSnakeExit(exitPose.point, exitPose.tangent, {
-      showSuccess: false,
-      onComplete: () => {
-        isDemoPlaying = false;
-        showMeButton.disabled = false;
-        showMeButton.textContent = "Demo";
-        syncFruitDisplay();
-        resetRoundProgress();
-      }
-    });
+    isDemoPlaying = false;
+    showMeButton.disabled = false;
+    showMeButton.textContent = "Demo";
+    syncFruitDisplay();
+    resetRoundProgress();
   };
 
   demoAnimationFrameId = requestAnimationFrame(tick);
@@ -3038,7 +2621,6 @@ const chooseBodySpriteForSegment = (skin: SnakeSkin): BodySprite => {
 const setupScene = (path: WritingPath, width: number, height: number, offsetY: number) => {
   clearRetiringSnakes();
   currentSceneWidth = width;
-  currentSceneHeight = height;
   const skin = getActiveSnakeSkin();
   const preparedPath = compileTracingPath(path);
   preparedTracingPath = preparedPath;
@@ -3086,17 +2668,6 @@ const setupScene = (path: WritingPath, width: number, height: number, offsetY: n
       </g>
     `;
   }).join("");
-  const deferredTrailHeadMarkup = drawableStrokes
-    .map((stroke, index) => (stroke.deferred ? index : null))
-    .filter((index): index is number => index !== null)
-    .map(
-      (strokeIndex) =>
-        createDeferredSnakeMarkup(
-          `class="writing-app__deferred-head writing-app__deferred-head--trail" data-deferred-trail-index="${strokeIndex}"`
-        )
-    )
-    .join("");
-
   traceSvg.setAttribute("viewBox", `0 0 ${width} ${height}`);
   traceSvg.innerHTML = `
     <rect class="writing-app__bg" x="0" y="0" width="${width}" height="${height}"></rect>
@@ -3148,10 +2719,6 @@ const setupScene = (path: WritingPath, width: number, height: number, offsetY: n
         ></image>
       </g>
     </g>
-    <g class="writing-app__deferred-heads" id="deferred-trail-heads">
-      ${deferredTrailHeadMarkup}
-    </g>
-    ${createDeferredSnakeMarkup('class="writing-app__deferred-head" id="deferred-head"')}
     <g class="writing-app__dot-snake" id="dot-snake">
       <image
         id="dot-snake-image"
@@ -3183,12 +2750,6 @@ const setupScene = (path: WritingPath, width: number, height: number, offsetY: n
   snakeBodyEls = Array.from(traceSvg.querySelectorAll<SVGGElement>(".writing-app__snake-body")).sort(
     (a, b) => Number(a.dataset.snakeBodyIndex) - Number(b.dataset.snakeBodyIndex)
   );
-  deferredHeadEl = traceSvg.querySelector<SVGGElement>("#deferred-head");
-  deferredTrailHeadEls = new Map(
-    Array.from(
-      traceSvg.querySelectorAll<SVGGElement>("[data-deferred-trail-index]")
-    ).map((el) => [Number(el.dataset.deferredTrailIndex), el])
-  );
   dotSnakeEl = traceSvg.querySelector<SVGGElement>("#dot-snake");
   dotSnakeImageEl = traceSvg.querySelector<SVGImageElement>("#dot-snake-image");
   eagleEl = traceSvg.querySelector<SVGGElement>("#dot-eagle");
@@ -3208,13 +2769,10 @@ const setupScene = (path: WritingPath, width: number, height: number, offsetY: n
   syncNextSectionHighlight();
   const initialState = tracingSession.getState();
   resetSnakeTrail(initialState.cursorPoint, initialState.cursorTangent);
-  completedDeferredHeads = [];
-  completedDeferredHeadIndices = new Set<number>();
-  deferredExitHeads = [];
   hideDotTarget();
-  hideCompletedDeferredHeads();
   resetFruitState();
   resetSnakeMoveSoundProgress();
+  isCompletionRetractionPending = false;
   updateSuccessVisibility(false);
   requestTraceRender();
 };
