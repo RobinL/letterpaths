@@ -1,4 +1,4 @@
-import type { BezierStep, Curve, JoinMetric, Point, WritingPath } from "../types";
+import type { BezierLetter, BezierStep, Curve, JoinMetric, Point, WritingPath } from "../types";
 import { defaultCursiveEntryVariant, type CursiveExitVariant } from "../data";
 import {
   buildJoinCurve,
@@ -16,7 +16,6 @@ import {
   getEntryVariantForExitVariant,
   getExitVariantForLetter,
   getGuides,
-  isLastDrawableChar,
   measureBounds,
   measureCurveBounds,
   measureJoinSpacing,
@@ -34,7 +33,7 @@ export function joinCursiveWord(
   text: string,
   options: JoinCursiveOptions = {}
 ): WritingPath {
-  const letterMap = options.letters ?? {};
+  const letterMap: Record<string, BezierLetter> = options.letters ?? {};
   const target = resolveTargetGuides(options);
   const joinSpacing = resolveJoinSpacingOptions(options.joinSpacing);
   const wordSpacing = resolveWordSpacing(target, options);
@@ -90,7 +89,7 @@ export function joinCursiveWord(
       continue;
     }
 
-    const isLast = isLastDrawableChar(text, charIndex);
+    const isLastInWord = isLastDrawableCharInWord(text, charIndex, letterMap);
     const guides = getGuides(letter);
     const normalizedStrokes = normalizeStrokes(letter.strokes, guides, target);
     const normalizedCurves = normalizedStrokes.flatMap((stroke) => stroke.curves);
@@ -110,8 +109,8 @@ export function joinCursiveWord(
           stroke.curves,
           keepInitialLeadIn && isFirstDrawableLetter,
           prevExitCurve !== null || (keepInitialLeadIn && isFirstDrawableLetter),
-          !isLast || keepFinalLeadOut,
-          keepFinalLeadOut && isLast
+          !isLastInWord || keepFinalLeadOut,
+          keepFinalLeadOut && isLastInWord
         )
       }))
       .filter((stroke) => stroke.curves.length > 0);
@@ -222,4 +221,23 @@ export function joinCursiveWord(
     guides: target,
     joinMetrics
   };
+}
+
+function isLastDrawableCharInWord(
+  text: string,
+  index: number,
+  letterMap: Record<string, BezierLetter>
+): boolean {
+  for (let i = index + 1; i < text.length; i += 1) {
+    const rawChar = text[i] ?? "";
+    if (rawChar.trim() === "") {
+      return true;
+    }
+    const char = rawChar.toLowerCase();
+    if (findCursiveLetter(letterMap, char, defaultCursiveEntryVariant)) {
+      return false;
+    }
+    return true;
+  }
+  return true;
 }

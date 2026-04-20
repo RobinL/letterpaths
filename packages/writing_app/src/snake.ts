@@ -2250,7 +2250,10 @@ const maybePauseAtTracingSectionBoundary = (state: TracingState): boolean => {
 
   const overallDistance = getOverallDistanceForState(state);
   const sectionLength = currentSection.endDistance - currentSection.startDistance;
-  const boundaryTolerance = Math.min(8, Math.max(0.1, sectionLength * 0.25));
+  const boundaryTolerance =
+    nextSection.startReason === "stroke-start"
+      ? 0.1
+      : Math.min(8, Math.max(0.1, sectionLength * 0.25));
   if (overallDistance < currentSection.endDistance - boundaryTolerance) {
     return false;
   }
