@@ -159,6 +159,41 @@ test("tracing sections end short deferred dots before the next pen-down point", 
   });
 });
 
+test("offset start arrows at deferred stroke starts ignore pen-up travel", () => {
+  const path = buildHandwritingPath("st", {
+    style: "cursive",
+    keepInitialLeadIn: true,
+    keepFinalLeadOut: true
+  });
+  const prepared = compileTracingPath(path);
+  const annotations = compileFormationAnnotations(prepared, {
+    turningPoints: false,
+    drawOrderNumbers: false,
+    midpointArrows: false,
+    startArrows: {
+      offset: 30
+    }
+  });
+  const crossStartArrow = annotations.find(
+    (annotation) =>
+      annotation.kind === "start-arrow" &&
+      path.strokes[annotation.source.strokeIndex]?.deferred
+  );
+
+  assert.ok(crossStartArrow, "Expected st to include a start arrow for the deferred t cross.");
+
+  const points = crossStartArrow.commands.map((command) => command.to);
+  const firstSegmentLengths = points
+    .slice(1, 8)
+    .map((point, index) => Math.hypot(point.x - points[index].x, point.y - points[index].y));
+  const maxFirstSegmentLength = Math.max(...firstSegmentLengths);
+
+  assert.ok(
+    maxFirstSegmentLength < 10,
+    `Expected the deferred cross arrow to stay smooth, got initial segment length ${maxFirstSegmentLength}.`
+  );
+});
+
 test("formation annotations include all supported annotation kinds by default", () => {
   const annotations = compileFormationAnnotations(preparedSys());
   const kinds = new Set(annotations.map((annotation) => annotation.kind));

@@ -189,6 +189,11 @@ type SectionCut = {
   matchedEarlierDistance?: number;
 };
 
+type StrokePosition = {
+  stroke: PreparedTracingPath["strokes"][number];
+  distanceAlongStroke: number;
+};
+
 const REFERENCE_GUIDE_HEIGHT = 380;
 const DEFAULT_HEAD_LENGTH_RATIO = 26 / REFERENCE_GUIDE_HEIGHT;
 const DEFAULT_HEAD_WIDTH_RATIO = 22 / REFERENCE_GUIDE_HEIGHT;
@@ -785,35 +790,10 @@ function getPointAtOverallDistance(
   targetDistance: number,
   bias: PoseAtDistanceBias = "center"
 ): Point {
-  let remaining = targetDistance;
-
-  for (let index = 0; index < path.strokes.length; index += 1) {
-    const stroke = path.strokes[index];
-    if (!stroke) {
-      continue;
-    }
-
-    const isAtStrokeEnd = Math.abs(remaining - stroke.totalLength) <= DISTANCE_EPSILON;
-    if (
-      bias === "forward" &&
-      isAtStrokeEnd &&
-      index < path.strokes.length - 1
-    ) {
-      remaining = 0;
-      continue;
-    }
-
-    if (remaining <= stroke.totalLength + DISTANCE_EPSILON || index === path.strokes.length - 1) {
-      return interpolateSamplePoint(
-        stroke.samples,
-        Math.max(0, Math.min(remaining, stroke.totalLength))
-      );
-    }
-
-    remaining -= stroke.totalLength;
-  }
-
-  return { x: 0, y: 0 };
+  const position = findStrokePositionAtOverallDistance(path, targetDistance, bias);
+  return position
+    ? interpolateSamplePose(position.stroke.samples, position.distanceAlongStroke).point
+    : { x: 0, y: 0 };
 }
 
 function getPoseAtOverallDistance(
@@ -823,52 +803,50 @@ function getPoseAtOverallDistance(
 ): { point: Point; tangent: Point } {
   const totalLength = getTotalLength(path);
   const clampedDistance = Math.max(0, Math.min(targetDistance, totalLength));
-  const point = getPointAtOverallDistance(path, clampedDistance, bias);
-  const delta = Math.min(8, Math.max(2, totalLength / 200));
-
-  let fromDistance = Math.max(0, clampedDistance - delta);
-  let toDistance = Math.min(totalLength, clampedDistance + delta);
-
-  if (bias === "forward") {
-    fromDistance = clampedDistance;
-  } else if (bias === "backward") {
-    toDistance = clampedDistance;
-  }
-
-  if (Math.abs(toDistance - fromDistance) < DISTANCE_EPSILON) {
-    if (clampedDistance <= delta) {
-      toDistance = Math.min(totalLength, clampedDistance + delta);
-    } else {
-      fromDistance = Math.max(0, clampedDistance - delta);
-    }
-  }
-
-  const fromPoint = getPointAtOverallDistance(
-    path,
-    fromDistance,
-    bias === "forward" ? "forward" : "center"
-  );
-  const toPoint = getPointAtOverallDistance(
-    path,
-    toDistance,
-    bias === "backward" ? "backward" : "center"
-  );
-
-  return {
-    point,
-    tangent: normalizeVector({
-      x: toPoint.x - fromPoint.x,
-      y: toPoint.y - fromPoint.y
-    })
-  };
+  const position = findStrokePositionAtOverallDistance(path, clampedDistance, bias);
+  return position
+    ? interpolateSamplePose(position.stroke.samples, position.distanceAlongStroke)
+    : { point: { x: 0, y: 0 }, tangent: { x: 1, y: 0 } };
 }
 
-function interpolateSamplePoint(
+function findStrokePositionAtOverallDistance(
+  path: PreparedTracingPath,
+  targetDistance: number,
+  bias: PoseAtDistanceBias
+): StrokePosition | null {
+  let remaining = targetDistance;
+
+  for (let index = 0; index < path.strokes.length; index += 1) {
+    const stroke = path.strokes[index];
+    if (!stroke) {
+      continue;
+    }
+
+    const isAtStrokeEnd = Math.abs(remaining - stroke.totalLength) <= DISTANCE_EPSILON;
+    if (bias === "forward" && isAtStrokeEnd && index < path.strokes.length - 1) {
+      remaining = 0;
+      continue;
+    }
+
+    if (remaining <= stroke.totalLength + DISTANCE_EPSILON || index === path.strokes.length - 1) {
+      return {
+        stroke,
+        distanceAlongStroke: Math.max(0, Math.min(remaining, stroke.totalLength))
+      };
+    }
+
+    remaining -= stroke.totalLength;
+  }
+
+  return null;
+}
+
+function interpolateSamplePose(
   samples: TracingSample[],
   distanceAlongStroke: number
-): Point {
+): { point: Point; tangent: Point } {
   if (samples.length === 0) {
-    return { x: 0, y: 0 };
+    return { point: { x: 0, y: 0 }, tangent: { x: 1, y: 0 } };
   }
 
   for (let index = 1; index < samples.length; index += 1) {
@@ -882,14 +860,25 @@ function interpolateSamplePoint(
       const span = current.distanceAlongStroke - previous.distanceAlongStroke;
       const ratio = span > 0 ? (distanceAlongStroke - previous.distanceAlongStroke) / span : 0;
       return {
-        x: previous.x + (current.x - previous.x) * ratio,
-        y: previous.y + (current.y - previous.y) * ratio
+        point: {
+          x: previous.x + (current.x - previous.x) * ratio,
+          y: previous.y + (current.y - previous.y) * ratio
+        },
+        tangent: normalizeVector({
+          x: previous.tangent.x + (current.tangent.x - previous.tangent.x) * ratio,
+          y: previous.tangent.y + (current.tangent.y - previous.tangent.y) * ratio
+        })
       };
     }
   }
 
   const last = samples[samples.length - 1];
-  return last ? { x: last.x, y: last.y } : { x: 0, y: 0 };
+  return last
+    ? {
+        point: { x: last.x, y: last.y },
+        tangent: normalizeVector(last.tangent)
+      }
+    : { point: { x: 0, y: 0 }, tangent: { x: 1, y: 0 } };
 }
 
 function offsetPosePoint(
