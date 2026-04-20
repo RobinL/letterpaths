@@ -43,6 +43,11 @@ const minimumCurveDx = (curve) => {
 
 const distance = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 
+const countSegments = (path, segment) =>
+  path.strokes
+    .flatMap((stroke) => stroke.curveSegments ?? [])
+    .filter((curveSegment) => curveSegment === segment).length;
+
 test("join spacing searches sidebearing gaps from -30 to 80 by default", () => {
   const metric = metricFor("cu", {
     joinSpacing: {
@@ -190,4 +195,17 @@ test("join handle scales shorten the outgoing and incoming control handles", () 
     Math.abs(distance(scaled.p2, scaled.p3) - distance(base.p2, base.p3) * 0.25) <
       0.000001
   );
+});
+
+test("lead-in and lead-out options apply to every word", () => {
+  const options = {
+    style: "cursive",
+    keepInitialLeadIn: true,
+    keepFinalLeadOut: true
+  };
+  const single = buildHandwritingPath("a", options);
+  const multi = buildHandwritingPath("a a", options);
+
+  assert.equal(countSegments(multi, "lead-in"), countSegments(single, "lead-in") * 2);
+  assert.equal(countSegments(multi, "lead-out"), countSegments(single, "lead-out") * 2);
 });
