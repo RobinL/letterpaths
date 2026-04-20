@@ -124,6 +124,41 @@ test("tracing sections start lifted strokes at the next pen-down point", () => {
   ) < 0.001);
 });
 
+test("tracing sections end short deferred dots before the next pen-down point", () => {
+  ["it", "init"].forEach((word) => {
+    const path = buildHandwritingPath(word, {
+      style: "cursive",
+      keepInitialLeadIn: true,
+      keepFinalLeadOut: true
+    });
+    const prepared = compileTracingPath(path);
+    const analysis = analyzeTracingSections(prepared, { includeRetraceTurns: false });
+    const dotStrokeIndex = path.strokes.findIndex(
+      (stroke) => stroke.deferred && stroke.curveSegments?.includes("dot")
+    );
+    assert.notEqual(dotStrokeIndex, -1, `Expected ${word} to include a deferred dot.`);
+
+    const dotSection = analysis.sections.find((section) => section.strokeIndex === dotStrokeIndex);
+    const dotEnd = prepared.strokes[dotStrokeIndex]?.samples.at(-1);
+    const nextStrokeStart = prepared.strokes[dotStrokeIndex + 1]?.samples[0];
+    assert.ok(dotSection, `Expected ${word} to include a tracing section for the dot.`);
+    assert.ok(dotEnd, `Expected ${word} dot stroke to have samples.`);
+    assert.ok(nextStrokeStart, `Expected ${word} dot to be followed by another deferred stroke.`);
+
+    assert.ok(
+      Math.hypot(dotSection.endPoint.x - dotEnd.x, dotSection.endPoint.y - dotEnd.y) < 0.001,
+      `Expected ${word} dot section to end at its own dot stroke.`
+    );
+    assert.ok(
+      Math.hypot(
+        dotSection.endPoint.x - nextStrokeStart.x,
+        dotSection.endPoint.y - nextStrokeStart.y
+      ) > 1,
+      `Expected ${word} dot section not to jump to the next stroke start.`
+    );
+  });
+});
+
 test("formation annotations include all supported annotation kinds by default", () => {
   const annotations = compileFormationAnnotations(preparedSys());
   const kinds = new Set(annotations.map((annotation) => annotation.kind));

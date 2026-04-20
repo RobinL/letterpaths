@@ -803,7 +803,7 @@ function getPointAtOverallDistance(
       continue;
     }
 
-    if (remaining <= stroke.totalLength || index === path.strokes.length - 1) {
+    if (remaining <= stroke.totalLength + DISTANCE_EPSILON || index === path.strokes.length - 1) {
       return interpolateSamplePoint(
         stroke.samples,
         Math.max(0, Math.min(remaining, stroke.totalLength))

@@ -2274,6 +2274,8 @@ const maybePauseAtTracingSectionBoundary = (state: TracingState): boolean => {
   }
 
   const boundary = getTracingSectionBoundary(nextSection);
+  const currentSectionDeferred = isSectionDeferred(currentSection);
+  const nextSectionDeferred = isSectionDeferred(nextSection);
   snakeUnretractStartHeadDistance = null;
   snakeUnretractStartRetraction = 0;
   parkedBoundaryDistance = currentSection.endDistance;
@@ -2284,11 +2286,13 @@ const maybePauseAtTracingSectionBoundary = (state: TracingState): boolean => {
   queuedTurnTangent = boundary?.outgoingTangent ?? null;
   segmentRestartPointerStart = activePointerPosition ?? state.cursorPoint;
 
-  appendSnakePose(
-    currentSection.endPoint,
-    isSectionDeferred(nextSection) ? currentSection.endTangent : nextSection.startTangent,
-    true
-  );
+  if (!currentSectionDeferred) {
+    appendSnakePose(
+      currentSection.endPoint,
+      nextSectionDeferred ? currentSection.endTangent : nextSection.startTangent,
+      true
+    );
+  }
   if (queuedTurnTangent && boundary) {
     queuedTurnTrailDistance = snakeHeadDistance;
   }
@@ -2296,7 +2300,7 @@ const maybePauseAtTracingSectionBoundary = (state: TracingState): boolean => {
   advanceToNextTracingSection();
   tracingSession?.end();
 
-  if (isSectionDeferred(nextSection)) {
+  if (nextSectionDeferred) {
     isAwaitingSegmentRestart = false;
     queuedRestartPoint = null;
     queuedRestartTangent = null;
