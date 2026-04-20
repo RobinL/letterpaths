@@ -13,6 +13,8 @@ export type FormationAnnotationVisibility = Record<FormationAnnotation["kind"], 
 export type FormationAnnotationMarkupOptions = {
   midpointDensity: number;
   turnRadius: number;
+  arrowLengthScale: number;
+  arrowStrokeWidth: number;
   numberSize: number;
   numberPathOffset: number;
   numberColor: string;
@@ -77,25 +79,27 @@ export const buildFormationAnnotationMarkup = (
   options: FormationAnnotationMarkupOptions
 ): string => {
   const sectionArrowLength = Math.abs(path.guides.baseline - path.guides.xHeight) / 3;
+  const arrowLengthScale = Math.max(0, options.arrowLengthScale);
+  const arrowheadScale = Math.max(0.5, Math.min(2, arrowLengthScale));
   const arrowLaneOffset = options.offsetArrowLanes ? options.turnRadius : 0;
   const annotations = compileFormationAnnotations(preparedPath, {
     turningPoints: {
       offset: options.turnRadius,
-      stemLength: sectionArrowLength * 0.36,
+      stemLength: sectionArrowLength * 0.36 * arrowLengthScale,
       head: {
-        length: SECTION_ARROWHEAD_LENGTH,
-        width: SECTION_ARROWHEAD_WIDTH,
-        tipExtension: SECTION_ARROWHEAD_TIP_OVERHANG
+        length: SECTION_ARROWHEAD_LENGTH * arrowheadScale,
+        width: SECTION_ARROWHEAD_WIDTH * arrowheadScale,
+        tipExtension: SECTION_ARROWHEAD_TIP_OVERHANG * arrowheadScale
       }
     },
     startArrows: {
-      length: sectionArrowLength * 0.42,
-      minLength: sectionArrowLength * 0.18,
+      length: sectionArrowLength * 0.42 * arrowLengthScale,
+      minLength: sectionArrowLength * 0.18 * arrowLengthScale,
       offset: arrowLaneOffset,
       head: {
-        length: SECTION_ARROWHEAD_LENGTH,
-        width: SECTION_ARROWHEAD_WIDTH,
-        tipExtension: SECTION_ARROWHEAD_TIP_OVERHANG
+        length: SECTION_ARROWHEAD_LENGTH * arrowheadScale,
+        width: SECTION_ARROWHEAD_WIDTH * arrowheadScale,
+        tipExtension: SECTION_ARROWHEAD_TIP_OVERHANG * arrowheadScale
       }
     },
     drawOrderNumbers: {
@@ -103,12 +107,12 @@ export const buildFormationAnnotationMarkup = (
     },
     midpointArrows: {
       density: options.midpointDensity,
-      length: sectionArrowLength * 0.36,
+      length: sectionArrowLength * 0.36 * arrowLengthScale,
       offset: arrowLaneOffset,
       head: {
-        length: SECTION_ARROWHEAD_LENGTH,
-        width: SECTION_ARROWHEAD_WIDTH,
-        tipExtension: SECTION_ARROWHEAD_TIP_OVERHANG
+        length: SECTION_ARROWHEAD_LENGTH * arrowheadScale,
+        width: SECTION_ARROWHEAD_WIDTH * arrowheadScale,
+        tipExtension: SECTION_ARROWHEAD_TIP_OVERHANG * arrowheadScale
       }
     }
   });
@@ -850,6 +854,7 @@ const renderAnnotationMarkup = (
     <path
       class="${getAnnotationClassName(annotation)}"
       d="${annotationCommandsToSvgPathData(annotation.commands)}"
+      stroke-width="${options.arrowStrokeWidth}"
     ></path>
     ${
       annotation.head

@@ -433,7 +433,7 @@ body {
 .writing-app__section-arrow {
   fill: none;
   stroke: var(--ink);
-  stroke-width: 5.6;
+  stroke-width: var(--formation-arrow-stroke-width, 5.6);
   stroke-linecap: butt;
   stroke-linejoin: round;
   pointer-events: none;

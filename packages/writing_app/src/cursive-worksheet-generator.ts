@@ -49,6 +49,8 @@ type RangeControlOptions = {
 const DEFAULT_TEXT = "zephyr";
 const DEFAULT_MIDPOINT_DENSITY = 320;
 const DEFAULT_TURN_RADIUS = 13;
+const DEFAULT_ARROW_LENGTH_SCALE = 1;
+const DEFAULT_ARROW_STROKE_WIDTH = 5.6;
 const DEFAULT_NUMBER_SIZE = DEFAULT_TURN_RADIUS * 2;
 const DEFAULT_NUMBER_PATH_OFFSET = 0;
 const DEFAULT_NUMBER_COLOR = "#3f454b";
@@ -95,7 +97,7 @@ const WORKSHEET_SVG_EXPORT_STYLES = `
   }
   .writing-app__section-arrow {
     fill: none;
-    stroke-width: 5.6;
+    stroke-width: var(--formation-arrow-stroke-width, 5.6);
     stroke-linecap: butt;
     stroke-linejoin: round;
   }
@@ -143,6 +145,8 @@ const createSettings = (
 ): WorksheetAnnotationSettings => ({
   midpointDensity: DEFAULT_MIDPOINT_DENSITY,
   turnRadius: DEFAULT_TURN_RADIUS,
+  arrowLengthScale: DEFAULT_ARROW_LENGTH_SCALE,
+  arrowStrokeWidth: DEFAULT_ARROW_STROKE_WIDTH,
   numberSize: DEFAULT_NUMBER_SIZE,
   numberPathOffset: DEFAULT_NUMBER_PATH_OFFSET,
   numberColor: DEFAULT_NUMBER_COLOR,
@@ -420,6 +424,26 @@ function renderAnnotationControlSection(
           attrs: `data-scope="${scope}" data-setting="turnRadius"`
         })}
         ${renderRangeControl({
+          id: `${scope}-arrow-length-slider`,
+          label: "Arrow length",
+          value: settings.arrowLengthScale,
+          min: 0.5,
+          max: 2,
+          step: 0.05,
+          valueId: `${scope}-arrow-length-value`,
+          attrs: `data-scope="${scope}" data-setting="arrowLengthScale"`
+        })}
+        ${renderRangeControl({
+          id: `${scope}-arrow-stroke-width-slider`,
+          label: "Arrow stroke width",
+          value: settings.arrowStrokeWidth,
+          min: 1,
+          max: 14,
+          step: 0.5,
+          valueId: `${scope}-arrow-stroke-width-value`,
+          attrs: `data-scope="${scope}" data-setting="arrowStrokeWidth"`
+        })}
+        ${renderRangeControl({
           id: `${scope}-number-size-slider`,
           label: "Number size",
           value: settings.numberSize,
@@ -523,6 +547,7 @@ const getPracticeText = (): string =>
   Array.from({ length: state.practiceRepeatCount }, () => state.text).join(" ");
 
 const formatScale = (value: number): string => value.toFixed(2);
+const formatPercentScale = (value: number): string => `${Math.round(value * 100)}%`;
 
 const setText = (id: string, value: string) => {
   const element = document.querySelector<HTMLElement>(`#${id}`);
@@ -552,6 +577,8 @@ const syncLabels = () => {
     const settings = getScopeSettings(scope);
     setText(`${scope}-midpoint-density-value`, `1 per ${settings.midpointDensity}px`);
     setText(`${scope}-turn-radius-value`, `${settings.turnRadius}px`);
+    setText(`${scope}-arrow-length-value`, formatPercentScale(settings.arrowLengthScale));
+    setText(`${scope}-arrow-stroke-width-value`, `${settings.arrowStrokeWidth.toFixed(1)}px`);
     setText(`${scope}-number-size-value`, `${settings.numberSize}px`);
     setText(`${scope}-number-offset-value`, `${settings.numberPathOffset}px`);
   });
@@ -606,7 +633,7 @@ const renderWordSvg = (
       preserveAspectRatio="xMidYMid meet"
       role="img"
       aria-label="${escapeHtml(ariaLabel)}"
-      style="--formation-arrow-color: ${settings.arrowColor}; --worksheet-word-stroke: ${settings.strokeColor}; --worksheet-word-stroke-width: ${state.strokeWidth};"
+      style="--formation-arrow-color: ${settings.arrowColor}; --formation-arrow-stroke-width: ${settings.arrowStrokeWidth}; --worksheet-word-stroke: ${settings.strokeColor}; --worksheet-word-stroke-width: ${state.strokeWidth};"
     >
       ${renderOptionalGuideLine(layout, "ascender", state.showAscenderGuide)}
       <line
@@ -933,6 +960,10 @@ document.querySelectorAll<HTMLInputElement>("[data-scope][data-setting]").forEac
       settings.midpointDensity = Number(input.value);
     } else if (setting === "turnRadius") {
       settings.turnRadius = Number(input.value);
+    } else if (setting === "arrowLengthScale") {
+      settings.arrowLengthScale = Number(input.value);
+    } else if (setting === "arrowStrokeWidth") {
+      settings.arrowStrokeWidth = Number(input.value);
     } else if (setting === "numberSize") {
       settings.numberSize = Number(input.value);
     } else if (setting === "numberPathOffset") {
