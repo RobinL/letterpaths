@@ -274,6 +274,32 @@ test("offset start arrows at retrace starts follow the outgoing path", () => {
   );
 });
 
+test("bidirectional-only lane offsets keep unidirectional start arrows on the centerline", () => {
+  const prepared = compileTracingPath(buildHandwritingPath("p", { style: "cursive" }));
+  const sections = analyzeTracingSections(prepared).sections;
+  const annotations = compileFormationAnnotations(prepared, {
+    turningPoints: false,
+    drawOrderNumbers: false,
+    midpointArrows: false,
+    startArrows: {
+      offset: 30,
+      offsetMode: "bidirectional-only"
+    }
+  }).filter((annotation) => annotation.kind === "start-arrow");
+
+  const pathStartArrow = annotations.find(
+    (annotation) => sections[annotation.source.sectionIndex]?.startReason === "path-start"
+  );
+  const retraceStartArrow = annotations.find(
+    (annotation) => sections[annotation.source.sectionIndex]?.startReason === "retrace-turn"
+  );
+
+  assert.ok(pathStartArrow, "Expected a path-start arrow for p.");
+  assert.ok(retraceStartArrow, "Expected a retrace-turn arrow for p.");
+  assert.equal(pathStartArrow.metrics.offset, 0);
+  assert.equal(retraceStartArrow.metrics.offset, 30);
+});
+
 test("formation annotations include all supported annotation kinds by default", () => {
   const annotations = compileFormationAnnotations(preparedSys());
   const kinds = new Set(annotations.map((annotation) => annotation.kind));
@@ -431,6 +457,30 @@ test("midpoint arrow density controls midpoint threshold and fractional placemen
       ) < 0.001
     );
   });
+});
+
+test("bidirectional-only lane offsets only offset midpoint arrows on bidirectional corridors", () => {
+  const prepared = compileTracingPath(buildHandwritingPath("p", { style: "cursive" }));
+  const annotations = compileFormationAnnotations(prepared, {
+    turningPoints: false,
+    startArrows: false,
+    drawOrderNumbers: false,
+    midpointArrows: {
+      density: 60,
+      offset: 30,
+      offsetMode: "bidirectional-only"
+    }
+  }).filter((annotation) => annotation.kind === "midpoint-arrow");
+
+  assert.ok(annotations.length > 0, "Expected midpoint arrows for p.");
+  assert.ok(
+    annotations.some((annotation) => annotation.metrics.offset === 0),
+    "Expected at least one unidirectional midpoint arrow to stay centered."
+  );
+  assert.ok(
+    annotations.some((annotation) => annotation.metrics.offset === 30),
+    "Expected at least one bidirectional midpoint arrow to use the lane offset."
+  );
 });
 
 function normalizeTestVector(vector) {

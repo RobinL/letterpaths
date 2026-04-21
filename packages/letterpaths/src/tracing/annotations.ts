@@ -17,6 +17,7 @@ import {
 
 export type AnnotationPathCommand = FormationArrowPathCommand;
 export type AnnotationArrowHead = FormationArrowHead;
+export type ArrowLaneOffsetMode = "always" | "bidirectional-only";
 
 export type TracingSectionStartReason = "path-start" | "stroke-start" | "retrace-turn";
 
@@ -163,6 +164,7 @@ export type StartArrowAnnotationOptions = {
   length?: number;
   offset?: number;
   side?: "left" | "right";
+  offsetMode?: ArrowLaneOffsetMode;
   minLength?: number;
   head?: false | FormationArrowHeadOptions;
 };
@@ -178,6 +180,7 @@ export type MidpointArrowAnnotationOptions = {
   length?: number;
   offset?: number;
   side?: "left" | "right";
+  offsetMode?: ArrowLaneOffsetMode;
   minSectionLength?: number;
   head?: false | FormationArrowHeadOptions;
 };
@@ -380,6 +383,10 @@ export function compileFormationAnnotations(
     options.midpointArrows !== false
       ? buildTracingPathSampleIndex(path)
       : null;
+  const directionalCoverage =
+    sampleIndex && shouldAnalyzeDirectionalCoverage(options)
+      ? analyzeDirectionalDashCoverage(path, sections, sampleIndex)
+      : null;
   const annotations: FormationAnnotation[] = [];
 
   if (options.directionalDashes) {
@@ -388,7 +395,8 @@ export function compileFormationAnnotations(
         path,
         sections,
         options.directionalDashes,
-        sampleIndex ?? buildTracingPathSampleIndex(path)
+        sampleIndex ?? buildTracingPathSampleIndex(path),
+        directionalCoverage ?? undefined
       )
     );
   }
@@ -407,7 +415,8 @@ export function compileFormationAnnotations(
         path,
         sections,
         options.startArrows,
-        sampleIndex ?? buildTracingPathSampleIndex(path)
+        sampleIndex ?? buildTracingPathSampleIndex(path),
+        directionalCoverage
       )
     );
   }
@@ -418,7 +427,8 @@ export function compileFormationAnnotations(
         path,
         sections,
         options.midpointArrows,
-        sampleIndex ?? buildTracingPathSampleIndex(path)
+        sampleIndex ?? buildTracingPathSampleIndex(path),
+        directionalCoverage
       )
     );
   }
@@ -482,7 +492,8 @@ function compileDirectionalDashAnnotations(
   path: PreparedTracingPath,
   sections: TracingSection[],
   options: DirectionalDashAnnotationOptions = {},
-  sampleIndex: TracingPathSampleIndex
+  sampleIndex: TracingPathSampleIndex,
+  coverage?: DirectionalDashCoverage
 ): DirectionalDashAnnotation[] {
   const guideHeight = getGuideHeight(path);
   const defaultSpacing = guideHeight * DEFAULT_DIRECTIONAL_DASH_SPACING_RATIO;
@@ -506,7 +517,7 @@ function compileDirectionalDashAnnotations(
     options.minSectionLength ??
     Math.max(safeLength * 0.75, guideHeight * DEFAULT_DIRECTIONAL_DASH_MIN_SECTION_LENGTH_RATIO);
   const offset = resolveSignedOffset(options.offset ?? 0, options.side ?? "left");
-  const coverage = analyzeDirectionalDashCoverage(path, sections, sampleIndex);
+  const directionalCoverage = coverage ?? analyzeDirectionalDashCoverage(path, sections, sampleIndex);
   const annotations: DirectionalDashAnnotation[] = [];
 
   sections.forEach((section) => {
@@ -537,13 +548,13 @@ function compileDirectionalDashAnnotations(
 
         const isAtRetraceTurn = section.startReason === "retrace-turn" && index === 0;
         const isBidirectional =
-          isAtRetraceTurn || isDistanceWithinRanges(distance, coverage.earlier);
+          isAtRetraceTurn || isDistanceWithinRanges(distance, directionalCoverage.earlier);
 
         return {
           distance,
           range,
           length: endDistance - startDistance,
-          isLaterDuplicate: isDistanceWithinRanges(distance, coverage.later),
+          isLaterDuplicate: isDistanceWithinRanges(distance, directionalCoverage.later),
           directionality: isBidirectional ? "bidirectional" : "unidirectional"
         };
       })
@@ -628,12 +639,14 @@ function compileStartArrowAnnotations(
   path: PreparedTracingPath,
   sections: TracingSection[],
   options: StartArrowAnnotationOptions = {},
-  sampleIndex: TracingPathSampleIndex
+  sampleIndex: TracingPathSampleIndex,
+  directionalCoverage: DirectionalDashCoverage | null
 ): StartArrowAnnotation[] {
   const guideHeight = getGuideHeight(path);
   const length = options.length ?? guideHeight * DEFAULT_START_ARROW_LENGTH_RATIO;
   const minLength = options.minLength ?? guideHeight * DEFAULT_START_ARROW_MIN_LENGTH_RATIO;
-  const offset = resolveSignedOffset(options.offset ?? 0, options.side ?? "left");
+  const baseOffset = resolveSignedOffset(options.offset ?? 0, options.side ?? "left");
+  const offsetMode = options.offsetMode ?? "always";
   const head = resolveHeadOptions(path, options.head);
 
   return sections
@@ -648,6 +661,13 @@ function compileStartArrowAnnotations(
         return null;
       }
 
+      const offset = resolveArrowLaneOffset(
+        section.startDistance,
+        section,
+        baseOffset,
+        offsetMode,
+        directionalCoverage
+      );
       const range = buildPathRange(path, section.startDistance, endDistance, offset, sampleIndex);
       if (!range) {
         return null;
@@ -724,7 +744,8 @@ function compileMidpointArrowAnnotations(
   path: PreparedTracingPath,
   sections: TracingSection[],
   options: MidpointArrowAnnotationOptions = {},
-  sampleIndex: TracingPathSampleIndex
+  sampleIndex: TracingPathSampleIndex,
+  directionalCoverage: DirectionalDashCoverage | null
 ): MidpointArrowAnnotation[] {
   const guideHeight = getGuideHeight(path);
   const defaultDensity = guideHeight * DEFAULT_MIDPOINT_ARROW_DENSITY_RATIO;
@@ -733,7 +754,8 @@ function compileMidpointArrowAnnotations(
   const length = options.length ?? guideHeight * DEFAULT_MIDPOINT_ARROW_LENGTH_RATIO;
   const minSectionLength =
     options.minSectionLength ?? guideHeight * DEFAULT_MIDPOINT_MIN_SECTION_LENGTH_RATIO;
-  const offset = resolveSignedOffset(options.offset ?? 0, options.side ?? "left");
+  const baseOffset = resolveSignedOffset(options.offset ?? 0, options.side ?? "left");
+  const offsetMode = options.offsetMode ?? "always";
   const head = resolveHeadOptions(path, options.head);
   const annotations: MidpointArrowAnnotation[] = [];
 
@@ -752,6 +774,13 @@ function compileMidpointArrowAnnotations(
       const distance = section.startDistance + ((index + 1) * sectionLength) / (count + 1);
       const startDistance = Math.max(section.startDistance, distance - length / 2);
       const endDistance = Math.min(section.endDistance, distance + length / 2);
+      const offset = resolveArrowLaneOffset(
+        distance,
+        section,
+        baseOffset,
+        offsetMode,
+        directionalCoverage
+      );
       const range = buildPathRange(path, startDistance, endDistance, offset, sampleIndex);
       if (!range) {
         continue;
@@ -1084,6 +1113,17 @@ function buildTracingPathSampleIndex(path: PreparedTracingPath): TracingPathSamp
   };
 }
 
+function shouldAnalyzeDirectionalCoverage(
+  options: CompileFormationAnnotationsOptions
+): boolean {
+  return (
+    options.directionalDashes !== false ||
+    (options.startArrows !== false && options.startArrows?.offsetMode === "bidirectional-only") ||
+    (options.midpointArrows !== false &&
+      options.midpointArrows?.offsetMode === "bidirectional-only")
+  );
+}
+
 function analyzeDirectionalDashCoverage(
   path: PreparedTracingPath,
   sections: TracingSection[],
@@ -1266,6 +1306,30 @@ function addDirectionalDashSampleToGrid(
   }
 
   grid.buckets.set(key, [sampleIndex]);
+}
+
+function resolveArrowLaneOffset(
+  distance: number,
+  section: TracingSection,
+  baseOffset: number,
+  offsetMode: ArrowLaneOffsetMode,
+  directionalCoverage: DirectionalDashCoverage | null
+): number {
+  if (baseOffset === 0 || offsetMode === "always") {
+    return baseOffset;
+  }
+
+  if (
+    (section.startReason === "retrace-turn" &&
+      Math.abs(distance - section.startDistance) <= DISTANCE_EPSILON) ||
+    (directionalCoverage !== null &&
+      (isDistanceWithinRanges(distance, directionalCoverage.earlier) ||
+        isDistanceWithinRanges(distance, directionalCoverage.later)))
+  ) {
+    return baseOffset;
+  }
+
+  return 0;
 }
 
 function mergeMatchedDistancesIntoRanges(
