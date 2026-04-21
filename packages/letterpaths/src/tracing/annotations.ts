@@ -489,8 +489,7 @@ function compileDirectionalDashAnnotations(
     }
 
     const sectionAnnotations = candidateDistances
-      .filter((distance) => !isDistanceWithinRanges(distance, coverage.later))
-      .map((distance) => {
+      .map((distance, index) => {
         const startDistance = Math.max(section.startDistance, distance - safeLength / 2);
         const endDistance = Math.min(section.endDistance, distance + safeLength / 2);
         const range = buildPathRange(path, startDistance, endDistance, offset);
@@ -498,13 +497,16 @@ function compileDirectionalDashAnnotations(
           return null;
         }
 
+        const isAtRetraceTurn = section.startReason === "retrace-turn" && index === 0;
+        const isBidirectional =
+          isAtRetraceTurn || isDistanceWithinRanges(distance, coverage.earlier);
+
         return {
           distance,
           range,
           length: endDistance - startDistance,
-          directionality: isDistanceWithinRanges(distance, coverage.earlier)
-            ? "bidirectional"
-            : "unidirectional"
+          isLaterDuplicate: isDistanceWithinRanges(distance, coverage.later),
+          directionality: isBidirectional ? "bidirectional" : "unidirectional"
         };
       })
       .filter(
@@ -514,11 +516,30 @@ function compileDirectionalDashAnnotations(
           distance: number;
           range: PathRangeResult;
           length: number;
+          isLaterDuplicate: boolean;
           directionality: DirectionalDashAnnotation["source"]["directionality"];
         } => entry !== null
       );
 
-    sectionAnnotations.forEach((entry, index) => {
+    if (sectionAnnotations.length === 0) {
+      return;
+    }
+
+    const keptSectionAnnotations = sectionAnnotations.filter(
+      (entry, index) => index === 0 || !entry.isLaterDuplicate
+    );
+    const firstAnnotation = keptSectionAnnotations[0];
+    if (firstAnnotation?.isLaterDuplicate) {
+      removeClosestDirectionalDashAnnotation(
+        annotations,
+        path,
+        firstAnnotation.distance,
+        safeSpacing,
+        section.index
+      );
+    }
+
+    keptSectionAnnotations.forEach((entry) => {
       annotations.push({
         kind: "directional-dash",
         commands: entry.range.commands,
@@ -540,8 +561,8 @@ function compileDirectionalDashAnnotations(
           startDistance: section.startDistance,
           endDistance: section.endDistance,
           distance: entry.distance,
-          ordinalInSection: index,
-          countInSection: sectionAnnotations.length,
+          ordinalInSection: 0,
+          countInSection: 0,
           directionality: entry.directionality
         },
         metrics: {
@@ -560,6 +581,7 @@ function compileDirectionalDashAnnotations(
     });
   });
 
+  finalizeDirectionalDashAnnotationSections(annotations);
   return annotations;
 }
 
@@ -1172,6 +1194,67 @@ function estimateTracingSampleGap(samples: FlattenedTracingSample[]): number {
 
   const sortedGaps = [...gaps].sort((a, b) => a - b);
   return sortedGaps[Math.floor(sortedGaps.length / 2)] ?? 2;
+}
+
+function removeClosestDirectionalDashAnnotation(
+  annotations: DirectionalDashAnnotation[],
+  path: PreparedTracingPath,
+  targetDistance: number,
+  maxSpatialDistance: number,
+  currentSectionIndex: number
+): void {
+  const targetPoint = getPointAtOverallDistance(path, targetDistance);
+  let bestIndex = -1;
+  let bestScore = Infinity;
+
+  annotations.forEach((annotation, index) => {
+    if (
+      annotation.source.sectionIndex >= currentSectionIndex ||
+      annotation.source.directionality !== "bidirectional"
+    ) {
+      return;
+    }
+
+    const annotationPoint = getPointAtOverallDistance(path, annotation.source.distance);
+    const spatialDistance = Math.hypot(
+      targetPoint.x - annotationPoint.x,
+      targetPoint.y - annotationPoint.y
+    );
+    if (spatialDistance > maxSpatialDistance) {
+      return;
+    }
+
+    const score = spatialDistance + (currentSectionIndex - annotation.source.sectionIndex) * 0.001;
+    if (score <= bestScore) {
+      bestScore = score;
+      bestIndex = index;
+    }
+  });
+
+  if (bestIndex >= 0) {
+    annotations.splice(bestIndex, 1);
+  }
+}
+
+function finalizeDirectionalDashAnnotationSections(
+  annotations: DirectionalDashAnnotation[]
+): void {
+  const sectionCounts = new Map<number, number>();
+
+  annotations.forEach((annotation) => {
+    sectionCounts.set(
+      annotation.source.sectionIndex,
+      (sectionCounts.get(annotation.source.sectionIndex) ?? 0) + 1
+    );
+  });
+
+  const sectionOrdinals = new Map<number, number>();
+  annotations.forEach((annotation) => {
+    const ordinal = sectionOrdinals.get(annotation.source.sectionIndex) ?? 0;
+    sectionOrdinals.set(annotation.source.sectionIndex, ordinal + 1);
+    annotation.source.ordinalInSection = ordinal;
+    annotation.source.countInSection = sectionCounts.get(annotation.source.sectionIndex) ?? 0;
+  });
 }
 
 function getGuideHeight(path: PreparedTracingPath): number {

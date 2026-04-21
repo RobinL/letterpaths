@@ -48,6 +48,7 @@ type RangeControlOptions = {
 };
 
 const DEFAULT_TEXT = "zephyr";
+const DEFAULT_DIRECTIONAL_DASH_SPACING = 96;
 const DEFAULT_MIDPOINT_DENSITY = 320;
 const DEFAULT_TURN_RADIUS = 13;
 const DEFAULT_U_TURN_LENGTH = 53;
@@ -148,6 +149,7 @@ const createSettings = (
   visibility: FormationAnnotationVisibility,
   strokeColor: string
 ): WorksheetAnnotationSettings => ({
+  directionalDashSpacing: DEFAULT_DIRECTIONAL_DASH_SPACING,
   midpointDensity: DEFAULT_MIDPOINT_DENSITY,
   turnRadius: DEFAULT_TURN_RADIUS,
   uTurnLength: DEFAULT_U_TURN_LENGTH,
@@ -428,6 +430,16 @@ function renderAnnotationControlSection(
       <summary>${label}</summary>
       <div class="worksheet-app__details-body">
         ${renderRangeControl({
+    id: `${scope}-directional-dash-spacing-slider`,
+    label: "Directional dash spacing",
+    value: settings.directionalDashSpacing,
+    min: 80,
+    max: 220,
+    step: 4,
+    valueId: `${scope}-directional-dash-spacing-value`,
+    attrs: `data-scope="${scope}" data-setting="directionalDashSpacing"`
+  })}
+        ${renderRangeControl({
     id: `${scope}-midpoint-density-slider`,
     label: "Midpoint density",
     value: settings.midpointDensity,
@@ -508,6 +520,12 @@ function renderAnnotationControlSection(
     attrs: `data-scope="${scope}" data-setting="numberPathOffset"`
   })}
         <fieldset class="worksheet-app__checks" aria-label="${label}">
+          ${renderAnnotationToggle(
+            scope,
+            "directional-dash",
+            "Directional dash",
+            settings.visibility["directional-dash"]
+          )}
           ${renderAnnotationToggle(scope, "turning-point", "Turns", settings.visibility["turning-point"])}
           ${renderAnnotationToggle(scope, "start-arrow", "Starts", settings.visibility["start-arrow"])}
           ${renderAnnotationToggle(scope, "draw-order-number", "Numbers", settings.visibility["draw-order-number"])}
@@ -616,6 +634,10 @@ const syncLabels = () => {
 
   (["top", "practice"] as const).forEach((scope) => {
     const settings = getScopeSettings(scope);
+    setText(
+      `${scope}-directional-dash-spacing-value`,
+      `${settings.directionalDashSpacing}px`
+    );
     setText(`${scope}-midpoint-density-value`, `1 per ${settings.midpointDensity}px`);
     setText(`${scope}-turn-radius-value`, `${settings.turnRadius}px`);
     setText(`${scope}-u-turn-length-value`, `${settings.uTurnLength}px`);
@@ -1093,7 +1115,9 @@ document.querySelectorAll<HTMLInputElement>("[data-scope][data-setting]").forEac
     }
 
     const settings = getScopeSettings(scope);
-    if (setting === "midpointDensity") {
+    if (setting === "directionalDashSpacing") {
+      settings.directionalDashSpacing = Number(input.value);
+    } else if (setting === "midpointDensity") {
       settings.midpointDensity = Number(input.value);
     } else if (setting === "turnRadius") {
       settings.turnRadius = Number(input.value);

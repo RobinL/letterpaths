@@ -85,7 +85,7 @@ app.innerHTML = `
             </label>
             <label class="writing-app__tolerance" for="directional-dash-spacing-slider">
               <span class="writing-app__tolerance-label">
-                Drectional dash spacing
+                Directional dash spacing
                 <span class="writing-app__tolerance-value" id="directional-dash-spacing-value"></span>
               </span>
               <input
@@ -131,7 +131,7 @@ app.innerHTML = `
             <fieldset class="writing-app__annotation-controls" aria-label="Formation annotations">
               <label class="writing-app__annotation-toggle">
                 <input type="checkbox" data-annotation-kind="directional-dash" checked />
-                <span>Drectional dash</span>
+                <span>Directional dash</span>
               </label>
               <label class="writing-app__annotation-toggle">
                 <input type="checkbox" data-annotation-kind="turning-point" />

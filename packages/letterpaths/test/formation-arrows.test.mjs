@@ -351,6 +351,49 @@ test("directional dash spacing changes dash density", () => {
   assert.ok(dense.length > sparse.length);
 });
 
+test("directional dashes keep the first dash in each traced section", () => {
+  const prepared = compileTracingPath(buildHandwritingPath("p", { style: "cursive" }));
+  const annotations = compileFormationAnnotations(prepared, {
+    turningPoints: false,
+    startArrows: false,
+    drawOrderNumbers: false,
+    midpointArrows: false,
+    directionalDashes: {
+      spacing: 120
+    }
+  }).filter((annotation) => annotation.kind === "directional-dash");
+
+  const bySection = new Map();
+  annotations.forEach((annotation) => {
+    const sectionAnnotations = bySection.get(annotation.source.sectionIndex) ?? [];
+    sectionAnnotations.push(annotation);
+    bySection.set(annotation.source.sectionIndex, sectionAnnotations);
+  });
+
+  assert.ok(bySection.size > 1, "Expected p to produce directional dashes in multiple sections.");
+
+  bySection.forEach((sectionAnnotations) => {
+    sectionAnnotations.sort((a, b) => a.source.distance - b.source.distance);
+    const first = sectionAnnotations[0];
+    assert.ok(first, "Expected a first directional dash for the section.");
+    assert.equal(first.source.ordinalInSection, 0);
+    assert.equal(first.source.countInSection, sectionAnnotations.length);
+    assert.ok(
+      Math.abs(first.source.distance - (first.source.startDistance + first.metrics.length / 2)) <
+        0.001,
+      "Expected the leading directional dash to stay at the start of the section cadence."
+    );
+  });
+
+  const sections = analyzeTracingSections(prepared).sections;
+  const retraceSection = sections.find((section) => section.startReason === "retrace-turn");
+  assert.ok(retraceSection, "Expected p to include a retrace-turn section.");
+  const retraceLeadingDash = bySection.get(retraceSection.index)?.[0];
+  assert.ok(retraceLeadingDash, "Expected the retrace-turn section to keep its leading dash.");
+  assert.equal(retraceLeadingDash.source.directionality, "bidirectional");
+  assert.ok(retraceLeadingDash.tailHead, "Expected the retrace-turn leading dash to be double-headed.");
+});
+
 test("midpoint arrow density controls midpoint threshold and fractional placement", () => {
   const prepared = preparedSys();
   const sparseThreshold = 500;
