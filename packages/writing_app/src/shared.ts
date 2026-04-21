@@ -13,10 +13,12 @@ export const TARGET_GUIDES = {
   baseline: 700
 } as const;
 export const JOIN_SPACING = {
-  verticalDistanceWeight: 0.43,
-  angleChangeWeight: 2.3,
-  kerningScale: 1,
-  minSidebearingGap: 55
+  targetBendRate: 16,
+  minSidebearingGap: 80,
+  bendSearchMinSidebearingGap: -30,
+  bendSearchMaxSidebearingGap: 240,
+  exitHandleScale: 0.75,
+  entryHandleScale: 0.75
 } as const;
 export const DEMO_PAUSE_MS = 500;
 export const DEFAULT_TRACE_TOLERANCE = 70;

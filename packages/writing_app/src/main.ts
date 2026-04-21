@@ -1362,7 +1362,10 @@ const renderWord = (word: string) => {
 
   let layout: ReturnType<typeof buildShiftedWordLayout>;
   try {
-    layout = buildShiftedWordLayout(currentWord);
+    layout = buildShiftedWordLayout(currentWord, {
+      keepInitialLeadIn: true,
+      keepFinalLeadOut: true
+    });
   } catch {
     clearScene();
     return;
