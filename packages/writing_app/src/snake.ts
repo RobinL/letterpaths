@@ -533,7 +533,6 @@ app.innerHTML = `
                   <input
                     id="offset-arrow-lanes"
                     type="checkbox"
-                    checked
                   />
                   <span>Offset lanes</span>
                 </label>
@@ -957,7 +956,7 @@ let isDemoShortDeferredSnake = false;
 let currentTraceTolerance = DEFAULT_SNAKE_TRACE_TOLERANCE;
 let currentAnimationSpeedMultiplier = DEFAULT_ANIMATION_SPEED_MULTIPLIER;
 let currentTurnRadius = 13;
-let shouldOffsetArrowLanes = true;
+let shouldOffsetArrowLanes = false;
 let currentJoinSpacing: Required<JoinSpacingOptions> = { ...DEFAULT_SNAKE_JOIN_SPACING };
 let includeInitialLeadIn = true;
 let includeFinalLeadOut = true;

@@ -213,8 +213,8 @@ let state: WorksheetState = {
   joinSpacing: { ...DEFAULT_WORKSHEET_JOIN_SPACING },
   showBaselineGuide: true,
   showXHeightGuide: true,
-  showAscenderGuide: true,
-  showDescenderGuide: true,
+  showAscenderGuide: false,
+  showDescenderGuide: false,
   gridlineStrokeWidth: DEFAULT_GRIDLINE_STROKE_WIDTH,
   gridlineColor: DEFAULT_GRIDLINE_COLOR,
   keepInitialLeadIn: true,
@@ -464,9 +464,9 @@ function renderGridlineSettings(): string {
   )}
         <fieldset class="worksheet-app__checks" aria-label="Gridline visibility">
           ${renderGlobalToggle("show-baseline-guide", "showBaselineGuide", "Baseline", true)}
-          ${renderGlobalToggle("show-descender-guide", "showDescenderGuide", "Descender", true)}
+          ${renderGlobalToggle("show-descender-guide", "showDescenderGuide", "Descender", false)}
           ${renderGlobalToggle("show-x-height-guide", "showXHeightGuide", "X-height", true)}
-          ${renderGlobalToggle("show-ascender-guide", "showAscenderGuide", "Ascender", true)}
+          ${renderGlobalToggle("show-ascender-guide", "showAscenderGuide", "Ascender", false)}
         </fieldset>
       </div>
     </details>
