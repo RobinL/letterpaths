@@ -63,7 +63,7 @@ body {
   right: 18px;
   z-index: 2;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(260px, 460px) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: start;
   gap: 20px;
   pointer-events: none;
@@ -720,6 +720,14 @@ body {
   transform: none;
 }
 
+.writing-app__button--summary {
+  list-style: none;
+}
+
+.writing-app__button--summary::-webkit-details-marker {
+  display: none;
+}
+
 .writing-app__button--next {
   min-width: 180px;
 }
@@ -759,6 +767,10 @@ body {
   pointer-events: auto;
 }
 
+.writing-app__settings--options {
+  align-self: start;
+}
+
 .writing-app__settings-panel {
   position: absolute;
   top: calc(100% + 10px);
@@ -776,6 +788,13 @@ body {
 
 .writing-app__settings:not([open]) .writing-app__settings-panel {
   display: none;
+}
+
+.writing-app__settings-panel--options {
+  min-width: min(92vw, 420px);
+  max-width: min(92vw, 420px);
+  max-height: min(74vh, 760px);
+  overflow: auto;
 }
 
 .writing-app__settings-field {
@@ -822,7 +841,7 @@ body {
     top: 14px;
     left: 14px;
     right: 14px;
-    grid-template-columns: minmax(0, 1fr) minmax(220px, 340px) auto;
+    grid-template-columns: minmax(0, 1fr) auto;
   }
 
   .writing-app__topbar--score {
@@ -915,6 +934,11 @@ body {
   .writing-app__settings-panel {
     min-width: min(88vw, 260px);
     padding: 12px;
+  }
+
+  .writing-app__settings-panel--options {
+    min-width: min(92vw, 360px);
+    max-width: min(92vw, 360px);
   }
 
   .writing-app__board {

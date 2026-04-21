@@ -5,9 +5,15 @@ import {
   annotationCommandsToSvgPathData,
   compileFormationAnnotations,
   compileTracingPath,
+  cursiveEntryVariantByExitVariant,
+  cursiveExitVariantByLetter,
+  defaultCursiveEntryVariant,
+  getCursiveLetterVariant,
   type AnnotationArrowHead,
   type AnnotationPathCommand,
   type FormationAnnotation,
+  type JoinSpacingOptions,
+  type LetterGuides,
   type Point,
   type PreparedTracingPath,
   type TracingState,
@@ -16,6 +22,7 @@ import {
 import {
   DEMO_PAUSE_MS,
   DEFAULT_TRACE_TOLERANCE,
+  JOIN_SPACING,
   MAX_TRACE_TOLERANCE,
   MIN_TRACE_TOLERANCE,
   TRACE_TOLERANCE_STEP,
@@ -25,6 +32,163 @@ import {
   chooseNextWordIndex,
   getPointerInSvg
 } from "./shared";
+
+type RangeControlOptions = {
+  id: string;
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  valueId?: string;
+  attrs?: string;
+};
+
+const DEFAULT_STROKE_WIDTH = 54;
+const DEFAULT_GRIDLINE_STROKE_WIDTH = 1;
+const DEFAULT_GRIDLINE_COLOR = "#ffb35c";
+const DEFAULT_WORD_STROKE_COLOR = "#c2c2c2";
+const DEFAULT_DIRECTIONAL_DASH_SPACING = 96;
+const DEFAULT_MIDPOINT_DENSITY = 320;
+const DEFAULT_TURN_RADIUS = 13;
+const DEFAULT_U_TURN_LENGTH = 53;
+const DEFAULT_ARROW_LENGTH = 53;
+const DEFAULT_ARROW_HEAD_SIZE = 26;
+const DEFAULT_ARROW_STROKE_WIDTH = 5.6;
+const DEFAULT_NUMBER_SIZE = 26;
+const DEFAULT_NUMBER_PATH_OFFSET = 0;
+const DEFAULT_NUMBER_COLOR = "#3f454b";
+const DEFAULT_ARROW_COLOR = "#ffffff";
+const DEFAULT_JOIN_SPACING = { ...JOIN_SPACING } as const satisfies Required<JoinSpacingOptions>;
+const DEFAULT_ANNOTATION_VISIBILITY: Record<FormationAnnotation["kind"], boolean> = {
+  "directional-dash": false,
+  "turning-point": true,
+  "start-arrow": true,
+  "draw-order-number": true,
+  "midpoint-arrow": true
+};
+const START_ARROW_LENGTH_RATIO = 0.42;
+const STRAIGHT_ARROW_LENGTH_RATIO = 0.36 / START_ARROW_LENGTH_RATIO;
+const START_ARROW_MIN_LENGTH_RATIO = 0.18 / START_ARROW_LENGTH_RATIO;
+const ARROWHEAD_WIDTH_RATIO = 22 / 26;
+const ARROWHEAD_TIP_OVERHANG_RATIO = 11 / 26;
+const WRITING_APP_URL_PARAM_KEYS = [
+  "tolerance",
+  "strokeWidth",
+  "gridlineStrokeWidth",
+  "gridlineColor",
+  "showBaselineGuide",
+  "showDescenderGuide",
+  "showXHeightGuide",
+  "showAscenderGuide",
+  "targetBendRate",
+  "minSidebearingGap",
+  "bendSearchMinSidebearingGap",
+  "bendSearchMaxSidebearingGap",
+  "exitHandleScale",
+  "entryHandleScale",
+  "includeInitialLeadIn",
+  "includeFinalLeadOut",
+  "directionalDashSpacing",
+  "midpointDensity",
+  "turnRadius",
+  "uTurnLength",
+  "arrowLength",
+  "arrowHeadSize",
+  "arrowStrokeWidth",
+  "numberSize",
+  "numberOffset",
+  "directionalDash",
+  "turns",
+  "starts",
+  "numbers",
+  "midpoints",
+  "offsetArrowLanes",
+  "alwaysOffsetArrowLanes",
+  "wordStrokeColor",
+  "numberColor",
+  "arrowColor"
+] as const;
+
+function renderRangeControl({
+  id,
+  label,
+  value,
+  min,
+  max,
+  step,
+  valueId = `${id}-value`,
+  attrs = ""
+}: RangeControlOptions): string {
+  return `
+    <label class="worksheet-app__field" for="${id}">
+      <span>
+        ${label}
+        <strong id="${valueId}"></strong>
+      </span>
+      <input
+        class="worksheet-app__range"
+        id="${id}"
+        type="range"
+        min="${min}"
+        max="${max}"
+        step="${step}"
+        value="${value}"
+        ${attrs}
+      />
+    </label>
+  `;
+}
+
+function renderToggleControl(
+  id: string,
+  label: string,
+  checked: boolean,
+  attrs = ""
+): string {
+  return `
+    <label class="worksheet-app__check" for="${id}">
+      <input
+        id="${id}"
+        type="checkbox"
+        ${checked ? "checked" : ""}
+        ${attrs}
+      />
+      <span>${label}</span>
+    </label>
+  `;
+}
+
+function renderColorControl(
+  id: string,
+  label: string,
+  value: string,
+  attrs = ""
+): string {
+  return `
+    <label class="worksheet-app__field worksheet-app__field--inline" for="${id}">
+      <span>${label}</span>
+      <input
+        class="worksheet-app__color"
+        id="${id}"
+        type="color"
+        value="${value}"
+        ${attrs}
+      />
+    </label>
+  `;
+}
+
+function renderOptionsGroup(label: string, body: string, open = false): string {
+  return `
+    <details class="worksheet-app__details" ${open ? "open" : ""}>
+      <summary>${label}</summary>
+      <div class="worksheet-app__details-body">
+        ${body}
+      </div>
+    </details>
+  `;
+}
 
 const app = document.querySelector<HTMLDivElement>("#app");
 
@@ -37,116 +201,258 @@ app.innerHTML = `
     <main class="writing-app__stage">
       <section class="writing-app__board">
         <header class="writing-app__topbar">
-          <div class="writing-app__controls">
-            <label class="writing-app__tolerance" for="tolerance-slider">
-              <span class="writing-app__tolerance-label">
-                Tolerance
-                <span class="writing-app__tolerance-value" id="tolerance-value"></span>
-              </span>
-              <input
-                class="writing-app__tolerance-slider"
-                id="tolerance-slider"
-                type="range"
-                min="${MIN_TRACE_TOLERANCE}"
-                max="${MAX_TRACE_TOLERANCE}"
-                step="${TRACE_TOLERANCE_STEP}"
-                value="${DEFAULT_TRACE_TOLERANCE}"
-              />
-            </label>
-            <label class="writing-app__tolerance" for="midpoint-density-slider">
-              <span class="writing-app__tolerance-label">
-                Midpoint density
-                <span class="writing-app__tolerance-value" id="midpoint-density-value"></span>
-              </span>
-              <input
-                class="writing-app__tolerance-slider"
-                id="midpoint-density-slider"
-                type="range"
-                min="120"
-                max="600"
-                step="20"
-                value="320"
-              />
-            </label>
-            <label class="writing-app__tolerance" for="directional-dash-spacing-slider">
-              <span class="writing-app__tolerance-label">
-                Directional dash spacing
-                <span class="writing-app__tolerance-value" id="directional-dash-spacing-value"></span>
-              </span>
-              <input
-                class="writing-app__tolerance-slider"
-                id="directional-dash-spacing-slider"
-                type="range"
-                min="80"
-                max="220"
-                step="4"
-                value="96"
-              />
-            </label>
-            <label class="writing-app__tolerance" for="turn-radius-slider">
-              <span class="writing-app__tolerance-label">
-                Turn radius
-                <span class="writing-app__tolerance-value" id="turn-radius-value"></span>
-              </span>
-              <input
-                class="writing-app__tolerance-slider"
-                id="turn-radius-slider"
-                type="range"
-                min="0"
-                max="48"
-                step="1"
-                value="13"
-              />
-            </label>
-            <label class="writing-app__tolerance" for="number-offset-slider">
-              <span class="writing-app__tolerance-label">
-                Number offset
-                <span class="writing-app__tolerance-value" id="number-offset-value"></span>
-              </span>
-              <input
-                class="writing-app__tolerance-slider"
-                id="number-offset-slider"
-                type="range"
-                min="-80"
-                max="80"
-                step="1"
-                value="0"
-              />
-            </label>
-            <fieldset class="writing-app__annotation-controls" aria-label="Formation annotations">
-              <label class="writing-app__annotation-toggle">
-                <input type="checkbox" data-annotation-kind="directional-dash" checked />
-                <span>Directional dash</span>
-              </label>
-              <label class="writing-app__annotation-toggle">
-                <input type="checkbox" data-annotation-kind="turning-point" />
-                <span>Turns</span>
-              </label>
-              <label class="writing-app__annotation-toggle">
-                <input type="checkbox" data-annotation-kind="start-arrow" />
-                <span>Starts</span>
-              </label>
-              <label class="writing-app__annotation-toggle">
-                <input type="checkbox" data-annotation-kind="draw-order-number" />
-                <span>Numbers</span>
-              </label>
-              <label class="writing-app__annotation-toggle">
-                <input type="checkbox" data-annotation-kind="midpoint-arrow" />
-                <span>Midpoints</span>
-              </label>
-              <label class="writing-app__annotation-toggle">
-                <input id="offset-arrow-lanes" type="checkbox" checked />
-                <span>Offset lanes</span>
-              </label>
-              <label class="writing-app__annotation-color" for="arrow-color-picker">
-                <span>Arrow colour</span>
-                <input id="arrow-color-picker" type="color" value="#ffffff" />
-              </label>
-            </fieldset>
+          <div class="writing-app__title">
+            <p class="writing-app__eyebrow">Tracing demo</p>
+            <h1 class="writing-app__word" id="word-label"></h1>
           </div>
-          <button class="writing-app__button" id="show-me-button" type="button">
-            Show me
-          </button>
+          <div class="writing-app__topbar-actions">
+            <button class="writing-app__button" id="show-me-button" type="button">
+              Show me
+            </button>
+            <details class="writing-app__settings writing-app__settings--options" id="settings-menu">
+              <summary class="writing-app__button writing-app__button--secondary writing-app__button--summary">
+                Options
+              </summary>
+              <div class="writing-app__settings-panel writing-app__settings-panel--options">
+                ${renderOptionsGroup(
+    "Tracing settings",
+    `
+      ${renderRangeControl({
+        id: "tolerance-slider",
+        label: "Tolerance",
+        value: DEFAULT_TRACE_TOLERANCE,
+        min: MIN_TRACE_TOLERANCE,
+        max: MAX_TRACE_TOLERANCE,
+        step: TRACE_TOLERANCE_STEP,
+        valueId: "tolerance-value"
+      })}
+      ${renderRangeControl({
+        id: "stroke-width-slider",
+        label: "Main stroke thickness",
+        value: DEFAULT_STROKE_WIDTH,
+        min: 20,
+        max: 90,
+        step: 2,
+        valueId: "stroke-width-value"
+      })}
+    `,
+    true
+  )}
+                ${renderOptionsGroup(
+    "Gridline settings",
+    `
+      ${renderRangeControl({
+        id: "gridline-stroke-width-slider",
+        label: "Gridline thickness",
+        value: DEFAULT_GRIDLINE_STROKE_WIDTH,
+        min: 0.5,
+        max: 8,
+        step: 0.5,
+        valueId: "gridline-stroke-width-value"
+      })}
+      ${renderColorControl(
+        "gridline-color-picker",
+        "Gridline colour",
+        DEFAULT_GRIDLINE_COLOR
+      )}
+      <fieldset class="worksheet-app__checks" aria-label="Gridline visibility">
+        ${renderToggleControl("show-baseline-guide", "Baseline", true)}
+        ${renderToggleControl("show-descender-guide", "Descender", false)}
+        ${renderToggleControl("show-x-height-guide", "X-height", true)}
+        ${renderToggleControl("show-ascender-guide", "Ascender", false)}
+      </fieldset>
+    `
+  )}
+                ${renderOptionsGroup(
+    "Advanced settings",
+    `
+      ${renderRangeControl({
+        id: "target-bend-rate-slider",
+        label: "Target maximum bend rate",
+        value: DEFAULT_JOIN_SPACING.targetBendRate,
+        min: 0,
+        max: 60,
+        step: 1,
+        valueId: "target-bend-rate-value"
+      })}
+      ${renderRangeControl({
+        id: "min-sidebearing-gap-slider",
+        label: "Minimum sidebearing gap",
+        value: DEFAULT_JOIN_SPACING.minSidebearingGap,
+        min: -300,
+        max: 200,
+        step: 5,
+        valueId: "min-sidebearing-gap-value"
+      })}
+      ${renderRangeControl({
+        id: "bend-search-min-sidebearing-gap-slider",
+        label: "Search minimum sidebearing gap",
+        value: DEFAULT_JOIN_SPACING.bendSearchMinSidebearingGap,
+        min: -300,
+        max: 200,
+        step: 5,
+        valueId: "bend-search-min-sidebearing-gap-value"
+      })}
+      ${renderRangeControl({
+        id: "bend-search-max-sidebearing-gap-slider",
+        label: "Search maximum sidebearing gap",
+        value: DEFAULT_JOIN_SPACING.bendSearchMaxSidebearingGap,
+        min: -100,
+        max: 300,
+        step: 5,
+        valueId: "bend-search-max-sidebearing-gap-value"
+      })}
+      ${renderRangeControl({
+        id: "exit-handle-scale-slider",
+        label: "p0-p1 handle scale",
+        value: DEFAULT_JOIN_SPACING.exitHandleScale,
+        min: 0,
+        max: 2,
+        step: 0.05,
+        valueId: "exit-handle-scale-value"
+      })}
+      ${renderRangeControl({
+        id: "entry-handle-scale-slider",
+        label: "p2-p3 handle scale",
+        value: DEFAULT_JOIN_SPACING.entryHandleScale,
+        min: 0,
+        max: 2,
+        step: 0.05,
+        valueId: "entry-handle-scale-value"
+      })}
+      <fieldset class="worksheet-app__checks" aria-label="Advanced writing settings">
+        ${renderToggleControl("include-initial-lead-in", "Initial lead-in", true)}
+        ${renderToggleControl("include-final-lead-out", "Final lead-out", true)}
+      </fieldset>
+    `
+  )}
+                ${renderOptionsGroup(
+    "Top word annotations",
+    `
+      ${renderRangeControl({
+        id: "directional-dash-spacing-slider",
+        label: "Directional dash spacing",
+        value: DEFAULT_DIRECTIONAL_DASH_SPACING,
+        min: 80,
+        max: 220,
+        step: 4,
+        valueId: "directional-dash-spacing-value"
+      })}
+      ${renderRangeControl({
+        id: "midpoint-density-slider",
+        label: "Midpoint density",
+        value: DEFAULT_MIDPOINT_DENSITY,
+        min: 120,
+        max: 600,
+        step: 20,
+        valueId: "midpoint-density-value"
+      })}
+      ${renderRangeControl({
+        id: "turn-radius-slider",
+        label: "Turn radius",
+        value: DEFAULT_TURN_RADIUS,
+        min: 0,
+        max: 48,
+        step: 1,
+        valueId: "turn-radius-value"
+      })}
+      ${renderRangeControl({
+        id: "u-turn-length-slider",
+        label: "U-turn length",
+        value: DEFAULT_U_TURN_LENGTH,
+        min: 0,
+        max: 300,
+        step: 1,
+        valueId: "u-turn-length-value"
+      })}
+      ${renderRangeControl({
+        id: "arrow-length-slider",
+        label: "Other arrow length",
+        value: DEFAULT_ARROW_LENGTH,
+        min: 0,
+        max: 300,
+        step: 1,
+        valueId: "arrow-length-value"
+      })}
+      ${renderRangeControl({
+        id: "arrow-head-size-slider",
+        label: "Arrow head size",
+        value: DEFAULT_ARROW_HEAD_SIZE,
+        min: 0,
+        max: 64,
+        step: 1,
+        valueId: "arrow-head-size-value"
+      })}
+      ${renderRangeControl({
+        id: "arrow-stroke-width-slider",
+        label: "Arrow stroke width",
+        value: DEFAULT_ARROW_STROKE_WIDTH,
+        min: 1,
+        max: 14,
+        step: 0.5,
+        valueId: "arrow-stroke-width-value"
+      })}
+      ${renderRangeControl({
+        id: "number-size-slider",
+        label: "Number size",
+        value: DEFAULT_NUMBER_SIZE,
+        min: 8,
+        max: 72,
+        step: 1,
+        valueId: "number-size-value"
+      })}
+      ${renderRangeControl({
+        id: "number-offset-slider",
+        label: "Number offset",
+        value: DEFAULT_NUMBER_PATH_OFFSET,
+        min: -80,
+        max: 80,
+        step: 1,
+        valueId: "number-offset-value"
+      })}
+      <fieldset class="worksheet-app__checks" aria-label="Top word annotations">
+        ${renderToggleControl(
+          "annotation-directional-dash",
+          "Directional dash",
+          DEFAULT_ANNOTATION_VISIBILITY["directional-dash"],
+          'data-annotation-kind="directional-dash"'
+        )}
+        ${renderToggleControl(
+          "annotation-turning-point",
+          "Turns",
+          DEFAULT_ANNOTATION_VISIBILITY["turning-point"],
+          'data-annotation-kind="turning-point"'
+        )}
+        ${renderToggleControl(
+          "annotation-start-arrow",
+          "Starts",
+          DEFAULT_ANNOTATION_VISIBILITY["start-arrow"],
+          'data-annotation-kind="start-arrow"'
+        )}
+        ${renderToggleControl(
+          "annotation-draw-order-number",
+          "Numbers",
+          DEFAULT_ANNOTATION_VISIBILITY["draw-order-number"],
+          'data-annotation-kind="draw-order-number"'
+        )}
+        ${renderToggleControl(
+          "annotation-midpoint-arrow",
+          "Midpoints",
+          DEFAULT_ANNOTATION_VISIBILITY["midpoint-arrow"],
+          'data-annotation-kind="midpoint-arrow"'
+        )}
+        ${renderToggleControl("offset-arrow-lanes", "Offset lanes", true)}
+        ${renderToggleControl("always-offset-arrow-lanes", "Always offset lanes", false)}
+      </fieldset>
+      ${renderColorControl("word-stroke-color-picker", "Word stroke colour", DEFAULT_WORD_STROKE_COLOR)}
+      ${renderColorControl("number-color-picker", "Number colour", DEFAULT_NUMBER_COLOR)}
+      ${renderColorControl("arrow-color-picker", "Arrow colour", DEFAULT_ARROW_COLOR)}
+    `,
+    true
+  )}
+              </div>
+            </details>
+          </div>
         </header>
 
         <svg
@@ -169,12 +475,48 @@ app.innerHTML = `
   </div>
 `;
 
+const wordLabel = document.querySelector<HTMLHeadingElement>("#word-label");
 const traceSvg = document.querySelector<SVGSVGElement>("#trace-svg");
 const showMeButton = document.querySelector<HTMLButtonElement>("#show-me-button");
 const successOverlay = document.querySelector<HTMLDivElement>("#success-overlay");
 const nextWordButton = document.querySelector<HTMLButtonElement>("#next-word-button");
 const toleranceSlider = document.querySelector<HTMLInputElement>("#tolerance-slider");
 const toleranceValue = document.querySelector<HTMLSpanElement>("#tolerance-value");
+const strokeWidthSlider = document.querySelector<HTMLInputElement>("#stroke-width-slider");
+const strokeWidthValue = document.querySelector<HTMLSpanElement>("#stroke-width-value");
+const gridlineStrokeWidthSlider = document.querySelector<HTMLInputElement>(
+  "#gridline-stroke-width-slider"
+);
+const gridlineStrokeWidthValue = document.querySelector<HTMLSpanElement>(
+  "#gridline-stroke-width-value"
+);
+const gridlineColorPicker = document.querySelector<HTMLInputElement>("#gridline-color-picker");
+const showBaselineGuideToggle = document.querySelector<HTMLInputElement>("#show-baseline-guide");
+const showDescenderGuideToggle = document.querySelector<HTMLInputElement>("#show-descender-guide");
+const showXHeightGuideToggle = document.querySelector<HTMLInputElement>("#show-x-height-guide");
+const showAscenderGuideToggle = document.querySelector<HTMLInputElement>("#show-ascender-guide");
+const targetBendRateSlider = document.querySelector<HTMLInputElement>("#target-bend-rate-slider");
+const targetBendRateValue = document.querySelector<HTMLSpanElement>("#target-bend-rate-value");
+const minSidebearingGapSlider = document.querySelector<HTMLInputElement>("#min-sidebearing-gap-slider");
+const minSidebearingGapValue = document.querySelector<HTMLSpanElement>("#min-sidebearing-gap-value");
+const bendSearchMinSidebearingGapSlider = document.querySelector<HTMLInputElement>(
+  "#bend-search-min-sidebearing-gap-slider"
+);
+const bendSearchMinSidebearingGapValue = document.querySelector<HTMLSpanElement>(
+  "#bend-search-min-sidebearing-gap-value"
+);
+const bendSearchMaxSidebearingGapSlider = document.querySelector<HTMLInputElement>(
+  "#bend-search-max-sidebearing-gap-slider"
+);
+const bendSearchMaxSidebearingGapValue = document.querySelector<HTMLSpanElement>(
+  "#bend-search-max-sidebearing-gap-value"
+);
+const exitHandleScaleSlider = document.querySelector<HTMLInputElement>("#exit-handle-scale-slider");
+const exitHandleScaleValue = document.querySelector<HTMLSpanElement>("#exit-handle-scale-value");
+const entryHandleScaleSlider = document.querySelector<HTMLInputElement>("#entry-handle-scale-slider");
+const entryHandleScaleValue = document.querySelector<HTMLSpanElement>("#entry-handle-scale-value");
+const includeInitialLeadInToggle = document.querySelector<HTMLInputElement>("#include-initial-lead-in");
+const includeFinalLeadOutToggle = document.querySelector<HTMLInputElement>("#include-final-lead-out");
 const midpointDensitySlider = document.querySelector<HTMLInputElement>("#midpoint-density-slider");
 const midpointDensityValue = document.querySelector<HTMLSpanElement>("#midpoint-density-value");
 const directionalDashSpacingSlider = document.querySelector<HTMLInputElement>(
@@ -185,30 +527,86 @@ const directionalDashSpacingValue = document.querySelector<HTMLSpanElement>(
 );
 const turnRadiusSlider = document.querySelector<HTMLInputElement>("#turn-radius-slider");
 const turnRadiusValue = document.querySelector<HTMLSpanElement>("#turn-radius-value");
+const uTurnLengthSlider = document.querySelector<HTMLInputElement>("#u-turn-length-slider");
+const uTurnLengthValue = document.querySelector<HTMLSpanElement>("#u-turn-length-value");
+const arrowLengthSlider = document.querySelector<HTMLInputElement>("#arrow-length-slider");
+const arrowLengthValue = document.querySelector<HTMLSpanElement>("#arrow-length-value");
+const arrowHeadSizeSlider = document.querySelector<HTMLInputElement>("#arrow-head-size-slider");
+const arrowHeadSizeValue = document.querySelector<HTMLSpanElement>("#arrow-head-size-value");
+const arrowStrokeWidthSlider = document.querySelector<HTMLInputElement>(
+  "#arrow-stroke-width-slider"
+);
+const arrowStrokeWidthValue = document.querySelector<HTMLSpanElement>(
+  "#arrow-stroke-width-value"
+);
+const numberSizeSlider = document.querySelector<HTMLInputElement>("#number-size-slider");
+const numberSizeValue = document.querySelector<HTMLSpanElement>("#number-size-value");
 const numberOffsetSlider = document.querySelector<HTMLInputElement>("#number-offset-slider");
 const numberOffsetValue = document.querySelector<HTMLSpanElement>("#number-offset-value");
 const offsetArrowLanesToggle = document.querySelector<HTMLInputElement>("#offset-arrow-lanes");
+const alwaysOffsetArrowLanesToggle = document.querySelector<HTMLInputElement>(
+  "#always-offset-arrow-lanes"
+);
+const wordStrokeColorPicker = document.querySelector<HTMLInputElement>("#word-stroke-color-picker");
+const numberColorPicker = document.querySelector<HTMLInputElement>("#number-color-picker");
 const arrowColorPicker = document.querySelector<HTMLInputElement>("#arrow-color-picker");
 const annotationToggleEls = Array.from(
   document.querySelectorAll<HTMLInputElement>("[data-annotation-kind]")
 );
 
 if (
+  !wordLabel ||
   !traceSvg ||
   !showMeButton ||
   !successOverlay ||
   !nextWordButton ||
   !toleranceSlider ||
   !toleranceValue ||
+  !strokeWidthSlider ||
+  !strokeWidthValue ||
+  !gridlineStrokeWidthSlider ||
+  !gridlineStrokeWidthValue ||
+  !gridlineColorPicker ||
+  !showBaselineGuideToggle ||
+  !showDescenderGuideToggle ||
+  !showXHeightGuideToggle ||
+  !showAscenderGuideToggle ||
+  !targetBendRateSlider ||
+  !targetBendRateValue ||
+  !minSidebearingGapSlider ||
+  !minSidebearingGapValue ||
+  !bendSearchMinSidebearingGapSlider ||
+  !bendSearchMinSidebearingGapValue ||
+  !bendSearchMaxSidebearingGapSlider ||
+  !bendSearchMaxSidebearingGapValue ||
+  !exitHandleScaleSlider ||
+  !exitHandleScaleValue ||
+  !entryHandleScaleSlider ||
+  !entryHandleScaleValue ||
+  !includeInitialLeadInToggle ||
+  !includeFinalLeadOutToggle ||
   !midpointDensitySlider ||
   !midpointDensityValue ||
   !directionalDashSpacingSlider ||
   !directionalDashSpacingValue ||
   !turnRadiusSlider ||
   !turnRadiusValue ||
+  !uTurnLengthSlider ||
+  !uTurnLengthValue ||
+  !arrowLengthSlider ||
+  !arrowLengthValue ||
+  !arrowHeadSizeSlider ||
+  !arrowHeadSizeValue ||
+  !arrowStrokeWidthSlider ||
+  !arrowStrokeWidthValue ||
+  !numberSizeSlider ||
+  !numberSizeValue ||
   !numberOffsetSlider ||
   !numberOffsetValue ||
   !offsetArrowLanesToggle ||
+  !alwaysOffsetArrowLanesToggle ||
+  !wordStrokeColorPicker ||
+  !numberColorPicker ||
   !arrowColorPicker ||
   annotationToggleEls.length === 0
 ) {
@@ -231,25 +629,36 @@ let demoNibEl: SVGCircleElement | null = null;
 let demoAnimationFrameId: number | null = null;
 let isDemoPlaying = false;
 let currentTraceTolerance = DEFAULT_TRACE_TOLERANCE;
-let currentMidpointDensity = 320;
-let currentDirectionalDashSpacing = 96;
-let currentTurnRadius = 13;
-let currentNumberPathOffset = 0;
+let currentStrokeWidth = DEFAULT_STROKE_WIDTH;
+let currentGridlineStrokeWidth = DEFAULT_GRIDLINE_STROKE_WIDTH;
+let currentGridlineColor = DEFAULT_GRIDLINE_COLOR;
+let showBaselineGuide = true;
+let showDescenderGuide = false;
+let showXHeightGuide = true;
+let showAscenderGuide = false;
+let currentJoinSpacing: Required<JoinSpacingOptions> = { ...DEFAULT_JOIN_SPACING };
+let includeInitialLeadIn = true;
+let includeFinalLeadOut = true;
+let currentMidpointDensity = DEFAULT_MIDPOINT_DENSITY;
+let currentDirectionalDashSpacing = DEFAULT_DIRECTIONAL_DASH_SPACING;
+let currentTurnRadius = DEFAULT_TURN_RADIUS;
+let currentUTurnLength = DEFAULT_U_TURN_LENGTH;
+let currentArrowLength = DEFAULT_ARROW_LENGTH;
+let currentArrowHeadSize = DEFAULT_ARROW_HEAD_SIZE;
+let currentArrowStrokeWidth = DEFAULT_ARROW_STROKE_WIDTH;
+let currentNumberSize = DEFAULT_NUMBER_SIZE;
+let currentNumberPathOffset = DEFAULT_NUMBER_PATH_OFFSET;
 let shouldOffsetArrowLanes = true;
-let currentArrowColor = "#ffffff";
+let shouldAlwaysOffsetArrowLanes = false;
+let currentWordStrokeColor = DEFAULT_WORD_STROKE_COLOR;
+let currentNumberColor = DEFAULT_NUMBER_COLOR;
+let currentArrowColor = DEFAULT_ARROW_COLOR;
 let annotationVisibility: Record<FormationAnnotation["kind"], boolean> = {
-  "directional-dash": true,
-  "turning-point": false,
-  "start-arrow": false,
-  "draw-order-number": false,
-  "midpoint-arrow": false
+  ...DEFAULT_ANNOTATION_VISIBILITY
 };
 
 const TRACE_CURSOR_TURN_COMMIT_DISTANCE = 12;
 const TRACE_CURSOR_TURN_LOOKAHEAD_DISTANCE = 2;
-const SECTION_ARROWHEAD_LENGTH = 26;
-const SECTION_ARROWHEAD_WIDTH = 22;
-const SECTION_ARROWHEAD_TIP_OVERHANG = 11;
 const ANNOTATION_COLLISION_SAMPLE_STEP = 4;
 const ANNOTATION_STROKE_WIDTH = 6.5;
 const ANNOTATION_STROKE_HALF_WIDTH = ANNOTATION_STROKE_WIDTH / 2;
@@ -293,28 +702,409 @@ const escapeSvgText = (value: string): string =>
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;");
 
-const syncToleranceLabel = () => {
-  toleranceValue.textContent = `${currentTraceTolerance}px`;
+const setText = (element: HTMLElement, value: string) => {
+  element.textContent = value;
 };
 
-const syncMidpointDensityLabel = () => {
-  midpointDensityValue.textContent = `1 per ${currentMidpointDensity}px`;
+const formatScale = (value: number): string => value.toFixed(2);
+
+const syncLabels = () => {
+  setText(toleranceValue, `${currentTraceTolerance}px`);
+  setText(strokeWidthValue, `${currentStrokeWidth}px`);
+  setText(gridlineStrokeWidthValue, `${currentGridlineStrokeWidth.toFixed(1)}px`);
+  setText(targetBendRateValue, `${currentJoinSpacing.targetBendRate}`);
+  setText(minSidebearingGapValue, `${currentJoinSpacing.minSidebearingGap}`);
+  setText(
+    bendSearchMinSidebearingGapValue,
+    `${currentJoinSpacing.bendSearchMinSidebearingGap}`
+  );
+  setText(
+    bendSearchMaxSidebearingGapValue,
+    `${currentJoinSpacing.bendSearchMaxSidebearingGap}`
+  );
+  setText(exitHandleScaleValue, formatScale(currentJoinSpacing.exitHandleScale));
+  setText(entryHandleScaleValue, formatScale(currentJoinSpacing.entryHandleScale));
+  setText(directionalDashSpacingValue, `${currentDirectionalDashSpacing}px`);
+  setText(midpointDensityValue, `1 per ${currentMidpointDensity}px`);
+  setText(turnRadiusValue, `${currentTurnRadius}px`);
+  setText(uTurnLengthValue, `${currentUTurnLength}px`);
+  setText(arrowLengthValue, `${currentArrowLength}px`);
+  setText(arrowHeadSizeValue, `${currentArrowHeadSize}px`);
+  setText(arrowStrokeWidthValue, `${currentArrowStrokeWidth.toFixed(1)}px`);
+  setText(numberSizeValue, `${currentNumberSize}px`);
+  setText(numberOffsetValue, `${currentNumberPathOffset}px`);
 };
 
-const syncDirectionalDashSpacingLabel = () => {
-  directionalDashSpacingValue.textContent = `${currentDirectionalDashSpacing}px`;
-};
-
-const syncTurnRadiusLabel = () => {
-  turnRadiusValue.textContent = `${currentTurnRadius}px`;
-};
-
-const syncNumberOffsetLabel = () => {
-  numberOffsetValue.textContent = `${currentNumberPathOffset}px`;
-};
-
-const normalizeArrowColor = (value: string): string | null =>
+const normalizeColor = (value: string): string | null =>
   /^#[0-9a-fA-F]{6}$/.test(value) ? value.toLowerCase() : null;
+
+const getSliderValuePrecision = (input: HTMLInputElement): number => {
+  const step = input.step;
+  if (!step || step === "any") {
+    return 0;
+  }
+
+  const decimals = step.split(".")[1];
+  return decimals ? decimals.length : 0;
+};
+
+const normalizeSliderValue = (input: HTMLInputElement, value: number): number => {
+  const min = input.min === "" ? Number.NEGATIVE_INFINITY : Number(input.min);
+  const max = input.max === "" ? Number.POSITIVE_INFINITY : Number(input.max);
+  const step = input.step === "" || input.step === "any" ? NaN : Number(input.step);
+  const base = Number.isFinite(min) ? min : 0;
+  let nextValue = value;
+
+  if (Number.isFinite(min)) {
+    nextValue = Math.max(min, nextValue);
+  }
+  if (Number.isFinite(max)) {
+    nextValue = Math.min(max, nextValue);
+  }
+  if (Number.isFinite(step) && step > 0) {
+    nextValue = base + Math.round((nextValue - base) / step) * step;
+  }
+  if (Number.isFinite(min)) {
+    nextValue = Math.max(min, nextValue);
+  }
+  if (Number.isFinite(max)) {
+    nextValue = Math.min(max, nextValue);
+  }
+
+  return Number(nextValue.toFixed(getSliderValuePrecision(input)));
+};
+
+const syncSliderValue = (input: HTMLInputElement, value: number): number => {
+  const normalizedValue = normalizeSliderValue(input, value);
+  input.value = normalizedValue.toFixed(getSliderValuePrecision(input));
+  return normalizedValue;
+};
+
+const parseBooleanSearchParam = (params: URLSearchParams, key: string): boolean | null => {
+  const rawValue = params.get(key);
+  if (rawValue === null) {
+    return null;
+  }
+
+  const normalizedValue = rawValue.trim().toLowerCase();
+  if (["1", "true", "yes", "on"].includes(normalizedValue)) {
+    return true;
+  }
+  if (["0", "false", "no", "off"].includes(normalizedValue)) {
+    return false;
+  }
+
+  return null;
+};
+
+const parseSliderSearchParam = (
+  params: URLSearchParams,
+  key: string,
+  input: HTMLInputElement
+): number | null => {
+  const rawValue = params.get(key);
+  if (rawValue === null) {
+    return null;
+  }
+
+  const parsedValue = Number(rawValue);
+  if (!Number.isFinite(parsedValue)) {
+    return null;
+  }
+
+  return normalizeSliderValue(input, parsedValue);
+};
+
+const parseColorSearchParam = (params: URLSearchParams, key: string): string | null =>
+  normalizeColor(params.get(key) ?? "");
+
+const syncSettingsControlsFromState = () => {
+  currentTraceTolerance = syncSliderValue(toleranceSlider, currentTraceTolerance);
+  currentStrokeWidth = syncSliderValue(strokeWidthSlider, currentStrokeWidth);
+  currentGridlineStrokeWidth = syncSliderValue(
+    gridlineStrokeWidthSlider,
+    currentGridlineStrokeWidth
+  );
+  currentJoinSpacing = {
+    targetBendRate: syncSliderValue(targetBendRateSlider, currentJoinSpacing.targetBendRate),
+    minSidebearingGap: syncSliderValue(minSidebearingGapSlider, currentJoinSpacing.minSidebearingGap),
+    bendSearchMinSidebearingGap: syncSliderValue(
+      bendSearchMinSidebearingGapSlider,
+      currentJoinSpacing.bendSearchMinSidebearingGap
+    ),
+    bendSearchMaxSidebearingGap: syncSliderValue(
+      bendSearchMaxSidebearingGapSlider,
+      currentJoinSpacing.bendSearchMaxSidebearingGap
+    ),
+    exitHandleScale: syncSliderValue(exitHandleScaleSlider, currentJoinSpacing.exitHandleScale),
+    entryHandleScale: syncSliderValue(entryHandleScaleSlider, currentJoinSpacing.entryHandleScale)
+  };
+  currentDirectionalDashSpacing = syncSliderValue(
+    directionalDashSpacingSlider,
+    currentDirectionalDashSpacing
+  );
+  currentMidpointDensity = syncSliderValue(midpointDensitySlider, currentMidpointDensity);
+  currentTurnRadius = syncSliderValue(turnRadiusSlider, currentTurnRadius);
+  currentUTurnLength = syncSliderValue(uTurnLengthSlider, currentUTurnLength);
+  currentArrowLength = syncSliderValue(arrowLengthSlider, currentArrowLength);
+  currentArrowHeadSize = syncSliderValue(arrowHeadSizeSlider, currentArrowHeadSize);
+  currentArrowStrokeWidth = syncSliderValue(arrowStrokeWidthSlider, currentArrowStrokeWidth);
+  currentNumberSize = syncSliderValue(numberSizeSlider, currentNumberSize);
+  currentNumberPathOffset = syncSliderValue(numberOffsetSlider, currentNumberPathOffset);
+
+  showBaselineGuideToggle.checked = showBaselineGuide;
+  showDescenderGuideToggle.checked = showDescenderGuide;
+  showXHeightGuideToggle.checked = showXHeightGuide;
+  showAscenderGuideToggle.checked = showAscenderGuide;
+  includeInitialLeadInToggle.checked = includeInitialLeadIn;
+  includeFinalLeadOutToggle.checked = includeFinalLeadOut;
+  offsetArrowLanesToggle.checked = shouldOffsetArrowLanes;
+  alwaysOffsetArrowLanesToggle.checked = shouldAlwaysOffsetArrowLanes;
+  gridlineColorPicker.value = currentGridlineColor;
+  wordStrokeColorPicker.value = currentWordStrokeColor;
+  numberColorPicker.value = currentNumberColor;
+  arrowColorPicker.value = currentArrowColor;
+  annotationToggleEls.forEach((toggleEl) => {
+    const annotationKind = toggleEl.dataset.annotationKind as FormationAnnotation["kind"] | undefined;
+    if (!annotationKind) {
+      return;
+    }
+    toggleEl.checked = annotationVisibility[annotationKind];
+  });
+
+  syncLabels();
+};
+
+const syncSettingsUrl = () => {
+  const url = new URL(window.location.href);
+  WRITING_APP_URL_PARAM_KEYS.forEach((key) => {
+    url.searchParams.delete(key);
+  });
+
+  if (currentTraceTolerance !== DEFAULT_TRACE_TOLERANCE) {
+    url.searchParams.set("tolerance", String(currentTraceTolerance));
+  }
+  if (currentStrokeWidth !== DEFAULT_STROKE_WIDTH) {
+    url.searchParams.set("strokeWidth", String(currentStrokeWidth));
+  }
+  if (currentGridlineStrokeWidth !== DEFAULT_GRIDLINE_STROKE_WIDTH) {
+    url.searchParams.set("gridlineStrokeWidth", String(currentGridlineStrokeWidth));
+  }
+  if (currentGridlineColor !== DEFAULT_GRIDLINE_COLOR) {
+    url.searchParams.set("gridlineColor", currentGridlineColor);
+  }
+  if (showBaselineGuide !== true) {
+    url.searchParams.set("showBaselineGuide", showBaselineGuide ? "1" : "0");
+  }
+  if (showDescenderGuide !== false) {
+    url.searchParams.set("showDescenderGuide", showDescenderGuide ? "1" : "0");
+  }
+  if (showXHeightGuide !== true) {
+    url.searchParams.set("showXHeightGuide", showXHeightGuide ? "1" : "0");
+  }
+  if (showAscenderGuide !== false) {
+    url.searchParams.set("showAscenderGuide", showAscenderGuide ? "1" : "0");
+  }
+  if (currentJoinSpacing.targetBendRate !== DEFAULT_JOIN_SPACING.targetBendRate) {
+    url.searchParams.set("targetBendRate", String(currentJoinSpacing.targetBendRate));
+  }
+  if (currentJoinSpacing.minSidebearingGap !== DEFAULT_JOIN_SPACING.minSidebearingGap) {
+    url.searchParams.set("minSidebearingGap", String(currentJoinSpacing.minSidebearingGap));
+  }
+  if (
+    currentJoinSpacing.bendSearchMinSidebearingGap !==
+    DEFAULT_JOIN_SPACING.bendSearchMinSidebearingGap
+  ) {
+    url.searchParams.set(
+      "bendSearchMinSidebearingGap",
+      String(currentJoinSpacing.bendSearchMinSidebearingGap)
+    );
+  }
+  if (
+    currentJoinSpacing.bendSearchMaxSidebearingGap !==
+    DEFAULT_JOIN_SPACING.bendSearchMaxSidebearingGap
+  ) {
+    url.searchParams.set(
+      "bendSearchMaxSidebearingGap",
+      String(currentJoinSpacing.bendSearchMaxSidebearingGap)
+    );
+  }
+  if (currentJoinSpacing.exitHandleScale !== DEFAULT_JOIN_SPACING.exitHandleScale) {
+    url.searchParams.set("exitHandleScale", String(currentJoinSpacing.exitHandleScale));
+  }
+  if (currentJoinSpacing.entryHandleScale !== DEFAULT_JOIN_SPACING.entryHandleScale) {
+    url.searchParams.set("entryHandleScale", String(currentJoinSpacing.entryHandleScale));
+  }
+  if (includeInitialLeadIn !== true) {
+    url.searchParams.set("includeInitialLeadIn", includeInitialLeadIn ? "1" : "0");
+  }
+  if (includeFinalLeadOut !== true) {
+    url.searchParams.set("includeFinalLeadOut", includeFinalLeadOut ? "1" : "0");
+  }
+  if (currentDirectionalDashSpacing !== DEFAULT_DIRECTIONAL_DASH_SPACING) {
+    url.searchParams.set("directionalDashSpacing", String(currentDirectionalDashSpacing));
+  }
+  if (currentMidpointDensity !== DEFAULT_MIDPOINT_DENSITY) {
+    url.searchParams.set("midpointDensity", String(currentMidpointDensity));
+  }
+  if (currentTurnRadius !== DEFAULT_TURN_RADIUS) {
+    url.searchParams.set("turnRadius", String(currentTurnRadius));
+  }
+  if (currentUTurnLength !== DEFAULT_U_TURN_LENGTH) {
+    url.searchParams.set("uTurnLength", String(currentUTurnLength));
+  }
+  if (currentArrowLength !== DEFAULT_ARROW_LENGTH) {
+    url.searchParams.set("arrowLength", String(currentArrowLength));
+  }
+  if (currentArrowHeadSize !== DEFAULT_ARROW_HEAD_SIZE) {
+    url.searchParams.set("arrowHeadSize", String(currentArrowHeadSize));
+  }
+  if (currentArrowStrokeWidth !== DEFAULT_ARROW_STROKE_WIDTH) {
+    url.searchParams.set("arrowStrokeWidth", String(currentArrowStrokeWidth));
+  }
+  if (currentNumberSize !== DEFAULT_NUMBER_SIZE) {
+    url.searchParams.set("numberSize", String(currentNumberSize));
+  }
+  if (currentNumberPathOffset !== DEFAULT_NUMBER_PATH_OFFSET) {
+    url.searchParams.set("numberOffset", String(currentNumberPathOffset));
+  }
+  if (annotationVisibility["directional-dash"] !== DEFAULT_ANNOTATION_VISIBILITY["directional-dash"]) {
+    url.searchParams.set("directionalDash", annotationVisibility["directional-dash"] ? "1" : "0");
+  }
+  if (annotationVisibility["turning-point"] !== DEFAULT_ANNOTATION_VISIBILITY["turning-point"]) {
+    url.searchParams.set("turns", annotationVisibility["turning-point"] ? "1" : "0");
+  }
+  if (annotationVisibility["start-arrow"] !== DEFAULT_ANNOTATION_VISIBILITY["start-arrow"]) {
+    url.searchParams.set("starts", annotationVisibility["start-arrow"] ? "1" : "0");
+  }
+  if (
+    annotationVisibility["draw-order-number"] !==
+    DEFAULT_ANNOTATION_VISIBILITY["draw-order-number"]
+  ) {
+    url.searchParams.set("numbers", annotationVisibility["draw-order-number"] ? "1" : "0");
+  }
+  if (annotationVisibility["midpoint-arrow"] !== DEFAULT_ANNOTATION_VISIBILITY["midpoint-arrow"]) {
+    url.searchParams.set("midpoints", annotationVisibility["midpoint-arrow"] ? "1" : "0");
+  }
+  if (shouldOffsetArrowLanes !== true) {
+    url.searchParams.set("offsetArrowLanes", shouldOffsetArrowLanes ? "1" : "0");
+  }
+  if (shouldAlwaysOffsetArrowLanes !== false) {
+    url.searchParams.set("alwaysOffsetArrowLanes", shouldAlwaysOffsetArrowLanes ? "1" : "0");
+  }
+  if (currentWordStrokeColor !== DEFAULT_WORD_STROKE_COLOR) {
+    url.searchParams.set("wordStrokeColor", currentWordStrokeColor);
+  }
+  if (currentNumberColor !== DEFAULT_NUMBER_COLOR) {
+    url.searchParams.set("numberColor", currentNumberColor);
+  }
+  if (currentArrowColor !== DEFAULT_ARROW_COLOR) {
+    url.searchParams.set("arrowColor", currentArrowColor);
+  }
+
+  const nextUrl = `${url.pathname}${url.search}${url.hash}`;
+  const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+  if (nextUrl !== currentUrl) {
+    window.history.replaceState(null, "", nextUrl);
+  }
+};
+
+const applyUrlSettings = () => {
+  const params = new URLSearchParams(window.location.search);
+
+  currentTraceTolerance =
+    parseSliderSearchParam(params, "tolerance", toleranceSlider) ?? currentTraceTolerance;
+  currentStrokeWidth =
+    parseSliderSearchParam(params, "strokeWidth", strokeWidthSlider) ?? currentStrokeWidth;
+  currentGridlineStrokeWidth =
+    parseSliderSearchParam(params, "gridlineStrokeWidth", gridlineStrokeWidthSlider) ??
+    currentGridlineStrokeWidth;
+  currentGridlineColor =
+    parseColorSearchParam(params, "gridlineColor") ?? currentGridlineColor;
+  showBaselineGuide =
+    parseBooleanSearchParam(params, "showBaselineGuide") ?? showBaselineGuide;
+  showDescenderGuide =
+    parseBooleanSearchParam(params, "showDescenderGuide") ?? showDescenderGuide;
+  showXHeightGuide = parseBooleanSearchParam(params, "showXHeightGuide") ?? showXHeightGuide;
+  showAscenderGuide =
+    parseBooleanSearchParam(params, "showAscenderGuide") ?? showAscenderGuide;
+  currentJoinSpacing = {
+    targetBendRate:
+      parseSliderSearchParam(params, "targetBendRate", targetBendRateSlider) ??
+      currentJoinSpacing.targetBendRate,
+    minSidebearingGap:
+      parseSliderSearchParam(params, "minSidebearingGap", minSidebearingGapSlider) ??
+      currentJoinSpacing.minSidebearingGap,
+    bendSearchMinSidebearingGap:
+      parseSliderSearchParam(
+        params,
+        "bendSearchMinSidebearingGap",
+        bendSearchMinSidebearingGapSlider
+      ) ?? currentJoinSpacing.bendSearchMinSidebearingGap,
+    bendSearchMaxSidebearingGap:
+      parseSliderSearchParam(
+        params,
+        "bendSearchMaxSidebearingGap",
+        bendSearchMaxSidebearingGapSlider
+      ) ?? currentJoinSpacing.bendSearchMaxSidebearingGap,
+    exitHandleScale:
+      parseSliderSearchParam(params, "exitHandleScale", exitHandleScaleSlider) ??
+      currentJoinSpacing.exitHandleScale,
+    entryHandleScale:
+      parseSliderSearchParam(params, "entryHandleScale", entryHandleScaleSlider) ??
+      currentJoinSpacing.entryHandleScale
+  };
+  includeInitialLeadIn =
+    parseBooleanSearchParam(params, "includeInitialLeadIn") ?? includeInitialLeadIn;
+  includeFinalLeadOut =
+    parseBooleanSearchParam(params, "includeFinalLeadOut") ?? includeFinalLeadOut;
+  currentDirectionalDashSpacing =
+    parseSliderSearchParam(params, "directionalDashSpacing", directionalDashSpacingSlider) ??
+    currentDirectionalDashSpacing;
+  currentMidpointDensity =
+    parseSliderSearchParam(params, "midpointDensity", midpointDensitySlider) ??
+    currentMidpointDensity;
+  currentTurnRadius =
+    parseSliderSearchParam(params, "turnRadius", turnRadiusSlider) ?? currentTurnRadius;
+  currentUTurnLength =
+    parseSliderSearchParam(params, "uTurnLength", uTurnLengthSlider) ?? currentUTurnLength;
+  currentArrowLength =
+    parseSliderSearchParam(params, "arrowLength", arrowLengthSlider) ?? currentArrowLength;
+  currentArrowHeadSize =
+    parseSliderSearchParam(params, "arrowHeadSize", arrowHeadSizeSlider) ?? currentArrowHeadSize;
+  currentArrowStrokeWidth =
+    parseSliderSearchParam(params, "arrowStrokeWidth", arrowStrokeWidthSlider) ??
+    currentArrowStrokeWidth;
+  currentNumberSize =
+    parseSliderSearchParam(params, "numberSize", numberSizeSlider) ?? currentNumberSize;
+  currentNumberPathOffset =
+    parseSliderSearchParam(params, "numberOffset", numberOffsetSlider) ??
+    currentNumberPathOffset;
+  annotationVisibility = {
+    "directional-dash":
+      parseBooleanSearchParam(params, "directionalDash") ??
+      annotationVisibility["directional-dash"],
+    "turning-point":
+      parseBooleanSearchParam(params, "turns") ?? annotationVisibility["turning-point"],
+    "start-arrow":
+      parseBooleanSearchParam(params, "starts") ?? annotationVisibility["start-arrow"],
+    "draw-order-number":
+      parseBooleanSearchParam(params, "numbers") ?? annotationVisibility["draw-order-number"],
+    "midpoint-arrow":
+      parseBooleanSearchParam(params, "midpoints") ?? annotationVisibility["midpoint-arrow"]
+  };
+  shouldOffsetArrowLanes =
+    parseBooleanSearchParam(params, "offsetArrowLanes") ?? shouldOffsetArrowLanes;
+  shouldAlwaysOffsetArrowLanes =
+    parseBooleanSearchParam(params, "alwaysOffsetArrowLanes") ?? shouldAlwaysOffsetArrowLanes;
+  currentWordStrokeColor =
+    parseColorSearchParam(params, "wordStrokeColor") ?? currentWordStrokeColor;
+  currentNumberColor = parseColorSearchParam(params, "numberColor") ?? currentNumberColor;
+  currentArrowColor = parseColorSearchParam(params, "arrowColor") ?? currentArrowColor;
+
+  syncSettingsControlsFromState();
+  syncSettingsUrl();
+};
 
 const getAnnotationClassName = (annotation: FormationAnnotation): string =>
   `writing-app__section-arrow writing-app__section-arrow--formation writing-app__section-arrow--${annotation.kind}`;
@@ -1020,7 +1810,8 @@ const renderAnnotationMarkup = (annotation: FormationAnnotation): string => {
           class="writing-app__annotation-number"
           x="${numberAnchor.x}"
           y="${numberAnchor.y}"
-          font-size="${currentTurnRadius * 2}"
+          fill="${currentNumberColor}"
+          font-size="${currentNumberSize}"
           text-anchor="middle"
           dominant-baseline="central"
         >${escapeSvgText(annotation.text)}</text>
@@ -1039,6 +1830,145 @@ const renderAnnotationMarkup = (annotation: FormationAnnotation): string => {
           `<polygon class="writing-app__section-arrowhead writing-app__section-arrowhead--formation writing-app__section-arrowhead--${annotation.kind}" points="${buildSvgPoints(head.polygon)}"></polygon>`
       )
       .join("")}
+  `;
+};
+
+const normalizeGuideValue = (
+  value: number,
+  sourceGuides: LetterGuides,
+  targetGuides: LetterGuides
+): number => {
+  const sourceDelta = sourceGuides.xHeight - sourceGuides.baseline;
+  const targetDelta = targetGuides.xHeight - targetGuides.baseline;
+  const scale = sourceDelta !== 0 ? targetDelta / sourceDelta : 1;
+  const offset = targetGuides.baseline - sourceGuides.baseline * scale;
+  return value * scale + offset;
+};
+
+const getWordGuideFromMetadata = (
+  text: string,
+  targetGuides: LetterGuides,
+  kind: "ascender" | "descender"
+): number | null => {
+  let observedGuide = kind === "ascender" ? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY;
+  let previousExitVariant: keyof typeof cursiveEntryVariantByExitVariant | null = null;
+
+  for (const rawChar of text) {
+    if (rawChar.trim() === "") {
+      previousExitVariant = null;
+      continue;
+    }
+
+    const char = rawChar.toLowerCase();
+    const entryVariant =
+      previousExitVariant === null
+        ? defaultCursiveEntryVariant
+        : cursiveEntryVariantByExitVariant[previousExitVariant];
+    const letter = getCursiveLetterVariant(char, entryVariant);
+    if (!letter) {
+      previousExitVariant = null;
+      continue;
+    }
+
+    const sourceGuides = letter.guides;
+    const guideValue = sourceGuides?.[kind];
+    if (sourceGuides && typeof guideValue === "number") {
+      const normalizedGuide = normalizeGuideValue(guideValue, sourceGuides, targetGuides);
+      if (kind === "ascender") {
+        observedGuide = Math.min(observedGuide, normalizedGuide);
+      } else {
+        observedGuide = Math.max(observedGuide, normalizedGuide);
+      }
+    }
+
+    previousExitVariant = cursiveExitVariantByLetter[char] ?? "low";
+  }
+
+  return Number.isFinite(observedGuide) ? observedGuide : null;
+};
+
+const getGuideLineY = (
+  path: WritingPath,
+  offsetY: number,
+  kind: "baseline" | "xHeight" | "ascender" | "descender"
+): number => {
+  const guides = path.guides;
+  const halfStrokeWidth = currentStrokeWidth / 2;
+  const guideHeight = Math.abs(guides.baseline - guides.xHeight);
+
+  if (kind === "baseline") {
+    return guides.baseline + offsetY + halfStrokeWidth;
+  }
+
+  if (kind === "xHeight") {
+    return guides.xHeight + offsetY - halfStrokeWidth;
+  }
+
+  if (kind === "ascender") {
+    const observedAscenderGuide = getWordGuideFromMetadata(currentWord, guides, "ascender");
+    if (observedAscenderGuide !== null) {
+      return observedAscenderGuide + offsetY - halfStrokeWidth;
+    }
+
+    const ascenderGuide =
+      guides.ascender ?? guides.xHeight - Math.abs(guideHeight) * 0.63;
+    return ascenderGuide + offsetY - halfStrokeWidth;
+  }
+
+  const observedDescenderGuide = getWordGuideFromMetadata(currentWord, guides, "descender");
+  if (observedDescenderGuide !== null) {
+    return observedDescenderGuide + offsetY + halfStrokeWidth;
+  }
+
+  const descenderGuide =
+    guides.descender ?? guides.baseline + Math.abs(guideHeight) * 0.66;
+  return descenderGuide + offsetY + halfStrokeWidth;
+};
+
+const renderGuideLines = (path: WritingPath, width: number, offsetY: number): string => {
+  const guideStyle = `stroke: ${currentGridlineColor}; stroke-width: ${currentGridlineStrokeWidth};`;
+
+  return `
+    ${showBaselineGuide ? `
+      <line
+        class="writing-app__guide"
+        x1="0"
+        y1="${getGuideLineY(path, offsetY, "baseline")}"
+        x2="${width}"
+        y2="${getGuideLineY(path, offsetY, "baseline")}"
+        style="${guideStyle}"
+      ></line>
+    ` : ""}
+    ${showDescenderGuide ? `
+      <line
+        class="writing-app__guide"
+        x1="0"
+        y1="${getGuideLineY(path, offsetY, "descender")}"
+        x2="${width}"
+        y2="${getGuideLineY(path, offsetY, "descender")}"
+        style="${guideStyle}"
+      ></line>
+    ` : ""}
+    ${showXHeightGuide ? `
+      <line
+        class="writing-app__guide"
+        x1="0"
+        y1="${getGuideLineY(path, offsetY, "xHeight")}"
+        x2="${width}"
+        y2="${getGuideLineY(path, offsetY, "xHeight")}"
+        style="${guideStyle}"
+      ></line>
+    ` : ""}
+    ${showAscenderGuide ? `
+      <line
+        class="writing-app__guide"
+        x1="0"
+        y1="${getGuideLineY(path, offsetY, "ascender")}"
+        x2="${width}"
+        y2="${getGuideLineY(path, offsetY, "ascender")}"
+        style="${guideStyle}"
+      ></line>
+    ` : ""}
   `;
 };
 
@@ -1237,57 +2167,78 @@ const setupScene = (path: WritingPath, width: number, height: number, offsetY: n
 
   const drawableStrokes = path.strokes.filter((stroke) => stroke.type !== "lift");
   const backgroundPaths = drawableStrokes
-    .map((stroke) => `<path class="writing-app__stroke-bg" d="${buildPathD(stroke.curves)}"></path>`)
+    .map(
+      (stroke) =>
+        `<path class="writing-app__stroke-bg" d="${buildPathD(stroke.curves)}" style="stroke-width: ${currentStrokeWidth}; stroke: ${currentWordStrokeColor};"></path>`
+    )
     .join("");
   const tracePaths = drawableStrokes
-    .map((stroke) => `<path class="writing-app__stroke-trace" d="${buildPathD(stroke.curves)}"></path>`)
+    .map(
+      (stroke) =>
+        `<path class="writing-app__stroke-trace" d="${buildPathD(stroke.curves)}" style="stroke-width: ${currentStrokeWidth};"></path>`
+    )
     .join("");
   const demoPaths = drawableStrokes
-    .map((stroke) => `<path class="writing-app__stroke-demo" d="${buildPathD(stroke.curves)}"></path>`)
+    .map(
+      (stroke) =>
+        `<path class="writing-app__stroke-demo" d="${buildPathD(stroke.curves)}" style="stroke-width: ${currentStrokeWidth};"></path>`
+    )
     .join("");
-  const sectionArrowLength = Math.abs(path.guides.baseline - path.guides.xHeight) / 3;
   const arrowLaneOffset = shouldOffsetArrowLanes ? currentTurnRadius : 0;
+  const arrowLaneOffsetMode = shouldAlwaysOffsetArrowLanes ? "always" : "bidirectional-only";
   const annotations = compileFormationAnnotations(preparedPath, {
-    directionalDashes: {
-      spacing: currentDirectionalDashSpacing,
-      head: {
-        length: SECTION_ARROWHEAD_LENGTH,
-        width: SECTION_ARROWHEAD_WIDTH,
-        tipExtension: SECTION_ARROWHEAD_TIP_OVERHANG
-      }
-    },
-    turningPoints: {
-      offset: currentTurnRadius,
-      stemLength: sectionArrowLength * 0.36,
-      head: {
-        length: SECTION_ARROWHEAD_LENGTH,
-        width: SECTION_ARROWHEAD_WIDTH,
-        tipExtension: SECTION_ARROWHEAD_TIP_OVERHANG
-      }
-    },
-    startArrows: {
-      length: sectionArrowLength * 0.42,
-      minLength: sectionArrowLength * 0.18,
-      offset: arrowLaneOffset,
-      head: {
-        length: SECTION_ARROWHEAD_LENGTH,
-        width: SECTION_ARROWHEAD_WIDTH,
-        tipExtension: SECTION_ARROWHEAD_TIP_OVERHANG
-      }
-    },
-    drawOrderNumbers: {
-      offset: 0
-    },
-    midpointArrows: {
-      density: currentMidpointDensity,
-      length: sectionArrowLength * 0.36,
-      offset: arrowLaneOffset,
-      head: {
-        length: SECTION_ARROWHEAD_LENGTH,
-        width: SECTION_ARROWHEAD_WIDTH,
-        tipExtension: SECTION_ARROWHEAD_TIP_OVERHANG
-      }
-    }
+    directionalDashes: annotationVisibility["directional-dash"]
+      ? {
+          spacing: currentDirectionalDashSpacing,
+          head: {
+            length: currentArrowHeadSize,
+            width: currentArrowHeadSize * ARROWHEAD_WIDTH_RATIO,
+            tipExtension: currentArrowHeadSize * ARROWHEAD_TIP_OVERHANG_RATIO
+          }
+        }
+      : false,
+    turningPoints: annotationVisibility["turning-point"]
+      ? {
+          offset: currentTurnRadius,
+          stemLength: currentUTurnLength * STRAIGHT_ARROW_LENGTH_RATIO,
+          head: {
+            length: currentArrowHeadSize,
+            width: currentArrowHeadSize * ARROWHEAD_WIDTH_RATIO,
+            tipExtension: currentArrowHeadSize * ARROWHEAD_TIP_OVERHANG_RATIO
+          }
+        }
+      : false,
+    startArrows: annotationVisibility["start-arrow"]
+      ? {
+          length: currentArrowLength,
+          minLength: currentArrowLength * START_ARROW_MIN_LENGTH_RATIO,
+          offset: arrowLaneOffset,
+          offsetMode: arrowLaneOffsetMode,
+          head: {
+            length: currentArrowHeadSize,
+            width: currentArrowHeadSize * ARROWHEAD_WIDTH_RATIO,
+            tipExtension: currentArrowHeadSize * ARROWHEAD_TIP_OVERHANG_RATIO
+          }
+        }
+      : false,
+    drawOrderNumbers: annotationVisibility["draw-order-number"]
+      ? {
+          offset: 0
+        }
+      : false,
+    midpointArrows: annotationVisibility["midpoint-arrow"]
+      ? {
+          density: currentMidpointDensity,
+          length: currentArrowLength * STRAIGHT_ARROW_LENGTH_RATIO,
+          offset: arrowLaneOffset,
+          offsetMode: arrowLaneOffsetMode,
+          head: {
+            length: currentArrowHeadSize,
+            width: currentArrowHeadSize * ARROWHEAD_WIDTH_RATIO,
+            tipExtension: currentArrowHeadSize * ARROWHEAD_TIP_OVERHANG_RATIO
+          }
+        }
+      : false
   });
   const visibleAnnotations = resolveVisibleFormationAnnotations(annotations, preparedPath);
   const annotationMarkup = [
@@ -1299,22 +2250,10 @@ const setupScene = (path: WritingPath, width: number, height: number, offsetY: n
 
   traceSvg.setAttribute("viewBox", `0 0 ${width} ${height}`);
   traceSvg.style.setProperty("--formation-arrow-color", currentArrowColor);
+  traceSvg.style.setProperty("--formation-arrow-stroke-width", String(currentArrowStrokeWidth));
   traceSvg.innerHTML = `
     <rect class="writing-app__bg" x="0" y="0" width="${width}" height="${height}"></rect>
-    <line
-      class="writing-app__guide writing-app__guide--midline"
-      x1="0"
-      y1="${path.guides.xHeight + offsetY}"
-      x2="${width}"
-      y2="${path.guides.xHeight + offsetY}"
-    ></line>
-    <line
-      class="writing-app__guide writing-app__guide--baseline"
-      x1="0"
-      y1="${path.guides.baseline + offsetY}"
-      x2="${width}"
-      y2="${path.guides.baseline + offsetY}"
-    ></line>
+    ${renderGuideLines(path, width, offsetY)}
     ${backgroundPaths}
     ${tracePaths}
     ${annotationMarkup}
@@ -1376,6 +2315,7 @@ const clearScene = () => {
   demoStrokeLengths = [];
   demoNibEl = null;
   traceSvg.innerHTML = "";
+  wordLabel.textContent = "";
   updateSuccessVisibility(false);
 };
 
@@ -1384,6 +2324,7 @@ const normalizeWord = (word: string): string => word.trim().toLowerCase();
 const renderWord = (word: string) => {
   stopDemoAnimation();
   currentWord = normalizeWord(word);
+  wordLabel.textContent = currentWord;
 
   if (currentWord.length === 0) {
     clearScene();
@@ -1393,8 +2334,9 @@ const renderWord = (word: string) => {
   let layout: ReturnType<typeof buildShiftedWordLayout>;
   try {
     layout = buildShiftedWordLayout(currentWord, {
-      keepInitialLeadIn: true,
-      keepFinalLeadOut: true
+      joinSpacing: currentJoinSpacing,
+      keepInitialLeadIn: includeInitialLeadIn,
+      keepFinalLeadOut: includeFinalLeadOut
     });
   } catch {
     clearScene();
@@ -1469,43 +2411,170 @@ traceSvg.addEventListener("pointerup", onPointerUp);
 traceSvg.addEventListener("pointercancel", onPointerCancel);
 showMeButton.addEventListener("click", playDemo);
 nextWordButton.addEventListener("click", goToNextWord);
+
+const rerenderFromSettings = () => {
+  syncLabels();
+  syncSettingsUrl();
+  renderWord(currentWord);
+};
+
 toleranceSlider.addEventListener("input", () => {
   currentTraceTolerance = Number(toleranceSlider.value);
-  syncToleranceLabel();
-  renderWord(currentWord);
+  rerenderFromSettings();
+});
+strokeWidthSlider.addEventListener("input", () => {
+  currentStrokeWidth = Number(strokeWidthSlider.value);
+  rerenderFromSettings();
+});
+gridlineStrokeWidthSlider.addEventListener("input", () => {
+  currentGridlineStrokeWidth = Number(gridlineStrokeWidthSlider.value);
+  rerenderFromSettings();
+});
+gridlineColorPicker.addEventListener("input", () => {
+  const nextColor = normalizeColor(gridlineColorPicker.value);
+  if (!nextColor) {
+    return;
+  }
+
+  currentGridlineColor = nextColor;
+  rerenderFromSettings();
+});
+showBaselineGuideToggle.addEventListener("change", () => {
+  showBaselineGuide = showBaselineGuideToggle.checked;
+  rerenderFromSettings();
+});
+showDescenderGuideToggle.addEventListener("change", () => {
+  showDescenderGuide = showDescenderGuideToggle.checked;
+  rerenderFromSettings();
+});
+showXHeightGuideToggle.addEventListener("change", () => {
+  showXHeightGuide = showXHeightGuideToggle.checked;
+  rerenderFromSettings();
+});
+showAscenderGuideToggle.addEventListener("change", () => {
+  showAscenderGuide = showAscenderGuideToggle.checked;
+  rerenderFromSettings();
+});
+targetBendRateSlider.addEventListener("input", () => {
+  currentJoinSpacing = {
+    ...currentJoinSpacing,
+    targetBendRate: Number(targetBendRateSlider.value)
+  };
+  rerenderFromSettings();
+});
+minSidebearingGapSlider.addEventListener("input", () => {
+  currentJoinSpacing = {
+    ...currentJoinSpacing,
+    minSidebearingGap: Number(minSidebearingGapSlider.value)
+  };
+  rerenderFromSettings();
+});
+bendSearchMinSidebearingGapSlider.addEventListener("input", () => {
+  currentJoinSpacing = {
+    ...currentJoinSpacing,
+    bendSearchMinSidebearingGap: Number(bendSearchMinSidebearingGapSlider.value)
+  };
+  rerenderFromSettings();
+});
+bendSearchMaxSidebearingGapSlider.addEventListener("input", () => {
+  currentJoinSpacing = {
+    ...currentJoinSpacing,
+    bendSearchMaxSidebearingGap: Number(bendSearchMaxSidebearingGapSlider.value)
+  };
+  rerenderFromSettings();
+});
+exitHandleScaleSlider.addEventListener("input", () => {
+  currentJoinSpacing = {
+    ...currentJoinSpacing,
+    exitHandleScale: Number(exitHandleScaleSlider.value)
+  };
+  rerenderFromSettings();
+});
+entryHandleScaleSlider.addEventListener("input", () => {
+  currentJoinSpacing = {
+    ...currentJoinSpacing,
+    entryHandleScale: Number(entryHandleScaleSlider.value)
+  };
+  rerenderFromSettings();
+});
+includeInitialLeadInToggle.addEventListener("change", () => {
+  includeInitialLeadIn = includeInitialLeadInToggle.checked;
+  rerenderFromSettings();
+});
+includeFinalLeadOutToggle.addEventListener("change", () => {
+  includeFinalLeadOut = includeFinalLeadOutToggle.checked;
+  rerenderFromSettings();
 });
 midpointDensitySlider.addEventListener("input", () => {
   currentMidpointDensity = Number(midpointDensitySlider.value);
-  syncMidpointDensityLabel();
-  renderWord(currentWord);
+  rerenderFromSettings();
 });
 directionalDashSpacingSlider.addEventListener("input", () => {
   currentDirectionalDashSpacing = Number(directionalDashSpacingSlider.value);
-  syncDirectionalDashSpacingLabel();
-  renderWord(currentWord);
+  rerenderFromSettings();
 });
 turnRadiusSlider.addEventListener("input", () => {
   currentTurnRadius = Number(turnRadiusSlider.value);
-  syncTurnRadiusLabel();
-  renderWord(currentWord);
+  rerenderFromSettings();
+});
+uTurnLengthSlider.addEventListener("input", () => {
+  currentUTurnLength = Number(uTurnLengthSlider.value);
+  rerenderFromSettings();
+});
+arrowLengthSlider.addEventListener("input", () => {
+  currentArrowLength = Number(arrowLengthSlider.value);
+  rerenderFromSettings();
+});
+arrowHeadSizeSlider.addEventListener("input", () => {
+  currentArrowHeadSize = Number(arrowHeadSizeSlider.value);
+  rerenderFromSettings();
+});
+arrowStrokeWidthSlider.addEventListener("input", () => {
+  currentArrowStrokeWidth = Number(arrowStrokeWidthSlider.value);
+  rerenderFromSettings();
+});
+numberSizeSlider.addEventListener("input", () => {
+  currentNumberSize = Number(numberSizeSlider.value);
+  rerenderFromSettings();
 });
 numberOffsetSlider.addEventListener("input", () => {
   currentNumberPathOffset = Number(numberOffsetSlider.value);
-  syncNumberOffsetLabel();
-  renderWord(currentWord);
+  rerenderFromSettings();
 });
 offsetArrowLanesToggle.addEventListener("change", () => {
   shouldOffsetArrowLanes = offsetArrowLanesToggle.checked;
-  renderWord(currentWord);
+  rerenderFromSettings();
+});
+alwaysOffsetArrowLanesToggle.addEventListener("change", () => {
+  shouldAlwaysOffsetArrowLanes = alwaysOffsetArrowLanesToggle.checked;
+  rerenderFromSettings();
+});
+wordStrokeColorPicker.addEventListener("input", () => {
+  const nextColor = normalizeColor(wordStrokeColorPicker.value);
+  if (!nextColor) {
+    return;
+  }
+
+  currentWordStrokeColor = nextColor;
+  rerenderFromSettings();
+});
+numberColorPicker.addEventListener("input", () => {
+  const nextColor = normalizeColor(numberColorPicker.value);
+  if (!nextColor) {
+    return;
+  }
+
+  currentNumberColor = nextColor;
+  rerenderFromSettings();
 });
 arrowColorPicker.addEventListener("input", () => {
-  const nextArrowColor = normalizeArrowColor(arrowColorPicker.value);
+  const nextArrowColor = normalizeColor(arrowColorPicker.value);
   if (!nextArrowColor) {
     return;
   }
 
   currentArrowColor = nextArrowColor;
-  traceSvg.style.setProperty("--formation-arrow-color", currentArrowColor);
+  rerenderFromSettings();
 });
 annotationToggleEls.forEach((toggleEl) => {
   toggleEl.addEventListener("change", () => {
@@ -1518,13 +2587,9 @@ annotationToggleEls.forEach((toggleEl) => {
       ...annotationVisibility,
       [annotationKind]: toggleEl.checked
     };
-    renderWord(currentWord);
+    rerenderFromSettings();
   });
 });
 
-syncToleranceLabel();
-syncMidpointDensityLabel();
-syncDirectionalDashSpacingLabel();
-syncTurnRadiusLabel();
-syncNumberOffsetLabel();
+applyUrlSettings();
 renderWord(currentWord);
