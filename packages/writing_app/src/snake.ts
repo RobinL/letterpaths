@@ -227,6 +227,7 @@ const DEFAULT_SNAKE_JOIN_SPACING = {
   entryHandleScale: 0.75
 } as const satisfies Required<JoinSpacingOptions>;
 const SNAKE_URL_PARAM_KEYS = [
+  "word",
   "skin",
   "theme",
   "tolerance",
@@ -470,7 +471,18 @@ app.innerHTML = `
         <header class="writing-app__topbar">
           <div class="writing-app__title">
             <p class="writing-app__eyebrow" id="snake-instruction">Drag the snake around the letters.</p>
-            <h1 class="writing-app__word" id="word-label"></h1>
+            <label class="writing-app__word-input-label" for="word-input">
+              <span>Enter word</span>
+              <input
+                class="writing-app__word-input"
+                id="word-input"
+                type="text"
+                value="zephyr"
+                placeholder="zephyr"
+                spellcheck="false"
+                autocomplete="off"
+              />
+            </label>
           </div>
           <div class="writing-app__topbar-actions">
             <button class="writing-app__button" id="show-me-button" type="button">
@@ -665,32 +677,15 @@ app.innerHTML = `
           <div class="writing-app__success-card">
             <p class="writing-app__success-eyebrow" id="success-eyebrow">Snake fed!</p>
             <p class="writing-app__success-copy" id="score-summary"></p>
-            <form class="writing-app__success-form" id="custom-word-form" autocomplete="off">
-              <label class="writing-app__success-label" for="custom-word-input">Custom word</label>
-              <input
-                class="writing-app__success-input"
-                id="custom-word-input"
-                type="search"
-                autocomplete="off"
-                autocapitalize="off"
-                autocorrect="off"
-                inputmode="search"
-                enterkeyhint="search"
-                spellcheck="false"
-                placeholder="Type a word"
-              />
-              <p class="writing-app__success-error" id="custom-word-error" hidden></p>
-              <div class="writing-app__success-actions">
-                <button class="writing-app__button" type="submit">Play custom word</button>
-                <button
-                  class="writing-app__button writing-app__button--secondary writing-app__button--next"
-                  id="next-word-button"
-                  type="button"
-                >
-                  Next random word
-                </button>
-              </div>
-            </form>
+            <div class="writing-app__success-actions">
+              <button
+                class="writing-app__button writing-app__button--secondary writing-app__button--next"
+                id="next-word-button"
+                type="button"
+              >
+                Next random word
+              </button>
+            </div>
           </div>
         </div>
       </section>
@@ -698,7 +693,7 @@ app.innerHTML = `
   </div>
 `;
 
-const wordLabel = document.querySelector<HTMLHeadingElement>("#word-label");
+const wordInput = document.querySelector<HTMLInputElement>("#word-input");
 const snakeInstruction = document.querySelector<HTMLParagraphElement>("#snake-instruction");
 const successEyebrow = document.querySelector<HTMLParagraphElement>("#success-eyebrow");
 const scoreSummary = document.querySelector<HTMLParagraphElement>("#score-summary");
@@ -736,12 +731,9 @@ const entryHandleScaleValue = document.querySelector<HTMLSpanElement>("#entry-ha
 const includeInitialLeadInInput = document.querySelector<HTMLInputElement>("#include-initial-lead-in");
 const includeFinalLeadOutInput = document.querySelector<HTMLInputElement>("#include-final-lead-out");
 const successOverlay = document.querySelector<HTMLDivElement>("#success-overlay");
-const customWordForm = document.querySelector<HTMLFormElement>("#custom-word-form");
-const customWordInput = document.querySelector<HTMLInputElement>("#custom-word-input");
-const customWordError = document.querySelector<HTMLParagraphElement>("#custom-word-error");
 const nextWordButton = document.querySelector<HTMLButtonElement>("#next-word-button");
 if (
-  !wordLabel ||
+  !wordInput ||
   !snakeInstruction ||
   !successEyebrow ||
   !scoreSummary ||
@@ -771,9 +763,6 @@ if (
   !includeInitialLeadInInput ||
   !includeFinalLeadOutInput ||
   !successOverlay ||
-  !customWordForm ||
-  !customWordInput ||
-  !customWordError ||
   !nextWordButton
 ) {
   throw new Error("Missing elements for snake app.");
@@ -878,6 +867,9 @@ const syncSettingsUrl = () => {
     url.searchParams.delete(key);
   });
 
+  if (currentWord !== "zephyr") {
+    url.searchParams.set("word", currentWord);
+  }
   if (currentSnakeSkinId !== DEFAULT_SNAKE_SKIN_ID) {
     url.searchParams.set("skin", currentSnakeSkinId === "themePark" ? "theme-park" : "classic");
   }
@@ -938,8 +930,7 @@ const syncSettingsUrl = () => {
 };
 
 let currentWordIndex = -1;
-let currentWord = "";
-let customWordPrefillMode: "current" | "nextQueued" = "current";
+let currentWord = "zephyr";
 let currentPath: WritingPath | null = null;
 let tracingSession: TracingSession | null = null;
 let activePointerId: number | null = null;
@@ -1026,6 +1017,7 @@ const syncJoinSpacingLabels = () => {
 };
 
 const syncSettingsControlsFromState = () => {
+  wordInput.value = currentWord;
   currentTraceTolerance = syncSliderValue(toleranceSlider, currentTraceTolerance);
   currentAnimationSpeedMultiplier = syncSliderValue(
     animationSpeedSlider,
@@ -1059,37 +1051,15 @@ const rerenderCurrentWord = () => {
   renderWord(currentWord, currentWordIndex);
 };
 
-const clearCustomWordError = () => {
-  customWordError.hidden = true;
-  customWordError.textContent = "";
-};
-
-const setCustomWordError = (message: string) => {
-  customWordError.hidden = false;
-  customWordError.textContent = message;
-};
-
 const normalizeWordInput = (word: string): string => word.trim().replace(/\s+/g, " ").toLowerCase();
-
-const getUrlWordSequence = (): string[] => {
-  const params = new URLSearchParams(window.location.search);
-
-  return Array.from(params.entries())
-    .flatMap(([key, value]) => {
-      if (key !== "word" && key !== "words") {
-        return [];
-      }
-      return value.split(",");
-    })
-    .map(normalizeWordInput)
-    .filter((word) => word.length > 0);
-};
-
-const urlWordSequence = getUrlWordSequence();
-let nextUrlWordIndex = 0;
 
 const applyUrlSettings = () => {
   const params = new URLSearchParams(window.location.search);
+  const wordParam = params.get("word");
+
+  if (wordParam !== null) {
+    currentWord = normalizeWordInput(wordParam);
+  }
 
   currentSnakeSkinId = parseSnakeSkinSearchParam(params) ?? currentSnakeSkinId;
   currentTraceTolerance =
@@ -1141,11 +1111,6 @@ const applyUrlSettings = () => {
   syncSettingsUrl();
 };
 
-const syncNextWordButtonLabel = () => {
-  nextWordButton.textContent =
-    nextUrlWordIndex < urlWordSequence.length ? "Next queued word" : "Next random word";
-};
-
 const syncSnakeSkinPresentation = () => {
   const skin = getActiveSnakeSkin();
   app.style.setProperty("--snake-board-image", `url("${skin.boardImage}")`);
@@ -1153,24 +1118,6 @@ const syncSnakeSkinPresentation = () => {
   snakeInstruction.textContent = skin.instruction;
   successEyebrow.textContent = skin.successEyebrow;
   themeParkToggle.checked = skin.id === "themePark";
-};
-
-const getCustomWordPrefillValue = (currentWordValue: string): string => {
-  if (customWordPrefillMode === "nextQueued") {
-    return urlWordSequence[nextUrlWordIndex] ?? currentWordValue;
-  }
-
-  return currentWordValue;
-};
-
-const getNextUrlWord = (): string | null => {
-  if (nextUrlWordIndex >= urlWordSequence.length) {
-    return null;
-  }
-
-  const nextWord = urlWordSequence[nextUrlWordIndex];
-  nextUrlWordIndex += 1;
-  return nextWord ?? null;
 };
 
 const getActiveSnakeSoundEffects = () => getActiveSnakeSkin().soundEffects;
@@ -3186,53 +3133,76 @@ const setupScene = (path: WritingPath, width: number, height: number, offsetY: n
 
 const renderWord = (word: string, wordIndex = -1) => {
   stopDemoAnimation();
-
-  const layout = buildShiftedWordLayout(word, {
-    joinSpacing: currentJoinSpacing,
-    keepInitialLeadIn: includeInitialLeadIn,
-    keepFinalLeadOut: includeFinalLeadOut
-  });
-  currentWord = word;
+  currentWord = normalizeWordInput(word);
   currentWordIndex = wordIndex;
-  wordLabel.textContent = word;
-  customWordInput.value = getCustomWordPrefillValue(word);
-  currentPath = layout.path;
-  setupScene(layout.path, layout.width, layout.height, layout.offsetY);
-};
+  wordInput.value = currentWord;
+  syncSettingsUrl();
 
-const loadWord = (word: string, wordIndex = -1): boolean => {
-  const normalizedWord = normalizeWordInput(word);
-
-  if (!normalizedWord) {
-    setCustomWordError("Type a word first.");
-    return false;
+  if (currentWord.length === 0) {
+    currentPath = null;
+    tracingSession = null;
+    preparedTracingPath = null;
+    activePointerId = null;
+    activePointerPosition = null;
+    traceStrokeEls = [];
+    traceStrokeLengths = [];
+    nextSectionEl = null;
+    sectionAnnotationEl = null;
+    renderedSectionAnnotationSectionIndex = null;
+    fruits = [];
+    fruitEls = [];
+    tracingGroups = [];
+    tracingSections = [];
+    visibleSectionCount = 1;
+    waypointEl = null;
+    currentPathLength = 0;
+    drawablePathStrokes = [];
+    snakeLayerEl = null;
+    snakeHeadEl = null;
+    snakeHeadImageEl = null;
+    snakeBodyEls = [];
+    snakeTailEl = null;
+    dotSnakeEl = null;
+    dotSnakeImageEl = null;
+    eagleEl = null;
+    eagleImageEl = null;
+    snakeTrail = [];
+    snakeHeadDistance = 0;
+    snakeGrowthDistance = 0;
+    snakeHeadAngle = 0;
+    snakeChewUntil = 0;
+    clearRetiringSnakes();
+    hideDotTarget();
+    traceSvg.innerHTML = "";
+    updateSuccessVisibility(false);
+    return;
   }
 
   try {
-    renderWord(normalizedWord, wordIndex);
-    clearCustomWordError();
-    return true;
+    const layout = buildShiftedWordLayout(currentWord, {
+      joinSpacing: currentJoinSpacing,
+      keepInitialLeadIn: includeInitialLeadIn,
+      keepFinalLeadOut: includeFinalLeadOut
+    });
+    currentPath = layout.path;
+    setupScene(layout.path, layout.width, layout.height, layout.offsetY);
   } catch {
-    setCustomWordError("Couldn't build that word. Try letters supported by the cursive set.");
-    return false;
+    currentPath = null;
+    tracingSession = null;
+    preparedTracingPath = null;
+    traceSvg.innerHTML = "";
+    updateSuccessVisibility(false);
   }
 };
 
-const goToNextWord = () => {
-  let nextUrlWord = getNextUrlWord();
-  while (nextUrlWord) {
-    customWordPrefillMode = "nextQueued";
-    if (loadWord(nextUrlWord)) {
-      syncNextWordButtonLabel();
-      return;
-    }
-    nextUrlWord = getNextUrlWord();
-  }
+const loadWord = (word: string, wordIndex = -1): boolean => {
+  renderWord(word, wordIndex);
+  return currentPath !== null;
+};
 
-  customWordPrefillMode = "current";
+const goToNextWord = () => {
   const nextWordIndex = chooseNextWordIndex(currentWordIndex);
   void loadWord(WORDS[nextWordIndex] ?? WORDS[0], nextWordIndex);
-  syncNextWordButtonLabel();
 };
 
 const onPointerDown = (event: PointerEvent) => {
@@ -3417,16 +3387,9 @@ includeFinalLeadOutInput.addEventListener("change", () => {
   syncSettingsUrl();
   rerenderCurrentWord();
 });
-customWordForm.addEventListener("submit", (event) => {
-  event.preventDefault();
-  customWordPrefillMode = "current";
-  void loadWord(customWordInput.value);
-});
 nextWordButton.addEventListener("click", goToNextWord);
-customWordInput.addEventListener("input", () => {
-  if (!customWordError.hidden) {
-    clearCustomWordError();
-  }
+wordInput.addEventListener("input", () => {
+  renderWord(wordInput.value);
 });
 document.addEventListener("pointerdown", (event) => {
   if (!settingsMenu.open) {
@@ -3444,5 +3407,4 @@ document.addEventListener("keydown", (event) => {
   }
 });
 applyUrlSettings();
-syncNextWordButtonLabel();
-goToNextWord();
+renderWord(currentWord);
