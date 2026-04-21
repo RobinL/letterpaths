@@ -127,7 +127,31 @@ export type MidpointArrowAnnotation = {
   };
 };
 
+export type DirectionalDashAnnotation = {
+  kind: "directional-dash";
+  commands: AnnotationPathCommand[];
+  head?: AnnotationArrowHead;
+  tailHead?: AnnotationArrowHead;
+  anchor: Point;
+  direction: Point;
+  source: AnnotationSource & {
+    distance: number;
+    ordinalInSection: number;
+    countInSection: number;
+    directionality: "unidirectional" | "bidirectional";
+  };
+  metrics: {
+    spacing: number;
+    length: number;
+    offset: number;
+    headLength?: number;
+    headWidth?: number;
+    tipExtension?: number;
+  };
+};
+
 export type FormationAnnotation =
+  | DirectionalDashAnnotation
   | TurningPointAnnotation
   | StartArrowAnnotation
   | DrawOrderNumberAnnotation
@@ -158,9 +182,21 @@ export type MidpointArrowAnnotationOptions = {
   head?: false | FormationArrowHeadOptions;
 };
 
+export type DirectionalDashAnnotationOptions = {
+  /** Distance between consecutive dash centres along each section. */
+  spacing?: number;
+  /** Length of each dash measured along the tracing path. */
+  length?: number;
+  offset?: number;
+  side?: "left" | "right";
+  minSectionLength?: number;
+  head?: false | FormationArrowHeadOptions;
+};
+
 export type CompileFormationAnnotationsOptions = {
   sections?: TracingSection[];
   sectionAnalysis?: AnalyzeTracingSectionsOptions;
+  directionalDashes?: false | DirectionalDashAnnotationOptions;
   turningPoints?: false | TurningPointAnnotationOptions;
   startArrows?: false | StartArrowAnnotationOptions;
   drawOrderNumbers?: false | DrawOrderNumberAnnotationOptions;
@@ -177,6 +213,8 @@ type ResolvedArrowHeadOptions = {
 
 type PathRangeResult = {
   commands: AnnotationPathCommand[];
+  startAnchor: Point;
+  startDirection: Point;
   anchor: Point;
   direction: Point;
 };
@@ -194,6 +232,20 @@ type StrokePosition = {
   distanceAlongStroke: number;
 };
 
+type FlattenedTracingSample = TracingSample & {
+  overallDistance: number;
+};
+
+type DistanceRange = {
+  startDistance: number;
+  endDistance: number;
+};
+
+type DirectionalDashCoverage = {
+  earlier: DistanceRange[];
+  later: DistanceRange[];
+};
+
 const REFERENCE_GUIDE_HEIGHT = 380;
 const DEFAULT_HEAD_LENGTH_RATIO = 26 / REFERENCE_GUIDE_HEIGHT;
 const DEFAULT_HEAD_WIDTH_RATIO = 22 / REFERENCE_GUIDE_HEIGHT;
@@ -204,6 +256,14 @@ const DEFAULT_NUMBER_OFFSET_RATIO = 0;
 const DEFAULT_MIDPOINT_ARROW_DENSITY_RATIO = 1;
 const DEFAULT_MIDPOINT_ARROW_LENGTH_RATIO = 42 / REFERENCE_GUIDE_HEIGHT;
 const DEFAULT_MIDPOINT_MIN_SECTION_LENGTH_RATIO = 0.5;
+const DEFAULT_DIRECTIONAL_DASH_SPACING_RATIO = 84 / REFERENCE_GUIDE_HEIGHT;
+const DEFAULT_DIRECTIONAL_DASH_LENGTH_RATIO = 68 / REFERENCE_GUIDE_HEIGHT;
+const DEFAULT_DIRECTIONAL_DASH_MIN_SECTION_LENGTH_RATIO = 60 / REFERENCE_GUIDE_HEIGHT;
+const DEFAULT_DIRECTIONAL_DASH_LENGTH_TO_SPACING_RATIO = 0.8;
+const DEFAULT_DIRECTIONAL_DASH_MATCH_PROXIMITY_RATIO = 28 / REFERENCE_GUIDE_HEIGHT;
+const DEFAULT_DIRECTIONAL_DASH_MATCH_MIN_PATH_SEPARATION_RATIO = 90 / REFERENCE_GUIDE_HEIGHT;
+const DEFAULT_DIRECTIONAL_DASH_MATCH_PADDING_RATIO = 6 / REFERENCE_GUIDE_HEIGHT;
+const DEFAULT_DIRECTIONAL_DASH_MATCH_OPPOSITE_DIRECTION_DOT_THRESHOLD = -0.2;
 const DISTANCE_EPSILON = 0.001;
 
 export function analyzeTracingSections(
@@ -306,6 +366,10 @@ export function compileFormationAnnotations(
     analyzeTracingSections(path, options.sectionAnalysis ?? {}).sections;
   const annotations: FormationAnnotation[] = [];
 
+  if (options.directionalDashes) {
+    annotations.push(...compileDirectionalDashAnnotations(path, sections, options.directionalDashes));
+  }
+
   if (options.turningPoints !== false) {
     annotations.push(...compileTurningPointAnnotations(path, sections, options.turningPoints));
   }
@@ -375,6 +439,128 @@ function compileTurningPointAnnotations(
       return annotation;
     })
     .filter((annotation): annotation is TurningPointAnnotation => annotation !== null);
+}
+
+function compileDirectionalDashAnnotations(
+  path: PreparedTracingPath,
+  sections: TracingSection[],
+  options: DirectionalDashAnnotationOptions = {}
+): DirectionalDashAnnotation[] {
+  const guideHeight = getGuideHeight(path);
+  const defaultSpacing = guideHeight * DEFAULT_DIRECTIONAL_DASH_SPACING_RATIO;
+  const spacing = options.spacing ?? defaultSpacing;
+  const safeSpacing =
+    Number.isFinite(spacing) && spacing > DISTANCE_EPSILON ? spacing : defaultSpacing;
+  const head = resolveHeadOptions(path, options.head);
+  const defaultLength = Math.min(
+    safeSpacing * DEFAULT_DIRECTIONAL_DASH_LENGTH_TO_SPACING_RATIO,
+    Math.max(
+      guideHeight * DEFAULT_DIRECTIONAL_DASH_LENGTH_RATIO,
+      head ? head.length * 2.4 : guideHeight * DEFAULT_DIRECTIONAL_DASH_LENGTH_RATIO
+    )
+  );
+  const length = options.length ?? defaultLength;
+  const safeLength =
+    Number.isFinite(length) && length > DISTANCE_EPSILON
+      ? Math.min(length, safeSpacing)
+      : defaultLength;
+  const minSectionLength =
+    options.minSectionLength ??
+    Math.max(safeLength * 0.75, guideHeight * DEFAULT_DIRECTIONAL_DASH_MIN_SECTION_LENGTH_RATIO);
+  const offset = resolveSignedOffset(options.offset ?? 0, options.side ?? "left");
+  const coverage = analyzeDirectionalDashCoverage(path, sections);
+  const annotations: DirectionalDashAnnotation[] = [];
+
+  sections.forEach((section) => {
+    const sectionLength = section.endDistance - section.startDistance;
+    if (sectionLength < minSectionLength || sectionLength <= DISTANCE_EPSILON) {
+      return;
+    }
+
+    const candidateDistances = collectDirectionalDashCandidateDistances(
+      section.startDistance,
+      section.endDistance,
+      safeSpacing,
+      safeLength,
+      minSectionLength
+    );
+    if (candidateDistances.length === 0) {
+      return;
+    }
+
+    const sectionAnnotations = candidateDistances
+      .filter((distance) => !isDistanceWithinRanges(distance, coverage.later))
+      .map((distance) => {
+        const startDistance = Math.max(section.startDistance, distance - safeLength / 2);
+        const endDistance = Math.min(section.endDistance, distance + safeLength / 2);
+        const range = buildPathRange(path, startDistance, endDistance, offset);
+        if (!range) {
+          return null;
+        }
+
+        return {
+          distance,
+          range,
+          length: endDistance - startDistance,
+          directionality: isDistanceWithinRanges(distance, coverage.earlier)
+            ? "bidirectional"
+            : "unidirectional"
+        };
+      })
+      .filter(
+        (
+          entry
+        ): entry is {
+          distance: number;
+          range: PathRangeResult;
+          length: number;
+          directionality: DirectionalDashAnnotation["source"]["directionality"];
+        } => entry !== null
+      );
+
+    sectionAnnotations.forEach((entry, index) => {
+      annotations.push({
+        kind: "directional-dash",
+        commands: entry.range.commands,
+        ...(head ? { head: buildArrowhead(entry.range.anchor, entry.range.direction, head) } : {}),
+        ...(head && entry.directionality === "bidirectional"
+          ? {
+              tailHead: buildArrowhead(
+                entry.range.startAnchor,
+                negateVector(entry.range.startDirection),
+                head
+              )
+            }
+          : {}),
+        anchor: entry.range.anchor,
+        direction: entry.range.direction,
+        source: {
+          sectionIndex: section.index,
+          strokeIndex: section.strokeIndex,
+          startDistance: section.startDistance,
+          endDistance: section.endDistance,
+          distance: entry.distance,
+          ordinalInSection: index,
+          countInSection: sectionAnnotations.length,
+          directionality: entry.directionality
+        },
+        metrics: {
+          spacing: safeSpacing,
+          length: entry.length,
+          offset,
+          ...(head
+            ? {
+                headLength: head.length,
+                headWidth: head.width,
+                tipExtension: head.tipExtension
+              }
+            : {})
+        }
+      });
+    });
+  });
+
+  return annotations;
 }
 
 function compileStartArrowAnnotations(
@@ -573,14 +759,19 @@ function compareAnnotations(a: FormationAnnotation, b: FormationAnnotation): num
   }
 
   const kindRank: Record<FormationAnnotation["kind"], number> = {
-    "turning-point": 0,
-    "draw-order-number": 1,
-    "start-arrow": 2,
-    "midpoint-arrow": 3
+    "directional-dash": 0,
+    "turning-point": 1,
+    "draw-order-number": 2,
+    "start-arrow": 3,
+    "midpoint-arrow": 4
   };
   const kindDifference = kindRank[a.kind] - kindRank[b.kind];
   if (kindDifference !== 0) {
     return kindDifference;
+  }
+
+  if (a.kind === "directional-dash" && b.kind === "directional-dash") {
+    return a.source.ordinalInSection - b.source.ordinalInSection;
   }
 
   if (a.kind === "midpoint-arrow" && b.kind === "midpoint-arrow") {
@@ -629,6 +820,11 @@ function buildPathRange(
     commands.push({ type: "line", to: sample.point });
   });
 
+  const points = samples.map((sample) => sample.point);
+  const startDirection = getPolylineStartDirection(
+    points,
+    getPoseAtOverallDistance(path, startDistance, "forward").tangent
+  );
   const lastSample = samples[samples.length - 1];
   if (!lastSample) {
     return null;
@@ -636,9 +832,11 @@ function buildPathRange(
 
   return {
     commands,
+    startAnchor: firstSample.point,
+    startDirection,
     anchor: lastSample.point,
     direction: getPolylineEndDirection(
-      samples.map((sample) => sample.point),
+      points,
       getPoseAtOverallDistance(path, endDistance, "backward").tangent
     )
   };
@@ -773,6 +971,207 @@ function findStrokeIndexForDistance(strokeStarts: number[], distance: number): n
 
 function getTotalLength(path: PreparedTracingPath): number {
   return path.strokes.reduce((sum, stroke) => sum + stroke.totalLength, 0);
+}
+
+function flattenTracingSamples(path: PreparedTracingPath): FlattenedTracingSample[] {
+  const flattened: FlattenedTracingSample[] = [];
+  let strokeOffset = 0;
+
+  path.strokes.forEach((stroke) => {
+    stroke.samples.forEach((sample) => {
+      flattened.push({
+        ...sample,
+        overallDistance: strokeOffset + sample.distanceAlongStroke
+      });
+    });
+    strokeOffset += stroke.totalLength;
+  });
+
+  return flattened;
+}
+
+function analyzeDirectionalDashCoverage(
+  path: PreparedTracingPath,
+  sections: TracingSection[]
+): DirectionalDashCoverage {
+  const retraceSections = sections.filter((section) => section.kind === "retrace");
+  if (retraceSections.length === 0) {
+    return { earlier: [], later: [] };
+  }
+
+  const samples = flattenTracingSamples(path);
+  if (samples.length === 0) {
+    return { earlier: [], later: [] };
+  }
+
+  const totalLength = getTotalLength(path);
+  const guideHeight = getGuideHeight(path);
+  const proximityThreshold = guideHeight * DEFAULT_DIRECTIONAL_DASH_MATCH_PROXIMITY_RATIO;
+  const minPathSeparation =
+    guideHeight * DEFAULT_DIRECTIONAL_DASH_MATCH_MIN_PATH_SEPARATION_RATIO;
+  const intervalPadding = Math.max(
+    estimateTracingSampleGap(samples),
+    guideHeight * DEFAULT_DIRECTIONAL_DASH_MATCH_PADDING_RATIO
+  );
+  const matchedEarlierDistances: number[] = [];
+  const matchedLaterDistances: number[] = [];
+
+  retraceSections.forEach((section) => {
+    const sectionStartIndex = findSampleIndexAtOrAfterDistance(samples, section.startDistance);
+
+    for (let index = sectionStartIndex; index < samples.length; index += 1) {
+      const sample = samples[index];
+      if (!sample || sample.overallDistance > section.endDistance + DISTANCE_EPSILON) {
+        break;
+      }
+
+      const matchIndex = findDirectionalDashEarlierMatch(
+        samples,
+        index,
+        sectionStartIndex,
+        proximityThreshold,
+        minPathSeparation
+      );
+      if (matchIndex === null) {
+        continue;
+      }
+
+      matchedEarlierDistances.push(samples[matchIndex]!.overallDistance);
+      matchedLaterDistances.push(sample.overallDistance);
+    }
+  });
+
+  return {
+    earlier: mergeMatchedDistancesIntoRanges(matchedEarlierDistances, intervalPadding, totalLength),
+    later: mergeMatchedDistancesIntoRanges(matchedLaterDistances, intervalPadding, totalLength)
+  };
+}
+
+function collectDirectionalDashCandidateDistances(
+  startDistance: number,
+  endDistance: number,
+  spacing: number,
+  length: number,
+  minSectionLength: number
+): number[] {
+  const sectionLength = endDistance - startDistance;
+  if (sectionLength < minSectionLength || sectionLength <= DISTANCE_EPSILON) {
+    return [];
+  }
+
+  const candidates: number[] = [];
+  let centerDistance = startDistance + length / 2;
+
+  while (centerDistance <= endDistance - length / 2 + DISTANCE_EPSILON) {
+    candidates.push(centerDistance);
+    centerDistance += spacing;
+  }
+
+  if (candidates.length === 0) {
+    candidates.push(startDistance + sectionLength / 2);
+  }
+
+  return candidates;
+}
+
+function findDirectionalDashEarlierMatch(
+  samples: FlattenedTracingSample[],
+  currentIndex: number,
+  maxEarlierIndexExclusive: number,
+  proximityThreshold: number,
+  minPathSeparation: number
+): number | null {
+  const current = samples[currentIndex];
+  if (!current) {
+    return null;
+  }
+
+  let bestIndex: number | null = null;
+  let bestDistance = Infinity;
+
+  for (let earlierIndex = 0; earlierIndex < maxEarlierIndexExclusive; earlierIndex += 1) {
+    const earlier = samples[earlierIndex];
+    if (!earlier) {
+      continue;
+    }
+
+    if (current.overallDistance - earlier.overallDistance < minPathSeparation) {
+      continue;
+    }
+
+    const spatialDistance = Math.hypot(current.x - earlier.x, current.y - earlier.y);
+    if (spatialDistance > proximityThreshold || spatialDistance >= bestDistance) {
+      continue;
+    }
+
+    const directionDot =
+      current.tangent.x * earlier.tangent.x + current.tangent.y * earlier.tangent.y;
+    if (directionDot > DEFAULT_DIRECTIONAL_DASH_MATCH_OPPOSITE_DIRECTION_DOT_THRESHOLD) {
+      continue;
+    }
+
+    bestIndex = earlierIndex;
+    bestDistance = spatialDistance;
+  }
+
+  return bestIndex;
+}
+
+function mergeMatchedDistancesIntoRanges(
+  distances: number[],
+  padding: number,
+  totalLength: number
+): DistanceRange[] {
+  const sortedDistances = distances
+    .filter((distance) => Number.isFinite(distance))
+    .sort((a, b) => a - b);
+  if (sortedDistances.length === 0) {
+    return [];
+  }
+
+  const maxGap = padding * 2;
+  const ranges: DistanceRange[] = [];
+
+  sortedDistances.forEach((distance) => {
+    const nextRange = {
+      startDistance: Math.max(0, distance - padding),
+      endDistance: Math.min(totalLength, distance + padding)
+    };
+    const previousRange = ranges[ranges.length - 1];
+
+    if (!previousRange || nextRange.startDistance > previousRange.endDistance + maxGap) {
+      ranges.push(nextRange);
+      return;
+    }
+
+    previousRange.endDistance = Math.max(previousRange.endDistance, nextRange.endDistance);
+  });
+
+  return ranges;
+}
+
+function estimateTracingSampleGap(samples: FlattenedTracingSample[]): number {
+  const gaps: number[] = [];
+
+  for (let index = 1; index < samples.length && gaps.length < 24; index += 1) {
+    const current = samples[index];
+    const previous = samples[index - 1];
+    if (!current || !previous) {
+      continue;
+    }
+
+    const gap = current.overallDistance - previous.overallDistance;
+    if (gap > DISTANCE_EPSILON) {
+      gaps.push(gap);
+    }
+  }
+
+  if (gaps.length === 0) {
+    return 2;
+  }
+
+  const sortedGaps = [...gaps].sort((a, b) => a - b);
+  return sortedGaps[Math.floor(sortedGaps.length / 2)] ?? 2;
 }
 
 function getGuideHeight(path: PreparedTracingPath): number {
@@ -949,6 +1348,59 @@ function findSectionForDistance(
       distance >= section.startDistance - DISTANCE_EPSILON &&
       distance <= section.endDistance + DISTANCE_EPSILON
   );
+}
+
+function findSampleIndexAtOrAfterDistance(
+  samples: FlattenedTracingSample[],
+  overallDistance: number
+): number {
+  for (let index = 0; index < samples.length; index += 1) {
+    const sample = samples[index];
+    if (sample && sample.overallDistance >= overallDistance - DISTANCE_EPSILON) {
+      return index;
+    }
+  }
+
+  return Math.max(0, samples.length - 1);
+}
+
+function isDistanceWithinRanges(distance: number, ranges: DistanceRange[]): boolean {
+  return ranges.some(
+    (range) =>
+      distance >= range.startDistance - DISTANCE_EPSILON &&
+      distance <= range.endDistance + DISTANCE_EPSILON
+  );
+}
+
+function negateVector(vector: Point): Point {
+  return {
+    x: -vector.x,
+    y: -vector.y
+  };
+}
+
+function getPolylineStartDirection(points: Point[], fallback: Point): Point {
+  const start = points[0];
+  if (!start) {
+    return normalizeVector(fallback);
+  }
+
+  for (let index = 1; index < points.length; index += 1) {
+    const point = points[index];
+    if (!point) {
+      continue;
+    }
+
+    const distance = Math.hypot(point.x - start.x, point.y - start.y);
+    if (distance >= 1) {
+      return normalizeVector({
+        x: point.x - start.x,
+        y: point.y - start.y
+      });
+    }
+  }
+
+  return normalizeVector(fallback);
 }
 
 function getPolylineEndDirection(points: Point[], fallback: Point): Point {

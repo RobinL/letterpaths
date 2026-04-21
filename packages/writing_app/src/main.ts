@@ -5,6 +5,7 @@ import {
   annotationCommandsToSvgPathData,
   compileFormationAnnotations,
   compileTracingPath,
+  type AnnotationArrowHead,
   type AnnotationPathCommand,
   type FormationAnnotation,
   type Point,
@@ -82,6 +83,21 @@ app.innerHTML = `
                 value="320"
               />
             </label>
+            <label class="writing-app__tolerance" for="directional-dash-spacing-slider">
+              <span class="writing-app__tolerance-label">
+                Drectional dash spacing
+                <span class="writing-app__tolerance-value" id="directional-dash-spacing-value"></span>
+              </span>
+              <input
+                class="writing-app__tolerance-slider"
+                id="directional-dash-spacing-slider"
+                type="range"
+                min="80"
+                max="220"
+                step="4"
+                value="96"
+              />
+            </label>
             <label class="writing-app__tolerance" for="turn-radius-slider">
               <span class="writing-app__tolerance-label">
                 Turn radius
@@ -114,19 +130,23 @@ app.innerHTML = `
             </label>
             <fieldset class="writing-app__annotation-controls" aria-label="Formation annotations">
               <label class="writing-app__annotation-toggle">
-                <input type="checkbox" data-annotation-kind="turning-point" checked />
+                <input type="checkbox" data-annotation-kind="directional-dash" checked />
+                <span>Drectional dash</span>
+              </label>
+              <label class="writing-app__annotation-toggle">
+                <input type="checkbox" data-annotation-kind="turning-point" />
                 <span>Turns</span>
               </label>
               <label class="writing-app__annotation-toggle">
-                <input type="checkbox" data-annotation-kind="start-arrow" checked />
+                <input type="checkbox" data-annotation-kind="start-arrow" />
                 <span>Starts</span>
               </label>
               <label class="writing-app__annotation-toggle">
-                <input type="checkbox" data-annotation-kind="draw-order-number" checked />
+                <input type="checkbox" data-annotation-kind="draw-order-number" />
                 <span>Numbers</span>
               </label>
               <label class="writing-app__annotation-toggle">
-                <input type="checkbox" data-annotation-kind="midpoint-arrow" checked />
+                <input type="checkbox" data-annotation-kind="midpoint-arrow" />
                 <span>Midpoints</span>
               </label>
               <label class="writing-app__annotation-toggle">
@@ -174,6 +194,12 @@ const toleranceSlider = document.querySelector<HTMLInputElement>("#tolerance-sli
 const toleranceValue = document.querySelector<HTMLSpanElement>("#tolerance-value");
 const midpointDensitySlider = document.querySelector<HTMLInputElement>("#midpoint-density-slider");
 const midpointDensityValue = document.querySelector<HTMLSpanElement>("#midpoint-density-value");
+const directionalDashSpacingSlider = document.querySelector<HTMLInputElement>(
+  "#directional-dash-spacing-slider"
+);
+const directionalDashSpacingValue = document.querySelector<HTMLSpanElement>(
+  "#directional-dash-spacing-value"
+);
 const turnRadiusSlider = document.querySelector<HTMLInputElement>("#turn-radius-slider");
 const turnRadiusValue = document.querySelector<HTMLSpanElement>("#turn-radius-value");
 const numberOffsetSlider = document.querySelector<HTMLInputElement>("#number-offset-slider");
@@ -195,6 +221,8 @@ if (
   !toleranceValue ||
   !midpointDensitySlider ||
   !midpointDensityValue ||
+  !directionalDashSpacingSlider ||
+  !directionalDashSpacingValue ||
   !turnRadiusSlider ||
   !turnRadiusValue ||
   !numberOffsetSlider ||
@@ -223,15 +251,17 @@ let demoAnimationFrameId: number | null = null;
 let isDemoPlaying = false;
 let currentTraceTolerance = DEFAULT_TRACE_TOLERANCE;
 let currentMidpointDensity = 320;
+let currentDirectionalDashSpacing = 96;
 let currentTurnRadius = 13;
 let currentNumberPathOffset = 0;
 let shouldOffsetArrowLanes = true;
 let currentArrowColor = "#ffffff";
 let annotationVisibility: Record<FormationAnnotation["kind"], boolean> = {
-  "turning-point": true,
-  "start-arrow": true,
-  "draw-order-number": true,
-  "midpoint-arrow": true
+  "directional-dash": true,
+  "turning-point": false,
+  "start-arrow": false,
+  "draw-order-number": false,
+  "midpoint-arrow": false
 };
 
 const TRACE_CURSOR_TURN_COMMIT_DISTANCE = 12;
@@ -290,6 +320,10 @@ const syncMidpointDensityLabel = () => {
   midpointDensityValue.textContent = `1 per ${currentMidpointDensity}px`;
 };
 
+const syncDirectionalDashSpacingLabel = () => {
+  directionalDashSpacingValue.textContent = `${currentDirectionalDashSpacing}px`;
+};
+
 const syncTurnRadiusLabel = () => {
   turnRadiusValue.textContent = `${currentTurnRadius}px`;
 };
@@ -303,6 +337,12 @@ const normalizeArrowColor = (value: string): string | null =>
 
 const getAnnotationClassName = (annotation: FormationAnnotation): string =>
   `writing-app__section-arrow writing-app__section-arrow--formation writing-app__section-arrow--${annotation.kind}`;
+
+const getAnnotationHeads = (annotation: FormationAnnotation): AnnotationArrowHead[] =>
+  [
+    "head" in annotation ? annotation.head : undefined,
+    "tailHead" in annotation ? annotation.tailHead : undefined
+  ].filter((head): head is AnnotationArrowHead => head !== undefined);
 
 const isStraightArrowAnnotation = (
   annotation: FormationAnnotation
@@ -1012,10 +1052,12 @@ const renderAnnotationMarkup = (annotation: FormationAnnotation): string => {
       class="${getAnnotationClassName(annotation)}"
       d="${annotationCommandsToSvgPathData(annotation.commands)}"
     ></path>
-    ${annotation.head
-      ? `<polygon class="writing-app__section-arrowhead writing-app__section-arrowhead--formation writing-app__section-arrowhead--${annotation.kind}" points="${buildSvgPoints(annotation.head.polygon)}"></polygon>`
-      : ""
-    }
+    ${getAnnotationHeads(annotation)
+      .map(
+        (head) =>
+          `<polygon class="writing-app__section-arrowhead writing-app__section-arrowhead--formation writing-app__section-arrowhead--${annotation.kind}" points="${buildSvgPoints(head.polygon)}"></polygon>`
+      )
+      .join("")}
   `;
 };
 
@@ -1225,6 +1267,14 @@ const setupScene = (path: WritingPath, width: number, height: number, offsetY: n
   const sectionArrowLength = Math.abs(path.guides.baseline - path.guides.xHeight) / 3;
   const arrowLaneOffset = shouldOffsetArrowLanes ? currentTurnRadius : 0;
   const annotations = compileFormationAnnotations(preparedPath, {
+    directionalDashes: {
+      spacing: currentDirectionalDashSpacing,
+      head: {
+        length: SECTION_ARROWHEAD_LENGTH,
+        width: SECTION_ARROWHEAD_WIDTH,
+        tipExtension: SECTION_ARROWHEAD_TIP_OVERHANG
+      }
+    },
     turningPoints: {
       offset: currentTurnRadius,
       stemLength: sectionArrowLength * 0.36,
@@ -1454,6 +1504,11 @@ midpointDensitySlider.addEventListener("input", () => {
   syncMidpointDensityLabel();
   renderWord(currentWord);
 });
+directionalDashSpacingSlider.addEventListener("input", () => {
+  currentDirectionalDashSpacing = Number(directionalDashSpacingSlider.value);
+  syncDirectionalDashSpacingLabel();
+  renderWord(currentWord);
+});
 turnRadiusSlider.addEventListener("input", () => {
   currentTurnRadius = Number(turnRadiusSlider.value);
   syncTurnRadiusLabel();
@@ -1494,6 +1549,7 @@ annotationToggleEls.forEach((toggleEl) => {
 
 syncToleranceLabel();
 syncMidpointDensityLabel();
+syncDirectionalDashSpacingLabel();
 syncTurnRadiusLabel();
 syncNumberOffsetLabel();
 wordInput.value = currentWord;

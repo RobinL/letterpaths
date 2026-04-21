@@ -38,6 +38,8 @@ export type {
   AnnotationPathCommand,
   AnnotationSource,
   CompileFormationAnnotationsOptions,
+  DirectionalDashAnnotation,
+  DirectionalDashAnnotationOptions,
   DrawOrderNumberAnnotation,
   DrawOrderNumberAnnotationOptions,
   FormationAnnotation,

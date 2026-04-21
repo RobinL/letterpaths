@@ -8,6 +8,7 @@ import {
   compileFormationAnnotations,
   compileTracingPath,
   type AnimationFrame,
+  type AnnotationArrowHead,
   type FormationAnnotation,
   type JoinSpacingOptions,
   type Point,
@@ -1688,6 +1689,11 @@ const buildSvgPoints = (points: Point[]): string =>
 const getSectionAnnotationClassName = (annotation: FormationAnnotation): string =>
   `writing-app__section-arrow writing-app__section-arrow--white writing-app__section-arrow--${annotation.kind}`;
 
+const getSectionAnnotationHeads = (annotation: FormationAnnotation): AnnotationArrowHead[] =>
+  ["head" in annotation ? annotation.head : undefined, "tailHead" in annotation ? annotation.tailHead : undefined].filter(
+    (head): head is AnnotationArrowHead => head !== undefined
+  );
+
 const renderSectionAnnotationMarkup = (annotation: FormationAnnotation): string => {
   if (annotation.kind === "draw-order-number") {
     return "";
@@ -1698,10 +1704,12 @@ const renderSectionAnnotationMarkup = (annotation: FormationAnnotation): string 
       class="${getSectionAnnotationClassName(annotation)}"
       d="${annotationCommandsToSvgPathData(annotation.commands)}"
     ></path>
-    ${annotation.head
-      ? `<polygon class="writing-app__section-arrowhead writing-app__section-arrowhead--white writing-app__section-arrowhead--${annotation.kind}" points="${buildSvgPoints(annotation.head.polygon)}"></polygon>`
-      : ""
-    }
+    ${getSectionAnnotationHeads(annotation)
+      .map(
+        (head) =>
+          `<polygon class="writing-app__section-arrowhead writing-app__section-arrowhead--white writing-app__section-arrowhead--${annotation.kind}" points="${buildSvgPoints(head.polygon)}"></polygon>`
+      )
+      .join("")}
   `;
 };
 

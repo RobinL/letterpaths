@@ -295,6 +295,62 @@ test("formation annotations include all supported annotation kinds by default", 
   assert.match(annotationCommandsToSvgPathData(arrow.commands), /^M /);
 });
 
+test("directional dashes show bidirectional corridors once with double heads", () => {
+  const prepared = compileTracingPath(buildHandwritingPath("p", { style: "cursive" }));
+  const annotations = compileFormationAnnotations(prepared, {
+    turningPoints: false,
+    startArrows: false,
+    drawOrderNumbers: false,
+    midpointArrows: false,
+    directionalDashes: {
+      spacing: 120
+    }
+  }).filter((annotation) => annotation.kind === "directional-dash");
+
+  assert.ok(annotations.length > 0, "Expected p to include directional dashes.");
+  assert.ok(
+    annotations.some((annotation) => annotation.source.directionality === "bidirectional"),
+    "Expected at least one bidirectional directional dash."
+  );
+  assert.ok(
+    annotations.some((annotation) => annotation.source.directionality === "unidirectional"),
+    "Expected at least one unidirectional directional dash."
+  );
+
+  annotations.forEach((annotation) => {
+    assert.match(annotationCommandsToSvgPathData(annotation.commands), /^M /);
+    if (annotation.source.directionality === "bidirectional") {
+      assert.ok(annotation.tailHead, "Expected bidirectional dashes to include a reverse head.");
+    } else {
+      assert.equal(annotation.tailHead, undefined);
+    }
+  });
+});
+
+test("directional dash spacing changes dash density", () => {
+  const prepared = preparedSys();
+  const sparse = compileFormationAnnotations(prepared, {
+    turningPoints: false,
+    startArrows: false,
+    drawOrderNumbers: false,
+    midpointArrows: false,
+    directionalDashes: {
+      spacing: 150
+    }
+  }).filter((annotation) => annotation.kind === "directional-dash");
+  const dense = compileFormationAnnotations(prepared, {
+    turningPoints: false,
+    startArrows: false,
+    drawOrderNumbers: false,
+    midpointArrows: false,
+    directionalDashes: {
+      spacing: 90
+    }
+  }).filter((annotation) => annotation.kind === "directional-dash");
+
+  assert.ok(dense.length > sparse.length);
+});
+
 test("midpoint arrow density controls midpoint threshold and fractional placement", () => {
   const prepared = preparedSys();
   const sparseThreshold = 500;

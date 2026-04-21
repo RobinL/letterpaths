@@ -1,6 +1,7 @@
 import {
   annotationCommandsToSvgPathData,
   compileFormationAnnotations,
+  type AnnotationArrowHead,
   type AnnotationPathCommand,
   type FormationAnnotation,
   type Point,
@@ -67,6 +68,7 @@ const ANNOTATION_STROKE_WIDTH = 6.5;
 const ANNOTATION_STROKE_HALF_WIDTH = ANNOTATION_STROKE_WIDTH / 2;
 
 export const DEFAULT_FORMATION_ANNOTATION_VISIBILITY: FormationAnnotationVisibility = {
+  "directional-dash": false,
   "turning-point": true,
   "start-arrow": true,
   "draw-order-number": true,
@@ -74,6 +76,7 @@ export const DEFAULT_FORMATION_ANNOTATION_VISIBILITY: FormationAnnotationVisibil
 };
 
 export const EMPTY_FORMATION_ANNOTATION_VISIBILITY: FormationAnnotationVisibility = {
+  "directional-dash": false,
   "turning-point": false,
   "start-arrow": false,
   "draw-order-number": false,
@@ -148,6 +151,12 @@ const escapeSvgText = (value: string): string =>
 
 const getAnnotationClassName = (annotation: FormationAnnotation): string =>
   `writing-app__section-arrow writing-app__section-arrow--formation writing-app__section-arrow--${annotation.kind}`;
+
+const getAnnotationHeads = (annotation: FormationAnnotation): AnnotationArrowHead[] =>
+  [
+    "head" in annotation ? annotation.head : undefined,
+    "tailHead" in annotation ? annotation.tailHead : undefined
+  ].filter((head): head is AnnotationArrowHead => head !== undefined);
 
 const isStraightArrowAnnotation = (
   annotation: FormationAnnotation
@@ -863,10 +872,11 @@ const renderAnnotationMarkup = (
       d="${annotationCommandsToSvgPathData(annotation.commands)}"
       stroke-width="${options.arrowStrokeWidth}"
     ></path>
-    ${
-      annotation.head
-        ? `<polygon class="writing-app__section-arrowhead writing-app__section-arrowhead--formation writing-app__section-arrowhead--${annotation.kind}" points="${buildSvgPoints(annotation.head.polygon)}"></polygon>`
-        : ""
-    }
+    ${getAnnotationHeads(annotation)
+      .map(
+        (head) =>
+          `<polygon class="writing-app__section-arrowhead writing-app__section-arrowhead--formation writing-app__section-arrowhead--${annotation.kind}" points="${buildSvgPoints(head.polygon)}"></polygon>`
+      )
+      .join("")}
   `;
 };

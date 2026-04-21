@@ -137,6 +137,7 @@ app.classList.add("worksheet-root");
 const cloneVisibility = (
   visibility: FormationAnnotationVisibility
 ): FormationAnnotationVisibility => ({
+  "directional-dash": visibility["directional-dash"],
   "turning-point": visibility["turning-point"],
   "start-arrow": visibility["start-arrow"],
   "draw-order-number": visibility["draw-order-number"],
