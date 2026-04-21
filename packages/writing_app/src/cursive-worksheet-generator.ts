@@ -163,6 +163,86 @@ const DEFAULT_WORKSHEET_JOIN_SPACING = {
   exitHandleScale: 0.75,
   entryHandleScale: 0.75
 } as const satisfies Required<JoinSpacingOptions>;
+const WORKSHEET_URL_PARAM_KEYS = [
+  "text",
+  "word",
+  "previewZoom",
+  "practiceSize",
+  "practiceRepeats",
+  "strokeWidth",
+  "targetBendRate",
+  "minSidebearingGap",
+  "bendSearchMinSidebearingGap",
+  "bendSearchMaxSidebearingGap",
+  "exitHandleScale",
+  "entryHandleScale",
+  "showBaselineGuide",
+  "showXHeightGuide",
+  "showAscenderGuide",
+  "showDescenderGuide",
+  "gridlineStrokeWidth",
+  "gridlineColor",
+  "keepInitialLeadIn",
+  "keepFinalLeadOut",
+  "topDirectionalDashSpacing",
+  "topMidpointDensity",
+  "topTurnRadius",
+  "topUTurnLength",
+  "topArrowLength",
+  "topArrowHeadSize",
+  "topArrowStrokeWidth",
+  "topNumberSize",
+  "topNumberPathOffset",
+  "topOffsetArrowLanes",
+  "topAlwaysOffsetArrowLanes",
+  "topStrokeColor",
+  "topNumberColor",
+  "topArrowColor",
+  "topDirectionalDash",
+  "topTurningPoint",
+  "topStartArrow",
+  "topDrawOrderNumber",
+  "topMidpointArrow",
+  "practiceDirectionalDashSpacing",
+  "practiceMidpointDensity",
+  "practiceTurnRadius",
+  "practiceUTurnLength",
+  "practiceArrowLength",
+  "practiceArrowHeadSize",
+  "practiceArrowStrokeWidth",
+  "practiceNumberSize",
+  "practiceNumberPathOffset",
+  "practiceOffsetArrowLanes",
+  "practiceAlwaysOffsetArrowLanes",
+  "practiceStrokeColor",
+  "practiceNumberColor",
+  "practiceArrowColor",
+  "practiceDirectionalDash",
+  "practiceTurningPoint",
+  "practiceStartArrow",
+  "practiceDrawOrderNumber",
+  "practiceMidpointArrow"
+] as const;
+const SCOPED_NUMERIC_SETTING_KEYS = [
+  "directionalDashSpacing",
+  "midpointDensity",
+  "turnRadius",
+  "uTurnLength",
+  "arrowLength",
+  "arrowHeadSize",
+  "arrowStrokeWidth",
+  "numberSize",
+  "numberPathOffset"
+] as const;
+const SCOPED_BOOLEAN_SETTING_KEYS = ["offsetArrowLanes", "alwaysOffsetArrowLanes"] as const;
+const SCOPED_COLOR_SETTING_KEYS = ["strokeColor", "numberColor", "arrowColor"] as const;
+const SCOPED_VISIBILITY_PARAM_SUFFIXES: Record<FormationAnnotation["kind"], string> = {
+  "directional-dash": "DirectionalDash",
+  "turning-point": "TurningPoint",
+  "start-arrow": "StartArrow",
+  "draw-order-number": "DrawOrderNumber",
+  "midpoint-arrow": "MidpointArrow"
+};
 
 const app = document.querySelector<HTMLDivElement>("#app");
 
@@ -204,7 +284,7 @@ const createSettings = (
   strokeColor
 });
 
-let state: WorksheetState = {
+const createDefaultState = (): WorksheetState => ({
   text: DEFAULT_TEXT,
   previewZoom: DEFAULT_PREVIEW_ZOOM,
   practiceRowHeightMm: DEFAULT_PRACTICE_ROW_HEIGHT_MM,
@@ -221,7 +301,11 @@ let state: WorksheetState = {
   keepFinalLeadOut: true,
   top: createSettings(DEFAULT_FORMATION_ANNOTATION_VISIBILITY, DEFAULT_TOP_STROKE_COLOR),
   practice: createSettings(EMPTY_FORMATION_ANNOTATION_VISIBILITY, DEFAULT_PRACTICE_STROKE_COLOR)
-};
+});
+
+const DEFAULT_STATE = createDefaultState();
+
+let state: WorksheetState = createDefaultState();
 
 app.innerHTML = `
   <div class="worksheet-app">
@@ -336,6 +420,16 @@ if (
 ) {
   throw new Error("Missing elements for cursive worksheet generator.");
 }
+
+const globalSettingInputs = Array.from(
+  document.querySelectorAll<HTMLInputElement>("[data-global-setting]")
+);
+const scopedSettingInputs = Array.from(
+  document.querySelectorAll<HTMLInputElement>("[data-scope][data-setting]")
+);
+const annotationKindInputs = Array.from(
+  document.querySelectorAll<HTMLInputElement>("[data-scope][data-annotation-kind]")
+);
 
 function renderRangeControl({
   id,
@@ -709,6 +803,445 @@ const escapeHtml = (value: string): string =>
 const normalizeColor = (value: string): string | null =>
   /^#[0-9a-fA-F]{6}$/.test(value) ? value.toLowerCase() : null;
 
+const getSliderValuePrecision = (input: HTMLInputElement): number => {
+  if (input.step === "any" || input.step.length === 0) {
+    return 0;
+  }
+
+  const [, fractional = ""] = input.step.split(".");
+  return fractional.length;
+};
+
+const normalizeSliderValue = (input: HTMLInputElement, value: number): number => {
+  const min = input.min === "" ? Number.NEGATIVE_INFINITY : Number(input.min);
+  const max = input.max === "" ? Number.POSITIVE_INFINITY : Number(input.max);
+  const step = input.step === "" || input.step === "any" ? Number.NaN : Number(input.step);
+  const base = Number.isFinite(min) ? min : 0;
+  let nextValue = value;
+
+  if (Number.isFinite(min)) {
+    nextValue = Math.max(min, nextValue);
+  }
+  if (Number.isFinite(max)) {
+    nextValue = Math.min(max, nextValue);
+  }
+  if (Number.isFinite(step) && step > 0) {
+    nextValue = base + Math.round((nextValue - base) / step) * step;
+  }
+  if (Number.isFinite(min)) {
+    nextValue = Math.max(min, nextValue);
+  }
+  if (Number.isFinite(max)) {
+    nextValue = Math.min(max, nextValue);
+  }
+
+  return Number(nextValue.toFixed(getSliderValuePrecision(input)));
+};
+
+const syncSliderValue = (input: HTMLInputElement, value: number): number => {
+  const normalizedValue = normalizeSliderValue(input, value);
+  input.value = normalizedValue.toFixed(getSliderValuePrecision(input));
+  return normalizedValue;
+};
+
+const parseBooleanSearchParam = (params: URLSearchParams, key: string): boolean | null => {
+  const rawValue = params.get(key);
+  if (rawValue === null) {
+    return null;
+  }
+
+  const normalizedValue = rawValue.trim().toLowerCase();
+  if (["1", "true", "yes", "on"].includes(normalizedValue)) {
+    return true;
+  }
+  if (["0", "false", "no", "off"].includes(normalizedValue)) {
+    return false;
+  }
+
+  return null;
+};
+
+const parseSliderSearchParam = (
+  params: URLSearchParams,
+  key: string,
+  input: HTMLInputElement
+): number | null => {
+  const rawValue = params.get(key);
+  if (rawValue === null) {
+    return null;
+  }
+
+  const parsedValue = Number(rawValue);
+  if (!Number.isFinite(parsedValue)) {
+    return null;
+  }
+
+  return normalizeSliderValue(input, parsedValue);
+};
+
+const parseColorSearchParam = (params: URLSearchParams, key: string): string | null =>
+  normalizeColor(params.get(key) ?? "");
+
+const toScopedParamKey = (scope: AnnotationScope, key: string): string =>
+  `${scope}${key.charAt(0).toUpperCase()}${key.slice(1)}`;
+
+const syncScopedSettingsControlsFromState = (scope: AnnotationScope) => {
+  const settings = getScopeSettings(scope);
+
+  scopedSettingInputs.forEach((input) => {
+    if (input.dataset.scope !== scope) {
+      return;
+    }
+
+    const setting = input.dataset.setting;
+    if (setting === "directionalDashSpacing") {
+      settings.directionalDashSpacing = syncSliderValue(input, settings.directionalDashSpacing);
+    } else if (setting === "midpointDensity") {
+      settings.midpointDensity = syncSliderValue(input, settings.midpointDensity);
+    } else if (setting === "turnRadius") {
+      settings.turnRadius = syncSliderValue(input, settings.turnRadius);
+    } else if (setting === "uTurnLength") {
+      settings.uTurnLength = syncSliderValue(input, settings.uTurnLength);
+    } else if (setting === "arrowLength") {
+      settings.arrowLength = syncSliderValue(input, settings.arrowLength);
+    } else if (setting === "arrowHeadSize") {
+      settings.arrowHeadSize = syncSliderValue(input, settings.arrowHeadSize);
+    } else if (setting === "arrowStrokeWidth") {
+      settings.arrowStrokeWidth = syncSliderValue(input, settings.arrowStrokeWidth);
+    } else if (setting === "numberSize") {
+      settings.numberSize = syncSliderValue(input, settings.numberSize);
+    } else if (setting === "numberPathOffset") {
+      settings.numberPathOffset = syncSliderValue(input, settings.numberPathOffset);
+    } else if (setting === "offsetArrowLanes") {
+      input.checked = settings.offsetArrowLanes;
+    } else if (setting === "alwaysOffsetArrowLanes") {
+      input.checked = settings.alwaysOffsetArrowLanes;
+    } else if (setting === "arrowColor") {
+      input.value = settings.arrowColor;
+    } else if (setting === "numberColor") {
+      input.value = settings.numberColor;
+    } else if (setting === "strokeColor") {
+      input.value = settings.strokeColor;
+    }
+  });
+
+  annotationKindInputs.forEach((input) => {
+    if (input.dataset.scope !== scope) {
+      return;
+    }
+
+    const kind = input.dataset.annotationKind as FormationAnnotation["kind"] | undefined;
+    if (!kind) {
+      return;
+    }
+
+    input.checked = settings.visibility[kind];
+  });
+};
+
+const syncSettingsControlsFromState = () => {
+  textInput.value = state.text;
+  state.previewZoom = syncSliderValue(previewZoomSlider, state.previewZoom);
+  state.practiceRowHeightMm = syncSliderValue(practiceSizeSlider, state.practiceRowHeightMm);
+  state.practiceRepeatCount = syncSliderValue(practiceRepeatSlider, state.practiceRepeatCount);
+  state.strokeWidth = syncSliderValue(strokeWidthSlider, state.strokeWidth);
+
+  globalSettingInputs.forEach((input) => {
+    const setting = input.dataset.globalSetting;
+    if (setting === "targetBendRate") {
+      state.joinSpacing.targetBendRate = syncSliderValue(input, state.joinSpacing.targetBendRate);
+    } else if (setting === "minSidebearingGap") {
+      state.joinSpacing.minSidebearingGap = syncSliderValue(input, state.joinSpacing.minSidebearingGap);
+    } else if (setting === "bendSearchMinSidebearingGap") {
+      state.joinSpacing.bendSearchMinSidebearingGap = syncSliderValue(
+        input,
+        state.joinSpacing.bendSearchMinSidebearingGap
+      );
+    } else if (setting === "bendSearchMaxSidebearingGap") {
+      state.joinSpacing.bendSearchMaxSidebearingGap = syncSliderValue(
+        input,
+        state.joinSpacing.bendSearchMaxSidebearingGap
+      );
+    } else if (setting === "exitHandleScale") {
+      state.joinSpacing.exitHandleScale = syncSliderValue(input, state.joinSpacing.exitHandleScale);
+    } else if (setting === "entryHandleScale") {
+      state.joinSpacing.entryHandleScale = syncSliderValue(input, state.joinSpacing.entryHandleScale);
+    } else if (setting === "gridlineStrokeWidth") {
+      state.gridlineStrokeWidth = syncSliderValue(input, state.gridlineStrokeWidth);
+    } else if (setting === "keepInitialLeadIn") {
+      input.checked = state.keepInitialLeadIn;
+    } else if (setting === "keepFinalLeadOut") {
+      input.checked = state.keepFinalLeadOut;
+    } else if (setting === "showBaselineGuide") {
+      input.checked = state.showBaselineGuide;
+    } else if (setting === "showXHeightGuide") {
+      input.checked = state.showXHeightGuide;
+    } else if (setting === "showAscenderGuide") {
+      input.checked = state.showAscenderGuide;
+    } else if (setting === "showDescenderGuide") {
+      input.checked = state.showDescenderGuide;
+    } else if (setting === "gridlineColor") {
+      input.value = state.gridlineColor;
+    }
+  });
+
+  syncScopedSettingsControlsFromState("top");
+  syncScopedSettingsControlsFromState("practice");
+  applyPreviewZoom();
+  syncLabels();
+};
+
+const syncScopedSettingsUrl = (
+  url: URL,
+  scope: AnnotationScope,
+  settings: WorksheetAnnotationSettings,
+  defaultSettings: WorksheetAnnotationSettings
+) => {
+  SCOPED_NUMERIC_SETTING_KEYS.forEach((key) => {
+    if (settings[key] !== defaultSettings[key]) {
+      url.searchParams.set(toScopedParamKey(scope, key), String(settings[key]));
+    }
+  });
+
+  SCOPED_BOOLEAN_SETTING_KEYS.forEach((key) => {
+    if (settings[key] !== defaultSettings[key]) {
+      url.searchParams.set(toScopedParamKey(scope, key), settings[key] ? "1" : "0");
+    }
+  });
+
+  SCOPED_COLOR_SETTING_KEYS.forEach((key) => {
+    if (settings[key] !== defaultSettings[key]) {
+      url.searchParams.set(toScopedParamKey(scope, key), settings[key]);
+    }
+  });
+
+  (Object.entries(SCOPED_VISIBILITY_PARAM_SUFFIXES) as Array<
+    [FormationAnnotation["kind"], string]
+  >).forEach(([kind, suffix]) => {
+    if (settings.visibility[kind] !== defaultSettings.visibility[kind]) {
+      url.searchParams.set(`${scope}${suffix}`, settings.visibility[kind] ? "1" : "0");
+    }
+  });
+};
+
+const syncSettingsUrl = () => {
+  const url = new URL(window.location.href);
+  WORKSHEET_URL_PARAM_KEYS.forEach((key) => {
+    url.searchParams.delete(key);
+  });
+
+  if (state.text !== DEFAULT_STATE.text) {
+    url.searchParams.set("text", state.text);
+  }
+  if (state.previewZoom !== DEFAULT_STATE.previewZoom) {
+    url.searchParams.set("previewZoom", String(state.previewZoom));
+  }
+  if (state.practiceRowHeightMm !== DEFAULT_STATE.practiceRowHeightMm) {
+    url.searchParams.set("practiceSize", String(state.practiceRowHeightMm));
+  }
+  if (state.practiceRepeatCount !== DEFAULT_STATE.practiceRepeatCount) {
+    url.searchParams.set("practiceRepeats", String(state.practiceRepeatCount));
+  }
+  if (state.strokeWidth !== DEFAULT_STATE.strokeWidth) {
+    url.searchParams.set("strokeWidth", String(state.strokeWidth));
+  }
+  if (state.joinSpacing.targetBendRate !== DEFAULT_STATE.joinSpacing.targetBendRate) {
+    url.searchParams.set("targetBendRate", String(state.joinSpacing.targetBendRate));
+  }
+  if (state.joinSpacing.minSidebearingGap !== DEFAULT_STATE.joinSpacing.minSidebearingGap) {
+    url.searchParams.set("minSidebearingGap", String(state.joinSpacing.minSidebearingGap));
+  }
+  if (
+    state.joinSpacing.bendSearchMinSidebearingGap !==
+    DEFAULT_STATE.joinSpacing.bendSearchMinSidebearingGap
+  ) {
+    url.searchParams.set(
+      "bendSearchMinSidebearingGap",
+      String(state.joinSpacing.bendSearchMinSidebearingGap)
+    );
+  }
+  if (
+    state.joinSpacing.bendSearchMaxSidebearingGap !==
+    DEFAULT_STATE.joinSpacing.bendSearchMaxSidebearingGap
+  ) {
+    url.searchParams.set(
+      "bendSearchMaxSidebearingGap",
+      String(state.joinSpacing.bendSearchMaxSidebearingGap)
+    );
+  }
+  if (state.joinSpacing.exitHandleScale !== DEFAULT_STATE.joinSpacing.exitHandleScale) {
+    url.searchParams.set("exitHandleScale", String(state.joinSpacing.exitHandleScale));
+  }
+  if (state.joinSpacing.entryHandleScale !== DEFAULT_STATE.joinSpacing.entryHandleScale) {
+    url.searchParams.set("entryHandleScale", String(state.joinSpacing.entryHandleScale));
+  }
+  if (state.showBaselineGuide !== DEFAULT_STATE.showBaselineGuide) {
+    url.searchParams.set("showBaselineGuide", state.showBaselineGuide ? "1" : "0");
+  }
+  if (state.showXHeightGuide !== DEFAULT_STATE.showXHeightGuide) {
+    url.searchParams.set("showXHeightGuide", state.showXHeightGuide ? "1" : "0");
+  }
+  if (state.showAscenderGuide !== DEFAULT_STATE.showAscenderGuide) {
+    url.searchParams.set("showAscenderGuide", state.showAscenderGuide ? "1" : "0");
+  }
+  if (state.showDescenderGuide !== DEFAULT_STATE.showDescenderGuide) {
+    url.searchParams.set("showDescenderGuide", state.showDescenderGuide ? "1" : "0");
+  }
+  if (state.gridlineStrokeWidth !== DEFAULT_STATE.gridlineStrokeWidth) {
+    url.searchParams.set("gridlineStrokeWidth", String(state.gridlineStrokeWidth));
+  }
+  if (state.gridlineColor !== DEFAULT_STATE.gridlineColor) {
+    url.searchParams.set("gridlineColor", state.gridlineColor);
+  }
+  if (state.keepInitialLeadIn !== DEFAULT_STATE.keepInitialLeadIn) {
+    url.searchParams.set("keepInitialLeadIn", state.keepInitialLeadIn ? "1" : "0");
+  }
+  if (state.keepFinalLeadOut !== DEFAULT_STATE.keepFinalLeadOut) {
+    url.searchParams.set("keepFinalLeadOut", state.keepFinalLeadOut ? "1" : "0");
+  }
+
+  syncScopedSettingsUrl(url, "top", state.top, DEFAULT_STATE.top);
+  syncScopedSettingsUrl(url, "practice", state.practice, DEFAULT_STATE.practice);
+
+  const nextUrl = `${url.pathname}${url.search}${url.hash}`;
+  const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+  if (nextUrl !== currentUrl) {
+    window.history.replaceState(null, "", nextUrl);
+  }
+};
+
+const applyScopedUrlSettings = (params: URLSearchParams, scope: AnnotationScope) => {
+  const settings = getScopeSettings(scope);
+
+  scopedSettingInputs.forEach((input) => {
+    if (input.dataset.scope !== scope) {
+      return;
+    }
+
+    const setting = input.dataset.setting;
+    if (!setting) {
+      return;
+    }
+
+    const paramKey = toScopedParamKey(scope, setting);
+    if (setting === "directionalDashSpacing") {
+      settings.directionalDashSpacing =
+        parseSliderSearchParam(params, paramKey, input) ?? settings.directionalDashSpacing;
+    } else if (setting === "midpointDensity") {
+      settings.midpointDensity = parseSliderSearchParam(params, paramKey, input) ?? settings.midpointDensity;
+    } else if (setting === "turnRadius") {
+      settings.turnRadius = parseSliderSearchParam(params, paramKey, input) ?? settings.turnRadius;
+    } else if (setting === "uTurnLength") {
+      settings.uTurnLength = parseSliderSearchParam(params, paramKey, input) ?? settings.uTurnLength;
+    } else if (setting === "arrowLength") {
+      settings.arrowLength = parseSliderSearchParam(params, paramKey, input) ?? settings.arrowLength;
+    } else if (setting === "arrowHeadSize") {
+      settings.arrowHeadSize = parseSliderSearchParam(params, paramKey, input) ?? settings.arrowHeadSize;
+    } else if (setting === "arrowStrokeWidth") {
+      settings.arrowStrokeWidth =
+        parseSliderSearchParam(params, paramKey, input) ?? settings.arrowStrokeWidth;
+    } else if (setting === "numberSize") {
+      settings.numberSize = parseSliderSearchParam(params, paramKey, input) ?? settings.numberSize;
+    } else if (setting === "numberPathOffset") {
+      settings.numberPathOffset =
+        parseSliderSearchParam(params, paramKey, input) ?? settings.numberPathOffset;
+    } else if (setting === "offsetArrowLanes") {
+      settings.offsetArrowLanes =
+        parseBooleanSearchParam(params, paramKey) ?? settings.offsetArrowLanes;
+    } else if (setting === "alwaysOffsetArrowLanes") {
+      settings.alwaysOffsetArrowLanes =
+        parseBooleanSearchParam(params, paramKey) ?? settings.alwaysOffsetArrowLanes;
+    } else if (setting === "arrowColor") {
+      settings.arrowColor = parseColorSearchParam(params, paramKey) ?? settings.arrowColor;
+    } else if (setting === "numberColor") {
+      settings.numberColor = parseColorSearchParam(params, paramKey) ?? settings.numberColor;
+    } else if (setting === "strokeColor") {
+      settings.strokeColor = parseColorSearchParam(params, paramKey) ?? settings.strokeColor;
+    }
+  });
+
+  (Object.entries(SCOPED_VISIBILITY_PARAM_SUFFIXES) as Array<
+    [FormationAnnotation["kind"], string]
+  >).forEach(([kind, suffix]) => {
+    settings.visibility = {
+      ...settings.visibility,
+      [kind]: parseBooleanSearchParam(params, `${scope}${suffix}`) ?? settings.visibility[kind]
+    };
+  });
+};
+
+const applyUrlSettings = () => {
+  const params = new URLSearchParams(window.location.search);
+  state = createDefaultState();
+
+  const textParam = params.get("text") ?? params.get("word");
+  if (textParam !== null) {
+    state.text = normalizeText(textParam);
+  }
+
+  state.previewZoom =
+    parseSliderSearchParam(params, "previewZoom", previewZoomSlider) ?? state.previewZoom;
+  state.practiceRowHeightMm =
+    parseSliderSearchParam(params, "practiceSize", practiceSizeSlider) ?? state.practiceRowHeightMm;
+  state.practiceRepeatCount =
+    parseSliderSearchParam(params, "practiceRepeats", practiceRepeatSlider) ??
+    state.practiceRepeatCount;
+  state.strokeWidth =
+    parseSliderSearchParam(params, "strokeWidth", strokeWidthSlider) ?? state.strokeWidth;
+
+  globalSettingInputs.forEach((input) => {
+    const setting = input.dataset.globalSetting;
+    if (setting === "targetBendRate") {
+      state.joinSpacing.targetBendRate =
+        parseSliderSearchParam(params, setting, input) ?? state.joinSpacing.targetBendRate;
+    } else if (setting === "minSidebearingGap") {
+      state.joinSpacing.minSidebearingGap =
+        parseSliderSearchParam(params, setting, input) ?? state.joinSpacing.minSidebearingGap;
+    } else if (setting === "bendSearchMinSidebearingGap") {
+      state.joinSpacing.bendSearchMinSidebearingGap =
+        parseSliderSearchParam(params, setting, input) ??
+        state.joinSpacing.bendSearchMinSidebearingGap;
+    } else if (setting === "bendSearchMaxSidebearingGap") {
+      state.joinSpacing.bendSearchMaxSidebearingGap =
+        parseSliderSearchParam(params, setting, input) ??
+        state.joinSpacing.bendSearchMaxSidebearingGap;
+    } else if (setting === "exitHandleScale") {
+      state.joinSpacing.exitHandleScale =
+        parseSliderSearchParam(params, setting, input) ?? state.joinSpacing.exitHandleScale;
+    } else if (setting === "entryHandleScale") {
+      state.joinSpacing.entryHandleScale =
+        parseSliderSearchParam(params, setting, input) ?? state.joinSpacing.entryHandleScale;
+    } else if (setting === "gridlineStrokeWidth") {
+      state.gridlineStrokeWidth =
+        parseSliderSearchParam(params, setting, input) ?? state.gridlineStrokeWidth;
+    } else if (setting === "keepInitialLeadIn") {
+      state.keepInitialLeadIn =
+        parseBooleanSearchParam(params, setting) ?? state.keepInitialLeadIn;
+    } else if (setting === "keepFinalLeadOut") {
+      state.keepFinalLeadOut =
+        parseBooleanSearchParam(params, setting) ?? state.keepFinalLeadOut;
+    } else if (setting === "showBaselineGuide") {
+      state.showBaselineGuide =
+        parseBooleanSearchParam(params, setting) ?? state.showBaselineGuide;
+    } else if (setting === "showXHeightGuide") {
+      state.showXHeightGuide =
+        parseBooleanSearchParam(params, setting) ?? state.showXHeightGuide;
+    } else if (setting === "showAscenderGuide") {
+      state.showAscenderGuide =
+        parseBooleanSearchParam(params, setting) ?? state.showAscenderGuide;
+    } else if (setting === "showDescenderGuide") {
+      state.showDescenderGuide =
+        parseBooleanSearchParam(params, setting) ?? state.showDescenderGuide;
+    } else if (setting === "gridlineColor") {
+      state.gridlineColor = parseColorSearchParam(params, setting) ?? state.gridlineColor;
+    }
+  });
+
+  applyScopedUrlSettings(params, "top");
+  applyScopedUrlSettings(params, "practice");
+  syncSettingsControlsFromState();
+};
+
 const getScopeSettings = (scope: AnnotationScope): WorksheetAnnotationSettings => state[scope];
 
 const getPracticeRowCount = (): number =>
@@ -764,10 +1297,10 @@ const applyPreviewZoom = () => {
 };
 
 const setPreviewZoom = (value: number) => {
-  state.previewZoom = value;
-  previewZoomSlider.value = `${value}`;
+  state.previewZoom = syncSliderValue(previewZoomSlider, value);
   applyPreviewZoom();
   syncLabels();
+  syncSettingsUrl();
 };
 
 const nextFrame = () =>
@@ -1071,6 +1604,7 @@ const renderWorksheet = () => {
     strokeWidth: Number(strokeWidthSlider.value)
   };
   syncLabels();
+  syncSettingsUrl();
 
   if (state.text.length === 0) {
     worksheetPage.innerHTML = `
@@ -1326,7 +1860,7 @@ downloadPngButton.addEventListener("click", () => {
     });
 });
 
-document.querySelectorAll<HTMLInputElement>("[data-global-setting]").forEach((input) => {
+globalSettingInputs.forEach((input) => {
   input.addEventListener("input", () => {
     const setting = input.dataset.globalSetting;
     if (
@@ -1367,7 +1901,7 @@ document.querySelectorAll<HTMLInputElement>("[data-global-setting]").forEach((in
   });
 });
 
-document.querySelectorAll<HTMLInputElement>("[data-scope][data-setting]").forEach((input) => {
+scopedSettingInputs.forEach((input) => {
   input.addEventListener("input", () => {
     const scope = input.dataset.scope as AnnotationScope | undefined;
     const setting = input.dataset.setting;
@@ -1410,7 +1944,7 @@ document.querySelectorAll<HTMLInputElement>("[data-scope][data-setting]").forEac
   });
 });
 
-document.querySelectorAll<HTMLInputElement>("[data-scope][data-annotation-kind]").forEach((input) => {
+annotationKindInputs.forEach((input) => {
   input.addEventListener("change", () => {
     const scope = input.dataset.scope as AnnotationScope | undefined;
     const kind = input.dataset.annotationKind as FormationAnnotation["kind"] | undefined;
@@ -1426,8 +1960,7 @@ document.querySelectorAll<HTMLInputElement>("[data-scope][data-annotation-kind]"
   });
 });
 
-syncLabels();
-applyPreviewZoom();
+applyUrlSettings();
 renderWorksheet();
 
 window.__worksheetProfiler = {
