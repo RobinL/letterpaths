@@ -1,4 +1,4 @@
-import{M as Xe,a as Ue,T as ze,D as ve,W as he,b as je,c as Ke,d as B,e as Ge,g as Ae,f as ye}from"./shared-BptrW1eh.js";import{T as Be,A as Qe}from"./session-DFnIrfII.js";import{c as Je,a as Ze}from"./annotations-RfTLeyof.js";const Se=document.querySelector("#app");if(!Se)throw new Error("Missing #app element for writing app.");Se.innerHTML=`
+import{M as Xe,a as Ue,T as ze,D as ve,W as he,b as je,c as Ke,d as B,e as Ge,g as Ae,f as ye}from"./shared-F4opZx_N.js";import{T as Be,A as Qe}from"./session-DAv25nLW.js";import{c as Je,a as Ze}from"./annotations-B9qpxeBj.js";const Se=document.querySelector("#app");if(!Se)throw new Error("Missing #app element for writing app.");Se.innerHTML=`
   <div class="writing-app">
     <main class="writing-app__stage">
       <section class="writing-app__board">

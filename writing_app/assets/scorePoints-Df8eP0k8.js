@@ -1,4 +1,4 @@
-import{M as bt,a as St,T as $t,D as st,b as vt,c as Et,h as kt,d as G,e as At,W as x,g as at,f as rt}from"./shared-BptrW1eh.js";import{T as Tt,A as Pt}from"./session-DFnIrfII.js";const X=["🍎","🍐","🍊","🍓","🍇","🍒","🍉","🥝"],ot=44,It=24,Mt=72,Dt=2,it=220,Ft=100,Lt=420,Ct=10,ct=document.querySelector("#app");if(!ct)throw new Error("Missing #app element for score points app.");ct.innerHTML=`
+import{M as bt,a as St,T as $t,D as st,b as vt,c as Et,l as kt,d as G,e as At,W as x,g as at,f as rt}from"./shared-F4opZx_N.js";import{T as Tt,A as Pt}from"./session-DAv25nLW.js";const X=["🍎","🍐","🍊","🍓","🍇","🍒","🍉","🥝"],ot=44,It=24,Mt=72,Dt=2,it=220,Ft=100,Lt=420,Ct=10,ct=document.querySelector("#app");if(!ct)throw new Error("Missing #app element for score points app.");ct.innerHTML=`
   <div class="writing-app">
     <main class="writing-app__stage">
       <section class="writing-app__board">
