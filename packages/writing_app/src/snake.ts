@@ -214,6 +214,8 @@ const SECTION_ARROWHEAD_WIDTH = 22;
 const SECTION_ARROWHEAD_TIP_OVERHANG = 11;
 const SNAKE_MIDPOINT_ARROW_DENSITY = 250;
 const SECTION_ANNOTATION_DISTANCE_EPSILON = 0.5;
+const SNAKE_TURN_COMMIT_DISTANCE = 12;
+const SNAKE_TURN_LOOKAHEAD_DISTANCE = 2;
 const DEFAULT_SNAKE_JOIN_SPACING = {
   targetBendRate: 16,
   minSidebearingGap: 80,
@@ -1204,6 +1206,25 @@ const getOverallDistanceForState = (
   }
 
   return total + getActiveStrokeTravelDistance(state);
+};
+
+const getCommittedSnakeTangent = (state: TracingState): Point => {
+  if (!preparedTracingPath) {
+    return state.cursorTangent;
+  }
+
+  const overallDistance = getOverallDistanceForState(state);
+  const activeTurnBoundary = [...preparedTracingPath.boundaries]
+    .reverse()
+    .find(
+      (boundary) =>
+        boundary.previousSegment !== boundary.nextSegment &&
+        boundary.turnAngleDegrees >= 150 &&
+        overallDistance >= boundary.overallDistance - SNAKE_TURN_LOOKAHEAD_DISTANCE &&
+        overallDistance - boundary.overallDistance < SNAKE_TURN_COMMIT_DISTANCE
+    );
+
+  return activeTurnBoundary?.outgoingTangent ?? state.cursorTangent;
 };
 
 const isDeferredStrokeActive = (state: Pick<TracingState, "activeStrokeIndex">): boolean =>
@@ -2385,7 +2406,7 @@ const syncSnakeToState = (state: TracingState) => {
     return;
   }
 
-  appendSnakePose(state.cursorPoint, state.cursorTangent, true);
+  appendSnakePose(state.cursorPoint, getCommittedSnakeTangent(state), true);
 
   if (!isDemoPlaying && state.isPenDown) {
     maybePlaySnakeMoveSound(state);
