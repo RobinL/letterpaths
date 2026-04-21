@@ -587,9 +587,6 @@ const getScopeSettings = (scope: AnnotationScope): WorksheetAnnotationSettings =
 const getPracticeRowCount = (): number =>
   Math.max(1, Math.floor(PRACTICE_AREA_HEIGHT_MM / state.practiceRowHeightMm));
 
-const getPracticeText = (): string =>
-  Array.from({ length: state.practiceRepeatCount }, () => state.text).join(" ");
-
 const formatScale = (value: number): string => value.toFixed(2);
 
 const setText = (id: string, value: string) => {
@@ -673,22 +670,55 @@ const getGuideLineY = (layout: ShiftedWordLayout, kind: "ascender" | "descender"
   return rawGuide + layout.offsetY;
 };
 
-const renderOptionalGuideLine = (
-  layout: ShiftedWordLayout,
-  kind: "ascender" | "descender",
-  visible: boolean
-): string => {
-  if (!visible) {
-    return "";
-  }
-  return `
+const renderGuideLines = (layout: ShiftedWordLayout, width: number): string => `
+  ${state.showAscenderGuide ? `
     <line
-      class="worksheet-word__guide worksheet-word__guide--${kind}"
+      class="worksheet-word__guide worksheet-word__guide--ascender"
       x1="0"
-      y1="${getGuideLineY(layout, kind)}"
-      x2="${layout.width}"
-      y2="${getGuideLineY(layout, kind)}"
+      y1="${getGuideLineY(layout, "ascender")}"
+      x2="${width}"
+      y2="${getGuideLineY(layout, "ascender")}"
     ></line>
+  ` : ""}
+  <line
+    class="worksheet-word__guide worksheet-word__guide--midline"
+    x1="0"
+    y1="${layout.path.guides.xHeight + layout.offsetY}"
+    x2="${width}"
+    y2="${layout.path.guides.xHeight + layout.offsetY}"
+  ></line>
+  <line
+    class="worksheet-word__guide worksheet-word__guide--baseline"
+    x1="0"
+    y1="${layout.path.guides.baseline + layout.offsetY}"
+    x2="${width}"
+    y2="${layout.path.guides.baseline + layout.offsetY}"
+  ></line>
+  ${state.showDescenderGuide ? `
+    <line
+      class="worksheet-word__guide worksheet-word__guide--descender"
+      x1="0"
+      y1="${getGuideLineY(layout, "descender")}"
+      x2="${width}"
+      y2="${getGuideLineY(layout, "descender")}"
+    ></line>
+  ` : ""}
+`;
+
+const renderWordContent = (
+  layout: ShiftedWordLayout,
+  preparedPath: PreparedTracingPath,
+  settings: WorksheetAnnotationSettings
+): string => {
+  const drawableStrokes = layout.path.strokes.filter((stroke) => stroke.type !== "lift");
+  const strokePaths = drawableStrokes
+    .map((stroke) => `<path class="worksheet-word__stroke" d="${buildPathD(stroke.curves)}"></path>`)
+    .join("");
+  const annotationMarkup = buildFormationAnnotationMarkup(layout.path, preparedPath, settings);
+
+  return `
+    ${strokePaths}
+    ${annotationMarkup}
   `;
 };
 
@@ -699,11 +729,7 @@ const renderWordSvg = (
   className: string,
   ariaLabel: string
 ): string => {
-  const drawableStrokes = layout.path.strokes.filter((stroke) => stroke.type !== "lift");
-  const strokePaths = drawableStrokes
-    .map((stroke) => `<path class="worksheet-word__stroke" d="${buildPathD(stroke.curves)}"></path>`)
-    .join("");
-  const annotationMarkup = buildFormationAnnotationMarkup(layout.path, preparedPath, settings);
+  const wordContent = renderWordContent(layout, preparedPath, settings);
 
   return `
     <svg
@@ -714,24 +740,50 @@ const renderWordSvg = (
       aria-label="${escapeHtml(ariaLabel)}"
       style="--formation-arrow-color: ${settings.arrowColor}; --formation-arrow-stroke-width: ${settings.arrowStrokeWidth}; --worksheet-word-stroke: ${settings.strokeColor}; --worksheet-word-stroke-width: ${state.strokeWidth};"
     >
-      ${renderOptionalGuideLine(layout, "ascender", state.showAscenderGuide)}
-      <line
-        class="worksheet-word__guide worksheet-word__guide--midline"
-        x1="0"
-        y1="${layout.path.guides.xHeight + layout.offsetY}"
-        x2="${layout.width}"
-        y2="${layout.path.guides.xHeight + layout.offsetY}"
-      ></line>
-      <line
-        class="worksheet-word__guide worksheet-word__guide--baseline"
-        x1="0"
-        y1="${layout.path.guides.baseline + layout.offsetY}"
-        x2="${layout.width}"
-        y2="${layout.path.guides.baseline + layout.offsetY}"
-      ></line>
-      ${renderOptionalGuideLine(layout, "descender", state.showDescenderGuide)}
-      ${strokePaths}
-      ${annotationMarkup}
+      ${renderGuideLines(layout, layout.width)}
+      ${wordContent}
+    </svg>
+  `;
+};
+
+const getPracticeAdvance = (layout: ShiftedWordLayout): number => {
+  const contentWidth = layout.path.bounds.maxX - layout.path.bounds.minX;
+  const leadingPadding = layout.path.bounds.minX;
+  return contentWidth + leadingPadding;
+};
+
+const renderPracticeRowSvg = (
+  layout: ShiftedWordLayout,
+  preparedPath: PreparedTracingPath,
+  settings: WorksheetAnnotationSettings,
+  repeatCount: number,
+  rowIndex: number
+): string => {
+  const advance = getPracticeAdvance(layout);
+  const rowWidth = layout.width + advance * (repeatCount - 1);
+  const wordContent = renderWordContent(layout, preparedPath, settings);
+  const symbolId = `practice-word-${rowIndex}`;
+  const repeatedWords = Array.from({ length: repeatCount }, (_, repeatIndex) => {
+    const x = repeatIndex * advance;
+    return `<use href="#${symbolId}" x="${x}" y="0"></use>`;
+  }).join("");
+
+  return `
+    <svg
+      class="worksheet-word worksheet-word--practice"
+      viewBox="0 0 ${rowWidth} ${layout.height}"
+      preserveAspectRatio="xMidYMid meet"
+      role="img"
+      aria-label="${escapeHtml(`${state.text} practice line, ${repeatCount} repeat${repeatCount === 1 ? "" : "s"}`)}"
+      style="--formation-arrow-color: ${settings.arrowColor}; --formation-arrow-stroke-width: ${settings.arrowStrokeWidth}; --worksheet-word-stroke: ${settings.strokeColor}; --worksheet-word-stroke-width: ${state.strokeWidth};"
+    >
+      ${renderGuideLines(layout, rowWidth)}
+      <defs>
+        <g id="${symbolId}">
+          ${wordContent}
+        </g>
+      </defs>
+      ${repeatedWords}
     </svg>
   `;
 };
@@ -763,7 +815,7 @@ const renderWorksheet = () => {
   let practiceLayout: ShiftedWordLayout;
   try {
     topLayout = buildShiftedWordLayout(state.text, layoutOptions);
-    practiceLayout = buildShiftedWordLayout(getPracticeText(), layoutOptions);
+    practiceLayout = buildShiftedWordLayout(state.text, layoutOptions);
   } catch {
     worksheetPage.innerHTML = `
       <div class="worksheet-page__empty">Use supported cursive letters and spaces.</div>
@@ -781,15 +833,16 @@ const renderWorksheet = () => {
     "worksheet-word worksheet-word--top",
     `${state.text} with formation annotations`
   );
-  const practiceSvg = renderWordSvg(
-    practiceLayout,
-    practicePreparedPath,
-    state.practice,
-    "worksheet-word worksheet-word--practice",
-    `${getPracticeText()} practice line`
-  );
   const practiceRowCount = getPracticeRowCount();
-  const practiceRows = Array.from({ length: practiceRowCount }, () => practiceSvg).join("");
+  const practiceRows = Array.from({ length: practiceRowCount }, (_, rowIndex) =>
+    renderPracticeRowSvg(
+      practiceLayout,
+      practicePreparedPath,
+      state.practice,
+      state.practiceRepeatCount,
+      rowIndex
+    )
+  ).join("");
 
   worksheetPage.style.setProperty("--practice-row-height", `${state.practiceRowHeightMm}mm`);
   worksheetPage.innerHTML = `
