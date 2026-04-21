@@ -23,6 +23,7 @@ type WorksheetAnnotationSettings = FormationAnnotationMarkupOptions & {
 
 type WorksheetState = {
   text: string;
+  previewZoom: number;
   practiceRowHeightMm: number;
   practiceRepeatCount: number;
   strokeWidth: number;
@@ -62,6 +63,7 @@ const DEFAULT_PRACTICE_STROKE_COLOR = "#d5dbe2";
 const DEFAULT_PRACTICE_ROW_HEIGHT_MM = 24;
 const DEFAULT_PRACTICE_REPEAT_COUNT = 1;
 const DEFAULT_STROKE_WIDTH = 54;
+const DEFAULT_PREVIEW_ZOOM = 100;
 const PRACTICE_AREA_HEIGHT_MM = 178;
 const ASCENDER_GUIDE_RATIO = 0.63;
 const DESCENDER_GUIDE_RATIO = 0.66;
@@ -162,6 +164,7 @@ const createSettings = (
 
 let state: WorksheetState = {
   text: DEFAULT_TEXT,
+  previewZoom: DEFAULT_PREVIEW_ZOOM,
   practiceRowHeightMm: DEFAULT_PRACTICE_ROW_HEIGHT_MM,
   practiceRepeatCount: DEFAULT_PRACTICE_REPEAT_COUNT,
   strokeWidth: DEFAULT_STROKE_WIDTH,
@@ -194,6 +197,16 @@ app.innerHTML = `
             spellcheck="false"
           />
         </label>
+
+        ${renderRangeControl({
+  id: "preview-zoom-slider",
+  label: "Preview zoom",
+  value: DEFAULT_PREVIEW_ZOOM,
+  min: 50,
+  max: 200,
+  step: 5,
+  valueId: "preview-zoom-value"
+})}
 
         ${renderRangeControl({
   id: "practice-size-slider",
@@ -243,27 +256,33 @@ app.innerHTML = `
     </aside>
 
     <main class="worksheet-app__preview" aria-label="Worksheet preview">
-      <section class="worksheet-page" id="worksheet-page" aria-label="Printable worksheet"></section>
+      <div class="worksheet-app__page-frame" id="worksheet-page-frame">
+        <section class="worksheet-page" id="worksheet-page" aria-label="Printable worksheet"></section>
+      </div>
     </main>
   </div>
 `;
 
 const textInput = document.querySelector<HTMLInputElement>("#worksheet-text-input");
+const previewZoomSlider = document.querySelector<HTMLInputElement>("#preview-zoom-slider");
 const practiceSizeSlider = document.querySelector<HTMLInputElement>("#practice-size-slider");
 const practiceRepeatSlider = document.querySelector<HTMLInputElement>("#practice-repeat-slider");
 const strokeWidthSlider = document.querySelector<HTMLInputElement>("#stroke-width-slider");
 const printButton = document.querySelector<HTMLButtonElement>("#print-worksheet-button");
 const downloadPngButton = document.querySelector<HTMLButtonElement>("#download-png-button");
+const worksheetPageFrame = document.querySelector<HTMLElement>("#worksheet-page-frame");
 const worksheetPage = document.querySelector<HTMLElement>("#worksheet-page");
 const statusEl = document.querySelector<HTMLParagraphElement>("#worksheet-status");
 
 if (
   !textInput ||
+  !previewZoomSlider ||
   !practiceSizeSlider ||
   !practiceRepeatSlider ||
   !strokeWidthSlider ||
   !printButton ||
   !downloadPngButton ||
+  !worksheetPageFrame ||
   !worksheetPage ||
   !statusEl
 ) {
@@ -580,6 +599,7 @@ const setText = (id: string, value: string) => {
 };
 
 const syncLabels = () => {
+  setText("preview-zoom-value", `${state.previewZoom}%`);
   setText("practice-size-value", `${state.practiceRowHeightMm} mm`);
   setText("practice-repeat-value", `${state.practiceRepeatCount}`);
   setText("stroke-width-value", `${state.strokeWidth}px`);
@@ -607,6 +627,39 @@ const syncLabels = () => {
     setText(`${scope}-number-size-value`, `${settings.numberSize}px`);
     setText(`${scope}-number-offset-value`, `${settings.numberPathOffset}px`);
   });
+};
+
+const applyPreviewZoom = () => {
+  worksheetPageFrame.style.setProperty("--worksheet-preview-scale", `${state.previewZoom / 100}`);
+};
+
+const setPreviewZoom = (value: number) => {
+  state.previewZoom = value;
+  previewZoomSlider.value = `${value}`;
+  applyPreviewZoom();
+  syncLabels();
+};
+
+const nextFrame = () =>
+  new Promise<void>((resolve) => {
+    requestAnimationFrame(() => resolve());
+  });
+
+const withPreviewZoom = async <T>(zoom: number, action: () => Promise<T>): Promise<T> => {
+  const previousZoom = state.previewZoom;
+  if (previousZoom !== zoom) {
+    setPreviewZoom(zoom);
+    await nextFrame();
+  }
+
+  try {
+    return await action();
+  } finally {
+    if (previousZoom !== zoom) {
+      setPreviewZoom(previousZoom);
+      await nextFrame();
+    }
+  }
 };
 
 const getGuideLineY = (layout: ShiftedWordLayout, kind: "ascender" | "descender"): number => {
@@ -860,65 +913,70 @@ const drawSvgElement = async (
 };
 
 const createWorksheetPngBlob = async (): Promise<Blob> => {
-  renderWorksheet();
+  return await withPreviewZoom(DEFAULT_PREVIEW_ZOOM, async () => {
+    renderWorksheet();
 
-  const rect = worksheetPage.getBoundingClientRect();
-  const width = Math.ceil(rect.width);
-  const height = Math.ceil(rect.height);
-  const canvas = document.createElement("canvas");
-  canvas.width = width * PNG_EXPORT_SCALE;
-  canvas.height = height * PNG_EXPORT_SCALE;
-  const context = canvas.getContext("2d");
-  if (!context) {
-    throw new Error("Could not prepare worksheet image.");
-  }
+    const rect = worksheetPage.getBoundingClientRect();
+    const width = Math.ceil(rect.width);
+    const height = Math.ceil(rect.height);
+    const canvas = document.createElement("canvas");
+    canvas.width = width * PNG_EXPORT_SCALE;
+    canvas.height = height * PNG_EXPORT_SCALE;
+    const context = canvas.getContext("2d");
+    if (!context) {
+      throw new Error("Could not prepare worksheet image.");
+    }
 
-  context.fillStyle = "#ffffff";
-  context.fillRect(0, 0, canvas.width, canvas.height);
-  context.scale(PNG_EXPORT_SCALE, PNG_EXPORT_SCALE);
+    context.fillStyle = "#ffffff";
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.scale(PNG_EXPORT_SCALE, PNG_EXPORT_SCALE);
 
-  drawWorksheetHeader(context, rect);
-  for (const svg of worksheetPage.querySelectorAll<SVGSVGElement>(".worksheet-word")) {
-    await drawSvgElement(context, svg, rect);
-  }
+    drawWorksheetHeader(context, rect);
+    for (const svg of worksheetPage.querySelectorAll<SVGSVGElement>(".worksheet-word")) {
+      await drawSvgElement(context, svg, rect);
+    }
 
-  const exampleSection = worksheetPage.querySelector<HTMLElement>(".worksheet-page__example");
-  if (exampleSection) {
-    const exampleRect = getRelativeRect(exampleSection, rect);
-    drawHorizontalLine(
-      context,
-      exampleRect.x,
-      exampleRect.x + exampleRect.width,
-      exampleRect.y + exampleRect.height - 1,
-      "#d7dde2",
-      1.3
-    );
-  }
+    const exampleSection = worksheetPage.querySelector<HTMLElement>(".worksheet-page__example");
+    if (exampleSection) {
+      const exampleRect = getRelativeRect(exampleSection, rect);
+      drawHorizontalLine(
+        context,
+        exampleRect.x,
+        exampleRect.x + exampleRect.width,
+        exampleRect.y + exampleRect.height - 1,
+        "#d7dde2",
+        1.3
+      );
+    }
 
-  worksheetPage.querySelectorAll<SVGSVGElement>(".worksheet-word--practice").forEach((svg) => {
-    const rowRect = getRelativeRect(svg, rect);
-    drawHorizontalLine(
-      context,
-      rowRect.x,
-      rowRect.x + rowRect.width,
-      rowRect.y + rowRect.height - 0.6,
-      "#d7dde2",
-      1.1
-    );
-  });
+    worksheetPage.querySelectorAll<SVGSVGElement>(".worksheet-word--practice").forEach((svg) => {
+      const rowRect = getRelativeRect(svg, rect);
+      drawHorizontalLine(
+        context,
+        rowRect.x,
+        rowRect.x + rowRect.width,
+        rowRect.y + rowRect.height - 0.6,
+        "#d7dde2",
+        1.1
+      );
+    });
 
-  return await new Promise<Blob>((resolve, reject) => {
-    canvas.toBlob((blob) => {
-      if (blob) {
-        resolve(blob);
-      } else {
-        reject(new Error("Could not encode worksheet image."));
-      }
-    }, "image/png");
+    return await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob((blob) => {
+        if (blob) {
+          resolve(blob);
+        } else {
+          reject(new Error("Could not encode worksheet image."));
+        }
+      }, "image/png");
+    });
   });
 };
 
 textInput.addEventListener("input", renderWorksheet);
+previewZoomSlider.addEventListener("input", () => {
+  setPreviewZoom(Number(previewZoomSlider.value));
+});
 practiceSizeSlider.addEventListener("input", renderWorksheet);
 practiceRepeatSlider.addEventListener("input", renderWorksheet);
 strokeWidthSlider.addEventListener("input", renderWorksheet);
@@ -1028,4 +1086,5 @@ document.querySelectorAll<HTMLInputElement>("[data-scope][data-annotation-kind]"
 });
 
 syncLabels();
+applyPreviewZoom();
 renderWorksheet();
