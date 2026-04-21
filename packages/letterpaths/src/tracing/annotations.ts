@@ -246,6 +246,16 @@ type DirectionalDashCoverage = {
   later: DistanceRange[];
 };
 
+type TracingPathSampleIndex = {
+  flattenedSamples: FlattenedTracingSample[];
+  totalLength: number;
+};
+
+type DirectionalDashSampleGrid = {
+  cellSize: number;
+  buckets: Map<string, number[]>;
+};
+
 const REFERENCE_GUIDE_HEIGHT = 380;
 const DEFAULT_HEAD_LENGTH_RATIO = 26 / REFERENCE_GUIDE_HEIGHT;
 const DEFAULT_HEAD_WIDTH_RATIO = 22 / REFERENCE_GUIDE_HEIGHT;
@@ -364,10 +374,23 @@ export function compileFormationAnnotations(
   const sections =
     options.sections ??
     analyzeTracingSections(path, options.sectionAnalysis ?? {}).sections;
+  const sampleIndex =
+    options.directionalDashes ||
+    options.startArrows !== false ||
+    options.midpointArrows !== false
+      ? buildTracingPathSampleIndex(path)
+      : null;
   const annotations: FormationAnnotation[] = [];
 
   if (options.directionalDashes) {
-    annotations.push(...compileDirectionalDashAnnotations(path, sections, options.directionalDashes));
+    annotations.push(
+      ...compileDirectionalDashAnnotations(
+        path,
+        sections,
+        options.directionalDashes,
+        sampleIndex ?? buildTracingPathSampleIndex(path)
+      )
+    );
   }
 
   if (options.turningPoints !== false) {
@@ -379,11 +402,25 @@ export function compileFormationAnnotations(
   }
 
   if (options.startArrows !== false) {
-    annotations.push(...compileStartArrowAnnotations(path, sections, options.startArrows));
+    annotations.push(
+      ...compileStartArrowAnnotations(
+        path,
+        sections,
+        options.startArrows,
+        sampleIndex ?? buildTracingPathSampleIndex(path)
+      )
+    );
   }
 
   if (options.midpointArrows !== false) {
-    annotations.push(...compileMidpointArrowAnnotations(path, sections, options.midpointArrows));
+    annotations.push(
+      ...compileMidpointArrowAnnotations(
+        path,
+        sections,
+        options.midpointArrows,
+        sampleIndex ?? buildTracingPathSampleIndex(path)
+      )
+    );
   }
 
   return annotations.sort(compareAnnotations);
@@ -444,7 +481,8 @@ function compileTurningPointAnnotations(
 function compileDirectionalDashAnnotations(
   path: PreparedTracingPath,
   sections: TracingSection[],
-  options: DirectionalDashAnnotationOptions = {}
+  options: DirectionalDashAnnotationOptions = {},
+  sampleIndex: TracingPathSampleIndex
 ): DirectionalDashAnnotation[] {
   const guideHeight = getGuideHeight(path);
   const defaultSpacing = guideHeight * DEFAULT_DIRECTIONAL_DASH_SPACING_RATIO;
@@ -468,7 +506,7 @@ function compileDirectionalDashAnnotations(
     options.minSectionLength ??
     Math.max(safeLength * 0.75, guideHeight * DEFAULT_DIRECTIONAL_DASH_MIN_SECTION_LENGTH_RATIO);
   const offset = resolveSignedOffset(options.offset ?? 0, options.side ?? "left");
-  const coverage = analyzeDirectionalDashCoverage(path, sections);
+  const coverage = analyzeDirectionalDashCoverage(path, sections, sampleIndex);
   const annotations: DirectionalDashAnnotation[] = [];
 
   sections.forEach((section) => {
@@ -492,7 +530,7 @@ function compileDirectionalDashAnnotations(
       .map((distance, index) => {
         const startDistance = Math.max(section.startDistance, distance - safeLength / 2);
         const endDistance = Math.min(section.endDistance, distance + safeLength / 2);
-        const range = buildPathRange(path, startDistance, endDistance, offset);
+        const range = buildPathRange(path, startDistance, endDistance, offset, sampleIndex);
         if (!range) {
           return null;
         }
@@ -535,7 +573,8 @@ function compileDirectionalDashAnnotations(
         path,
         firstAnnotation.distance,
         safeSpacing,
-        section.index
+        section.index,
+        sampleIndex
       );
     }
 
@@ -588,7 +627,8 @@ function compileDirectionalDashAnnotations(
 function compileStartArrowAnnotations(
   path: PreparedTracingPath,
   sections: TracingSection[],
-  options: StartArrowAnnotationOptions = {}
+  options: StartArrowAnnotationOptions = {},
+  sampleIndex: TracingPathSampleIndex
 ): StartArrowAnnotation[] {
   const guideHeight = getGuideHeight(path);
   const length = options.length ?? guideHeight * DEFAULT_START_ARROW_LENGTH_RATIO;
@@ -608,7 +648,7 @@ function compileStartArrowAnnotations(
         return null;
       }
 
-      const range = buildPathRange(path, section.startDistance, endDistance, offset);
+      const range = buildPathRange(path, section.startDistance, endDistance, offset, sampleIndex);
       if (!range) {
         return null;
       }
@@ -683,7 +723,8 @@ function compileDrawOrderNumberAnnotations(
 function compileMidpointArrowAnnotations(
   path: PreparedTracingPath,
   sections: TracingSection[],
-  options: MidpointArrowAnnotationOptions = {}
+  options: MidpointArrowAnnotationOptions = {},
+  sampleIndex: TracingPathSampleIndex
 ): MidpointArrowAnnotation[] {
   const guideHeight = getGuideHeight(path);
   const defaultDensity = guideHeight * DEFAULT_MIDPOINT_ARROW_DENSITY_RATIO;
@@ -711,7 +752,7 @@ function compileMidpointArrowAnnotations(
       const distance = section.startDistance + ((index + 1) * sectionLength) / (count + 1);
       const startDistance = Math.max(section.startDistance, distance - length / 2);
       const endDistance = Math.min(section.endDistance, distance + length / 2);
-      const range = buildPathRange(path, startDistance, endDistance, offset);
+      const range = buildPathRange(path, startDistance, endDistance, offset, sampleIndex);
       if (!range) {
         continue;
       }
@@ -815,17 +856,32 @@ function buildPathRange(
   path: PreparedTracingPath,
   startDistance: number,
   endDistance: number,
-  lateralOffset: number
+  lateralOffset: number,
+  sampleIndex: TracingPathSampleIndex
 ): PathRangeResult | null {
   if (endDistance - startDistance <= DISTANCE_EPSILON) {
     return null;
   }
 
-  const samples = buildOffsetPathSamplesFromOverallDistanceRange(
+  const startPose = getPoseAtOverallDistanceFromSampleIndex(
     path,
+    sampleIndex,
+    startDistance,
+    "forward"
+  );
+  const endPose = getPoseAtOverallDistanceFromSampleIndex(
+    path,
+    sampleIndex,
+    endDistance,
+    "backward"
+  );
+  const samples = buildOffsetPathSamplesFromOverallDistanceRange(
+    sampleIndex,
     startDistance,
     endDistance,
-    lateralOffset
+    lateralOffset,
+    startPose,
+    endPose
   );
   if (samples.length < 2) {
     return null;
@@ -843,10 +899,7 @@ function buildPathRange(
   });
 
   const points = samples.map((sample) => sample.point);
-  const startDirection = getPolylineStartDirection(
-    points,
-    getPoseAtOverallDistance(path, startDistance, "forward").tangent
-  );
+  const startDirection = getPolylineStartDirection(points, startPose.tangent);
   const lastSample = samples[samples.length - 1];
   if (!lastSample) {
     return null;
@@ -857,54 +910,66 @@ function buildPathRange(
     startAnchor: firstSample.point,
     startDirection,
     anchor: lastSample.point,
-    direction: getPolylineEndDirection(
-      points,
-      getPoseAtOverallDistance(path, endDistance, "backward").tangent
-    )
+    direction: getPolylineEndDirection(points, endPose.tangent)
   };
 }
 
 function buildOffsetPathSamplesFromOverallDistanceRange(
-  path: PreparedTracingPath,
+  sampleIndex: TracingPathSampleIndex,
   startDistance: number,
   endDistance: number,
-  lateralOffset: number
+  lateralOffset: number,
+  startPose: { point: Point; tangent: Point },
+  endPose: { point: Point; tangent: Point }
 ): Array<{ distance: number; point: Point }> {
   if (endDistance <= startDistance) {
     return [];
   }
 
-  const distances = [startDistance];
-  let strokeOffset = 0;
+  const samples: Array<{ distance: number; point: Point }> = [
+    {
+      distance: startDistance,
+      point: offsetPosePoint(startPose, lateralOffset)
+    }
+  ];
+  const flattenedSamples = sampleIndex.flattenedSamples;
 
-  path.strokes.forEach((stroke) => {
-    const strokeStart = strokeOffset;
-    const strokeEnd = strokeOffset + stroke.totalLength;
-    strokeOffset = strokeEnd;
-
-    if (endDistance < strokeStart || startDistance > strokeEnd) {
-      return;
+  for (
+    let index = findFlattenedSampleIndexAtOrAfterDistance(flattenedSamples, startDistance);
+    index < flattenedSamples.length;
+    index += 1
+  ) {
+    const sample = flattenedSamples[index];
+    if (!sample) {
+      continue;
     }
 
-    stroke.samples.forEach((sample) => {
-      const overallDistance = strokeStart + sample.distanceAlongStroke;
-      if (overallDistance > startDistance && overallDistance < endDistance) {
-        distances.push(overallDistance);
-      }
+    if (sample.overallDistance >= endDistance - DISTANCE_EPSILON) {
+      break;
+    }
+
+    if (sample.overallDistance <= startDistance + DISTANCE_EPSILON) {
+      continue;
+    }
+
+    samples.push({
+      distance: sample.overallDistance,
+      point: offsetPosePoint(
+        {
+          point: { x: sample.x, y: sample.y },
+          tangent: normalizeVector(sample.tangent)
+        },
+        lateralOffset
+      )
     });
+  }
+
+  samples.push({
+    distance: endDistance,
+    point: offsetPosePoint(endPose, lateralOffset)
   });
 
-  distances.push(endDistance);
-
-  return distances
-    .map((distance, index) => {
-      const bias =
-        index === 0 ? "forward" : index === distances.length - 1 ? "backward" : "center";
-      return {
-        distance,
-        point: offsetPosePoint(getPoseAtOverallDistance(path, distance, bias), lateralOffset)
-      };
-    })
+  return samples
     .filter((sample, index, samples) => {
       const previous = samples[index - 1];
       return (
@@ -1012,21 +1077,29 @@ function flattenTracingSamples(path: PreparedTracingPath): FlattenedTracingSampl
   return flattened;
 }
 
+function buildTracingPathSampleIndex(path: PreparedTracingPath): TracingPathSampleIndex {
+  return {
+    flattenedSamples: flattenTracingSamples(path),
+    totalLength: getTotalLength(path)
+  };
+}
+
 function analyzeDirectionalDashCoverage(
   path: PreparedTracingPath,
-  sections: TracingSection[]
+  sections: TracingSection[],
+  sampleIndex: TracingPathSampleIndex
 ): DirectionalDashCoverage {
   const retraceSections = sections.filter((section) => section.kind === "retrace");
   if (retraceSections.length === 0) {
     return { earlier: [], later: [] };
   }
 
-  const samples = flattenTracingSamples(path);
+  const samples = sampleIndex.flattenedSamples;
   if (samples.length === 0) {
     return { earlier: [], later: [] };
   }
 
-  const totalLength = getTotalLength(path);
+  const totalLength = sampleIndex.totalLength;
   const guideHeight = getGuideHeight(path);
   const proximityThreshold = guideHeight * DEFAULT_DIRECTIONAL_DASH_MATCH_PROXIMITY_RATIO;
   const minPathSeparation =
@@ -1037,9 +1110,15 @@ function analyzeDirectionalDashCoverage(
   );
   const matchedEarlierDistances: number[] = [];
   const matchedLaterDistances: number[] = [];
+  const sampleGrid = createDirectionalDashSampleGrid(proximityThreshold);
+  let indexedSampleCount = 0;
 
   retraceSections.forEach((section) => {
     const sectionStartIndex = findSampleIndexAtOrAfterDistance(samples, section.startDistance);
+    while (indexedSampleCount < sectionStartIndex) {
+      addDirectionalDashSampleToGrid(sampleGrid, samples[indexedSampleCount], indexedSampleCount);
+      indexedSampleCount += 1;
+    }
 
     for (let index = sectionStartIndex; index < samples.length; index += 1) {
       const sample = samples[index];
@@ -1050,7 +1129,7 @@ function analyzeDirectionalDashCoverage(
       const matchIndex = findDirectionalDashEarlierMatch(
         samples,
         index,
-        sectionStartIndex,
+        sampleGrid,
         proximityThreshold,
         minPathSeparation
       );
@@ -1099,7 +1178,7 @@ function collectDirectionalDashCandidateDistances(
 function findDirectionalDashEarlierMatch(
   samples: FlattenedTracingSample[],
   currentIndex: number,
-  maxEarlierIndexExclusive: number,
+  sampleGrid: DirectionalDashSampleGrid,
   proximityThreshold: number,
   minPathSeparation: number
 ): number | null {
@@ -1110,33 +1189,83 @@ function findDirectionalDashEarlierMatch(
 
   let bestIndex: number | null = null;
   let bestDistance = Infinity;
+  const cellX = Math.floor(current.x / sampleGrid.cellSize);
+  const cellY = Math.floor(current.y / sampleGrid.cellSize);
 
-  for (let earlierIndex = 0; earlierIndex < maxEarlierIndexExclusive; earlierIndex += 1) {
-    const earlier = samples[earlierIndex];
-    if (!earlier) {
-      continue;
+  for (let dx = -1; dx <= 1; dx += 1) {
+    for (let dy = -1; dy <= 1; dy += 1) {
+      const bucket = sampleGrid.buckets.get(
+        createDirectionalDashSampleGridKey(cellX + dx, cellY + dy)
+      );
+      if (!bucket) {
+        continue;
+      }
+
+      for (let bucketIndex = 0; bucketIndex < bucket.length; bucketIndex += 1) {
+        const earlierIndex = bucket[bucketIndex];
+        if (earlierIndex === undefined) {
+          continue;
+        }
+
+        const earlier = samples[earlierIndex];
+        if (!earlier) {
+          continue;
+        }
+
+        if (current.overallDistance - earlier.overallDistance < minPathSeparation) {
+          continue;
+        }
+
+        const spatialDistance = Math.hypot(current.x - earlier.x, current.y - earlier.y);
+        if (spatialDistance > proximityThreshold || spatialDistance >= bestDistance) {
+          continue;
+        }
+
+        const directionDot =
+          current.tangent.x * earlier.tangent.x + current.tangent.y * earlier.tangent.y;
+        if (directionDot > DEFAULT_DIRECTIONAL_DASH_MATCH_OPPOSITE_DIRECTION_DOT_THRESHOLD) {
+          continue;
+        }
+
+        bestIndex = earlierIndex;
+        bestDistance = spatialDistance;
+      }
     }
-
-    if (current.overallDistance - earlier.overallDistance < minPathSeparation) {
-      continue;
-    }
-
-    const spatialDistance = Math.hypot(current.x - earlier.x, current.y - earlier.y);
-    if (spatialDistance > proximityThreshold || spatialDistance >= bestDistance) {
-      continue;
-    }
-
-    const directionDot =
-      current.tangent.x * earlier.tangent.x + current.tangent.y * earlier.tangent.y;
-    if (directionDot > DEFAULT_DIRECTIONAL_DASH_MATCH_OPPOSITE_DIRECTION_DOT_THRESHOLD) {
-      continue;
-    }
-
-    bestIndex = earlierIndex;
-    bestDistance = spatialDistance;
   }
 
   return bestIndex;
+}
+
+function createDirectionalDashSampleGrid(cellSize: number): DirectionalDashSampleGrid {
+  return {
+    cellSize,
+    buckets: new Map()
+  };
+}
+
+function createDirectionalDashSampleGridKey(cellX: number, cellY: number): string {
+  return `${cellX},${cellY}`;
+}
+
+function addDirectionalDashSampleToGrid(
+  grid: DirectionalDashSampleGrid,
+  sample: FlattenedTracingSample | undefined,
+  sampleIndex: number
+): void {
+  if (!sample) {
+    return;
+  }
+
+  const cellX = Math.floor(sample.x / grid.cellSize);
+  const cellY = Math.floor(sample.y / grid.cellSize);
+  const key = createDirectionalDashSampleGridKey(cellX, cellY);
+  const bucket = grid.buckets.get(key);
+  if (bucket) {
+    bucket.push(sampleIndex);
+    return;
+  }
+
+  grid.buckets.set(key, [sampleIndex]);
 }
 
 function mergeMatchedDistancesIntoRanges(
@@ -1201,9 +1330,10 @@ function removeClosestDirectionalDashAnnotation(
   path: PreparedTracingPath,
   targetDistance: number,
   maxSpatialDistance: number,
-  currentSectionIndex: number
+  currentSectionIndex: number,
+  sampleIndex: TracingPathSampleIndex
 ): void {
-  const targetPoint = getPointAtOverallDistance(path, targetDistance);
+  const targetPoint = getPointAtOverallDistanceFromSampleIndex(path, sampleIndex, targetDistance);
   let bestIndex = -1;
   let bestScore = Infinity;
 
@@ -1215,7 +1345,11 @@ function removeClosestDirectionalDashAnnotation(
       return;
     }
 
-    const annotationPoint = getPointAtOverallDistance(path, annotation.source.distance);
+    const annotationPoint = getPointAtOverallDistanceFromSampleIndex(
+      path,
+      sampleIndex,
+      annotation.source.distance
+    );
     const spatialDistance = Math.hypot(
       targetPoint.x - annotationPoint.x,
       targetPoint.y - annotationPoint.y
@@ -1278,6 +1412,15 @@ function getPointAtOverallDistance(
     : { x: 0, y: 0 };
 }
 
+function getPointAtOverallDistanceFromSampleIndex(
+  path: PreparedTracingPath,
+  sampleIndex: TracingPathSampleIndex,
+  targetDistance: number,
+  bias: PoseAtDistanceBias = "center"
+): Point {
+  return getPoseAtOverallDistanceFromSampleIndex(path, sampleIndex, targetDistance, bias).point;
+}
+
 function getPoseAtOverallDistance(
   path: PreparedTracingPath,
   targetDistance: number,
@@ -1300,6 +1443,90 @@ function getPoseAtOverallDistance(
   return position
     ? interpolateSamplePose(position.stroke.samples, position.distanceAlongStroke)
     : { point: { x: 0, y: 0 }, tangent: { x: 1, y: 0 } };
+}
+
+function getPoseAtOverallDistanceFromSampleIndex(
+  path: PreparedTracingPath,
+  sampleIndex: TracingPathSampleIndex,
+  targetDistance: number,
+  bias: PoseAtDistanceBias = "center"
+): { point: Point; tangent: Point } {
+  const clampedDistance = Math.max(0, Math.min(targetDistance, sampleIndex.totalLength));
+  const boundary = findBoundaryAtDistance(path, clampedDistance);
+  if (boundary && bias !== "center") {
+    return {
+      point: { x: boundary.point.x, y: boundary.point.y },
+      tangent:
+        bias === "forward"
+          ? normalizeVector(boundary.outgoingTangent)
+          : normalizeVector(boundary.incomingTangent)
+    };
+  }
+
+  const samples = sampleIndex.flattenedSamples;
+  if (samples.length === 0) {
+    return { point: { x: 0, y: 0 }, tangent: { x: 1, y: 0 } };
+  }
+
+  const firstExactIndex = findFlattenedSampleIndexAtOrAfterDistance(samples, clampedDistance);
+  const exactSample = samples[firstExactIndex];
+  if (
+    exactSample &&
+    Math.abs(exactSample.overallDistance - clampedDistance) <= DISTANCE_EPSILON
+  ) {
+    let lastExactIndex = firstExactIndex;
+    while (
+      lastExactIndex + 1 < samples.length &&
+      Math.abs((samples[lastExactIndex + 1]?.overallDistance ?? Infinity) - clampedDistance) <=
+        DISTANCE_EPSILON
+    ) {
+      lastExactIndex += 1;
+    }
+
+    const selectedSample =
+      bias === "forward" ? samples[lastExactIndex] : samples[firstExactIndex];
+    if (selectedSample) {
+      return {
+        point: { x: selectedSample.x, y: selectedSample.y },
+        tangent: normalizeVector(selectedSample.tangent)
+      };
+    }
+  }
+
+  const rightIndex = findFlattenedSampleIndexAtOrAfterDistance(samples, clampedDistance);
+  const right = samples[Math.min(rightIndex, samples.length - 1)];
+  const left = samples[Math.max(0, Math.min(rightIndex - 1, samples.length - 1))];
+
+  if (!left && !right) {
+    return { point: { x: 0, y: 0 }, tangent: { x: 1, y: 0 } };
+  }
+
+  if (
+    !left ||
+    !right ||
+    Math.abs(right.overallDistance - left.overallDistance) <= DISTANCE_EPSILON
+  ) {
+    const fallback = right ?? left;
+    return fallback
+      ? {
+          point: { x: fallback.x, y: fallback.y },
+          tangent: normalizeVector(fallback.tangent)
+        }
+      : { point: { x: 0, y: 0 }, tangent: { x: 1, y: 0 } };
+  }
+
+  const ratio =
+    (clampedDistance - left.overallDistance) / (right.overallDistance - left.overallDistance);
+  return {
+    point: {
+      x: left.x + (right.x - left.x) * ratio,
+      y: left.y + (right.y - left.y) * ratio
+    },
+    tangent: normalizeVector({
+      x: left.tangent.x + (right.tangent.x - left.tangent.x) * ratio,
+      y: left.tangent.y + (right.tangent.y - left.tangent.y) * ratio
+    })
+  };
 }
 
 function findBoundaryAtDistance(
@@ -1437,14 +1664,43 @@ function findSampleIndexAtOrAfterDistance(
   samples: FlattenedTracingSample[],
   overallDistance: number
 ): number {
-  for (let index = 0; index < samples.length; index += 1) {
-    const sample = samples[index];
-    if (sample && sample.overallDistance >= overallDistance - DISTANCE_EPSILON) {
-      return index;
+  let index = lowerBoundFlattenedSamples(samples, overallDistance - DISTANCE_EPSILON);
+  while (
+    index > 0 &&
+    index < samples.length &&
+    (samples[index - 1]?.overallDistance ?? -Infinity) >= overallDistance - DISTANCE_EPSILON
+  ) {
+    index -= 1;
+  }
+
+  return Math.min(index, Math.max(0, samples.length - 1));
+}
+
+function findFlattenedSampleIndexAtOrAfterDistance(
+  samples: FlattenedTracingSample[],
+  overallDistance: number
+): number {
+  return lowerBoundFlattenedSamples(samples, overallDistance - DISTANCE_EPSILON);
+}
+
+function lowerBoundFlattenedSamples(
+  samples: FlattenedTracingSample[],
+  overallDistance: number
+): number {
+  let low = 0;
+  let high = samples.length;
+
+  while (low < high) {
+    const mid = Math.floor((low + high) / 2);
+    const sample = samples[mid];
+    if ((sample?.overallDistance ?? Infinity) < overallDistance) {
+      low = mid + 1;
+    } else {
+      high = mid;
     }
   }
 
-  return Math.max(0, samples.length - 1);
+  return low;
 }
 
 function isDistanceWithinRanges(distance: number, ranges: DistanceRange[]): boolean {
