@@ -13,7 +13,9 @@ export type FormationAnnotationVisibility = Record<FormationAnnotation["kind"], 
 export type FormationAnnotationMarkupOptions = {
   midpointDensity: number;
   turnRadius: number;
-  arrowLengthScale: number;
+  uTurnLength: number;
+  arrowLength: number;
+  arrowHeadSize: number;
   arrowStrokeWidth: number;
   numberSize: number;
   numberPathOffset: number;
@@ -55,6 +57,11 @@ type AnnotationCollisionShape = {
 const SECTION_ARROWHEAD_LENGTH = 26;
 const SECTION_ARROWHEAD_WIDTH = 22;
 const SECTION_ARROWHEAD_TIP_OVERHANG = 11;
+const START_ARROW_LENGTH_RATIO = 0.42;
+const STRAIGHT_ARROW_LENGTH_RATIO = 0.36 / START_ARROW_LENGTH_RATIO;
+const START_ARROW_MIN_LENGTH_RATIO = 0.18 / START_ARROW_LENGTH_RATIO;
+const ARROWHEAD_WIDTH_RATIO = SECTION_ARROWHEAD_WIDTH / SECTION_ARROWHEAD_LENGTH;
+const ARROWHEAD_TIP_OVERHANG_RATIO = SECTION_ARROWHEAD_TIP_OVERHANG / SECTION_ARROWHEAD_LENGTH;
 const ANNOTATION_COLLISION_SAMPLE_STEP = 4;
 const ANNOTATION_STROKE_WIDTH = 6.5;
 const ANNOTATION_STROKE_HALF_WIDTH = ANNOTATION_STROKE_WIDTH / 2;
@@ -74,32 +81,32 @@ export const EMPTY_FORMATION_ANNOTATION_VISIBILITY: FormationAnnotationVisibilit
 };
 
 export const buildFormationAnnotationMarkup = (
-  path: WritingPath,
+  _path: WritingPath,
   preparedPath: PreparedTracingPath,
   options: FormationAnnotationMarkupOptions
 ): string => {
-  const sectionArrowLength = Math.abs(path.guides.baseline - path.guides.xHeight) / 3;
-  const arrowLengthScale = Math.max(0, options.arrowLengthScale);
-  const arrowheadScale = Math.max(0.5, Math.min(2, arrowLengthScale));
+  const uTurnLength = Math.max(0, options.uTurnLength);
+  const arrowLength = Math.max(0, options.arrowLength);
+  const arrowHeadSize = Math.max(0, options.arrowHeadSize);
   const arrowLaneOffset = options.offsetArrowLanes ? options.turnRadius : 0;
   const annotations = compileFormationAnnotations(preparedPath, {
     turningPoints: {
       offset: options.turnRadius,
-      stemLength: sectionArrowLength * 0.36 * arrowLengthScale,
+      stemLength: uTurnLength * STRAIGHT_ARROW_LENGTH_RATIO,
       head: {
-        length: SECTION_ARROWHEAD_LENGTH * arrowheadScale,
-        width: SECTION_ARROWHEAD_WIDTH * arrowheadScale,
-        tipExtension: SECTION_ARROWHEAD_TIP_OVERHANG * arrowheadScale
+        length: arrowHeadSize,
+        width: arrowHeadSize * ARROWHEAD_WIDTH_RATIO,
+        tipExtension: arrowHeadSize * ARROWHEAD_TIP_OVERHANG_RATIO
       }
     },
     startArrows: {
-      length: sectionArrowLength * 0.42 * arrowLengthScale,
-      minLength: sectionArrowLength * 0.18 * arrowLengthScale,
+      length: arrowLength,
+      minLength: arrowLength * START_ARROW_MIN_LENGTH_RATIO,
       offset: arrowLaneOffset,
       head: {
-        length: SECTION_ARROWHEAD_LENGTH * arrowheadScale,
-        width: SECTION_ARROWHEAD_WIDTH * arrowheadScale,
-        tipExtension: SECTION_ARROWHEAD_TIP_OVERHANG * arrowheadScale
+        length: arrowHeadSize,
+        width: arrowHeadSize * ARROWHEAD_WIDTH_RATIO,
+        tipExtension: arrowHeadSize * ARROWHEAD_TIP_OVERHANG_RATIO
       }
     },
     drawOrderNumbers: {
@@ -107,12 +114,12 @@ export const buildFormationAnnotationMarkup = (
     },
     midpointArrows: {
       density: options.midpointDensity,
-      length: sectionArrowLength * 0.36 * arrowLengthScale,
+      length: arrowLength * STRAIGHT_ARROW_LENGTH_RATIO,
       offset: arrowLaneOffset,
       head: {
-        length: SECTION_ARROWHEAD_LENGTH * arrowheadScale,
-        width: SECTION_ARROWHEAD_WIDTH * arrowheadScale,
-        tipExtension: SECTION_ARROWHEAD_TIP_OVERHANG * arrowheadScale
+        length: arrowHeadSize,
+        width: arrowHeadSize * ARROWHEAD_WIDTH_RATIO,
+        tipExtension: arrowHeadSize * ARROWHEAD_TIP_OVERHANG_RATIO
       }
     }
   });

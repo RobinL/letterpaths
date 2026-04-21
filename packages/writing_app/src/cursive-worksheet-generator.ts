@@ -49,7 +49,9 @@ type RangeControlOptions = {
 const DEFAULT_TEXT = "zephyr";
 const DEFAULT_MIDPOINT_DENSITY = 320;
 const DEFAULT_TURN_RADIUS = 13;
-const DEFAULT_ARROW_LENGTH_SCALE = 1;
+const DEFAULT_U_TURN_LENGTH = 53;
+const DEFAULT_ARROW_LENGTH = 53;
+const DEFAULT_ARROW_HEAD_SIZE = 26;
 const DEFAULT_ARROW_STROKE_WIDTH = 5.6;
 const DEFAULT_NUMBER_SIZE = DEFAULT_TURN_RADIUS * 2;
 const DEFAULT_NUMBER_PATH_OFFSET = 0;
@@ -145,7 +147,9 @@ const createSettings = (
 ): WorksheetAnnotationSettings => ({
   midpointDensity: DEFAULT_MIDPOINT_DENSITY,
   turnRadius: DEFAULT_TURN_RADIUS,
-  arrowLengthScale: DEFAULT_ARROW_LENGTH_SCALE,
+  uTurnLength: DEFAULT_U_TURN_LENGTH,
+  arrowLength: DEFAULT_ARROW_LENGTH,
+  arrowHeadSize: DEFAULT_ARROW_HEAD_SIZE,
   arrowStrokeWidth: DEFAULT_ARROW_STROKE_WIDTH,
   numberSize: DEFAULT_NUMBER_SIZE,
   numberPathOffset: DEFAULT_NUMBER_PATH_OFFSET,
@@ -192,34 +196,34 @@ app.innerHTML = `
         </label>
 
         ${renderRangeControl({
-          id: "practice-size-slider",
-          label: "Practice size",
-          value: DEFAULT_PRACTICE_ROW_HEIGHT_MM,
-          min: 14,
-          max: 38,
-          step: 1,
-          valueId: "practice-size-value"
-        })}
+  id: "practice-size-slider",
+  label: "Practice size",
+  value: DEFAULT_PRACTICE_ROW_HEIGHT_MM,
+  min: 14,
+  max: 38,
+  step: 1,
+  valueId: "practice-size-value"
+})}
 
         ${renderRangeControl({
-          id: "practice-repeat-slider",
-          label: "Practice repeats",
-          value: DEFAULT_PRACTICE_REPEAT_COUNT,
-          min: 1,
-          max: 6,
-          step: 1,
-          valueId: "practice-repeat-value"
-        })}
+  id: "practice-repeat-slider",
+  label: "Practice repeats",
+  value: DEFAULT_PRACTICE_REPEAT_COUNT,
+  min: 1,
+  max: 6,
+  step: 1,
+  valueId: "practice-repeat-value"
+})}
 
         ${renderRangeControl({
-          id: "stroke-width-slider",
-          label: "Main stroke thickness",
-          value: DEFAULT_STROKE_WIDTH,
-          min: 20,
-          max: 90,
-          step: 2,
-          valueId: "stroke-width-value"
-        })}
+  id: "stroke-width-slider",
+  label: "Main stroke thickness",
+  value: DEFAULT_STROKE_WIDTH,
+  min: 20,
+  max: 90,
+  step: 2,
+  valueId: "stroke-width-value"
+})}
 
         ${renderAdvancedSettings()}
 
@@ -302,65 +306,65 @@ function renderAdvancedSettings(): string {
       <summary>Advanced settings</summary>
       <div class="worksheet-app__details-body">
         ${renderRangeControl({
-          id: "target-bend-rate-slider",
-          label: "Target maximum bend rate",
-          value: DEFAULT_WORKSHEET_JOIN_SPACING.targetBendRate,
-          min: 0,
-          max: 60,
-          step: 1,
-          valueId: "target-bend-rate-value",
-          attrs: 'data-global-setting="targetBendRate"'
-        })}
+    id: "target-bend-rate-slider",
+    label: "Target maximum bend rate",
+    value: DEFAULT_WORKSHEET_JOIN_SPACING.targetBendRate,
+    min: 0,
+    max: 60,
+    step: 1,
+    valueId: "target-bend-rate-value",
+    attrs: 'data-global-setting="targetBendRate"'
+  })}
         ${renderRangeControl({
-          id: "min-sidebearing-gap-slider",
-          label: "Minimum sidebearing gap",
-          value: DEFAULT_WORKSHEET_JOIN_SPACING.minSidebearingGap,
-          min: -300,
-          max: 200,
-          step: 5,
-          valueId: "min-sidebearing-gap-value",
-          attrs: 'data-global-setting="minSidebearingGap"'
-        })}
+    id: "min-sidebearing-gap-slider",
+    label: "Minimum sidebearing gap",
+    value: DEFAULT_WORKSHEET_JOIN_SPACING.minSidebearingGap,
+    min: -300,
+    max: 200,
+    step: 5,
+    valueId: "min-sidebearing-gap-value",
+    attrs: 'data-global-setting="minSidebearingGap"'
+  })}
         ${renderRangeControl({
-          id: "bend-search-min-sidebearing-gap-slider",
-          label: "Search minimum sidebearing gap",
-          value: DEFAULT_WORKSHEET_JOIN_SPACING.bendSearchMinSidebearingGap,
-          min: -300,
-          max: 200,
-          step: 5,
-          valueId: "bend-search-min-sidebearing-gap-value",
-          attrs: 'data-global-setting="bendSearchMinSidebearingGap"'
-        })}
+    id: "bend-search-min-sidebearing-gap-slider",
+    label: "Search minimum sidebearing gap",
+    value: DEFAULT_WORKSHEET_JOIN_SPACING.bendSearchMinSidebearingGap,
+    min: -300,
+    max: 200,
+    step: 5,
+    valueId: "bend-search-min-sidebearing-gap-value",
+    attrs: 'data-global-setting="bendSearchMinSidebearingGap"'
+  })}
         ${renderRangeControl({
-          id: "bend-search-max-sidebearing-gap-slider",
-          label: "Search maximum sidebearing gap",
-          value: DEFAULT_WORKSHEET_JOIN_SPACING.bendSearchMaxSidebearingGap,
-          min: -100,
-          max: 300,
-          step: 5,
-          valueId: "bend-search-max-sidebearing-gap-value",
-          attrs: 'data-global-setting="bendSearchMaxSidebearingGap"'
-        })}
+    id: "bend-search-max-sidebearing-gap-slider",
+    label: "Search maximum sidebearing gap",
+    value: DEFAULT_WORKSHEET_JOIN_SPACING.bendSearchMaxSidebearingGap,
+    min: -100,
+    max: 300,
+    step: 5,
+    valueId: "bend-search-max-sidebearing-gap-value",
+    attrs: 'data-global-setting="bendSearchMaxSidebearingGap"'
+  })}
         ${renderRangeControl({
-          id: "exit-handle-scale-slider",
-          label: "p0-p1 handle scale",
-          value: DEFAULT_WORKSHEET_JOIN_SPACING.exitHandleScale,
-          min: 0,
-          max: 2,
-          step: 0.05,
-          valueId: "exit-handle-scale-value",
-          attrs: 'data-global-setting="exitHandleScale"'
-        })}
+    id: "exit-handle-scale-slider",
+    label: "p0-p1 handle scale",
+    value: DEFAULT_WORKSHEET_JOIN_SPACING.exitHandleScale,
+    min: 0,
+    max: 2,
+    step: 0.05,
+    valueId: "exit-handle-scale-value",
+    attrs: 'data-global-setting="exitHandleScale"'
+  })}
         ${renderRangeControl({
-          id: "entry-handle-scale-slider",
-          label: "p2-p3 handle scale",
-          value: DEFAULT_WORKSHEET_JOIN_SPACING.entryHandleScale,
-          min: 0,
-          max: 2,
-          step: 0.05,
-          valueId: "entry-handle-scale-value",
-          attrs: 'data-global-setting="entryHandleScale"'
-        })}
+    id: "entry-handle-scale-slider",
+    label: "p2-p3 handle scale",
+    value: DEFAULT_WORKSHEET_JOIN_SPACING.entryHandleScale,
+    min: 0,
+    max: 2,
+    step: 0.05,
+    valueId: "entry-handle-scale-value",
+    attrs: 'data-global-setting="entryHandleScale"'
+  })}
         <fieldset class="worksheet-app__checks" aria-label="Advanced worksheet toggles">
           ${renderGlobalToggle("include-initial-lead-in", "keepInitialLeadIn", "Initial lead-in", true)}
           ${renderGlobalToggle("include-final-lead-out", "keepFinalLeadOut", "Final lead-out", true)}
@@ -404,65 +408,85 @@ function renderAnnotationControlSection(
       <summary>${label}</summary>
       <div class="worksheet-app__details-body">
         ${renderRangeControl({
-          id: `${scope}-midpoint-density-slider`,
-          label: "Midpoint density",
-          value: settings.midpointDensity,
-          min: 120,
-          max: 600,
-          step: 20,
-          valueId: `${scope}-midpoint-density-value`,
-          attrs: `data-scope="${scope}" data-setting="midpointDensity"`
-        })}
+    id: `${scope}-midpoint-density-slider`,
+    label: "Midpoint density",
+    value: settings.midpointDensity,
+    min: 120,
+    max: 600,
+    step: 20,
+    valueId: `${scope}-midpoint-density-value`,
+    attrs: `data-scope="${scope}" data-setting="midpointDensity"`
+  })}
         ${renderRangeControl({
           id: `${scope}-turn-radius-slider`,
           label: "Turn radius",
           value: settings.turnRadius,
           min: 0,
-          max: 48,
-          step: 1,
+    max: 48,
+    step: 1,
           valueId: `${scope}-turn-radius-value`,
           attrs: `data-scope="${scope}" data-setting="turnRadius"`
         })}
         ${renderRangeControl({
+          id: `${scope}-u-turn-length-slider`,
+          label: "U-turn length",
+          value: settings.uTurnLength,
+          min: 0,
+          max: 300,
+          step: 1,
+          valueId: `${scope}-u-turn-length-value`,
+          attrs: `data-scope="${scope}" data-setting="uTurnLength"`
+        })}
+        ${renderRangeControl({
           id: `${scope}-arrow-length-slider`,
-          label: "Arrow length",
-          value: settings.arrowLengthScale,
-          min: 0.5,
-          max: 2,
-          step: 0.05,
-          valueId: `${scope}-arrow-length-value`,
-          attrs: `data-scope="${scope}" data-setting="arrowLengthScale"`
-        })}
+          label: "Other arrow length",
+          value: settings.arrowLength,
+          min: 0,
+          max: 300,
+    step: 1,
+    valueId: `${scope}-arrow-length-value`,
+    attrs: `data-scope="${scope}" data-setting="arrowLength"`
+  })}
         ${renderRangeControl({
-          id: `${scope}-arrow-stroke-width-slider`,
-          label: "Arrow stroke width",
-          value: settings.arrowStrokeWidth,
-          min: 1,
-          max: 14,
-          step: 0.5,
-          valueId: `${scope}-arrow-stroke-width-value`,
-          attrs: `data-scope="${scope}" data-setting="arrowStrokeWidth"`
-        })}
+    id: `${scope}-arrow-head-size-slider`,
+    label: "Arrow head size",
+    value: settings.arrowHeadSize,
+    min: 0,
+    max: 64,
+    step: 1,
+    valueId: `${scope}-arrow-head-size-value`,
+    attrs: `data-scope="${scope}" data-setting="arrowHeadSize"`
+  })}
         ${renderRangeControl({
-          id: `${scope}-number-size-slider`,
-          label: "Number size",
-          value: settings.numberSize,
-          min: 8,
-          max: 72,
-          step: 1,
-          valueId: `${scope}-number-size-value`,
-          attrs: `data-scope="${scope}" data-setting="numberSize"`
-        })}
+    id: `${scope}-arrow-stroke-width-slider`,
+    label: "Arrow stroke width",
+    value: settings.arrowStrokeWidth,
+    min: 1,
+    max: 14,
+    step: 0.5,
+    valueId: `${scope}-arrow-stroke-width-value`,
+    attrs: `data-scope="${scope}" data-setting="arrowStrokeWidth"`
+  })}
         ${renderRangeControl({
-          id: `${scope}-number-offset-slider`,
-          label: "Number offset",
-          value: settings.numberPathOffset,
-          min: -80,
-          max: 80,
-          step: 1,
-          valueId: `${scope}-number-offset-value`,
-          attrs: `data-scope="${scope}" data-setting="numberPathOffset"`
-        })}
+    id: `${scope}-number-size-slider`,
+    label: "Number size",
+    value: settings.numberSize,
+    min: 8,
+    max: 72,
+    step: 1,
+    valueId: `${scope}-number-size-value`,
+    attrs: `data-scope="${scope}" data-setting="numberSize"`
+  })}
+        ${renderRangeControl({
+    id: `${scope}-number-offset-slider`,
+    label: "Number offset",
+    value: settings.numberPathOffset,
+    min: -80,
+    max: 80,
+    step: 1,
+    valueId: `${scope}-number-offset-value`,
+    attrs: `data-scope="${scope}" data-setting="numberPathOffset"`
+  })}
         <fieldset class="worksheet-app__checks" aria-label="${label}">
           ${renderAnnotationToggle(scope, "turning-point", "Turns", settings.visibility["turning-point"])}
           ${renderAnnotationToggle(scope, "start-arrow", "Starts", settings.visibility["start-arrow"])}
@@ -547,7 +571,6 @@ const getPracticeText = (): string =>
   Array.from({ length: state.practiceRepeatCount }, () => state.text).join(" ");
 
 const formatScale = (value: number): string => value.toFixed(2);
-const formatPercentScale = (value: number): string => `${Math.round(value * 100)}%`;
 
 const setText = (id: string, value: string) => {
   const element = document.querySelector<HTMLElement>(`#${id}`);
@@ -577,7 +600,9 @@ const syncLabels = () => {
     const settings = getScopeSettings(scope);
     setText(`${scope}-midpoint-density-value`, `1 per ${settings.midpointDensity}px`);
     setText(`${scope}-turn-radius-value`, `${settings.turnRadius}px`);
-    setText(`${scope}-arrow-length-value`, formatPercentScale(settings.arrowLengthScale));
+    setText(`${scope}-u-turn-length-value`, `${settings.uTurnLength}px`);
+    setText(`${scope}-arrow-length-value`, `${settings.arrowLength}px`);
+    setText(`${scope}-arrow-head-size-value`, `${settings.arrowHeadSize}px`);
     setText(`${scope}-arrow-stroke-width-value`, `${settings.arrowStrokeWidth.toFixed(1)}px`);
     setText(`${scope}-number-size-value`, `${settings.numberSize}px`);
     setText(`${scope}-number-offset-value`, `${settings.numberPathOffset}px`);
@@ -960,8 +985,12 @@ document.querySelectorAll<HTMLInputElement>("[data-scope][data-setting]").forEac
       settings.midpointDensity = Number(input.value);
     } else if (setting === "turnRadius") {
       settings.turnRadius = Number(input.value);
-    } else if (setting === "arrowLengthScale") {
-      settings.arrowLengthScale = Number(input.value);
+    } else if (setting === "uTurnLength") {
+      settings.uTurnLength = Number(input.value);
+    } else if (setting === "arrowLength") {
+      settings.arrowLength = Number(input.value);
+    } else if (setting === "arrowHeadSize") {
+      settings.arrowHeadSize = Number(input.value);
     } else if (setting === "arrowStrokeWidth") {
       settings.arrowStrokeWidth = Number(input.value);
     } else if (setting === "numberSize") {
