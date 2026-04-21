@@ -107,13 +107,13 @@ const DEFAULT_NUMBER_SIZE = DEFAULT_TURN_RADIUS * 2;
 const DEFAULT_NUMBER_PATH_OFFSET = 0;
 const DEFAULT_NUMBER_COLOR = "#3f454b";
 const DEFAULT_ARROW_COLOR = "#ffffff";
-const DEFAULT_TOP_STROKE_COLOR = "#bac4ce";
+const DEFAULT_TOP_STROKE_COLOR = "#83b0dd";
 const DEFAULT_PRACTICE_STROKE_COLOR = "#d5dbe2";
 const DEFAULT_PRACTICE_ROW_HEIGHT_MM = 24;
 const DEFAULT_PRACTICE_REPEAT_COUNT = 1;
 const DEFAULT_STROKE_WIDTH = 54;
-const DEFAULT_GRIDLINE_STROKE_WIDTH = 2;
-const DEFAULT_GRIDLINE_COLOR = "#b3bec7";
+const DEFAULT_GRIDLINE_STROKE_WIDTH = 1;
+const DEFAULT_GRIDLINE_COLOR = "#ffb35c";
 const DEFAULT_PREVIEW_ZOOM = 100;
 const PRACTICE_AREA_HEIGHT_MM = 178;
 const ASCENDER_GUIDE_RATIO = 0.63;
@@ -550,31 +550,31 @@ function renderAnnotationControlSection(
     attrs: `data-scope="${scope}" data-setting="midpointDensity"`
   })}
         ${renderRangeControl({
-          id: `${scope}-turn-radius-slider`,
-          label: "Turn radius",
-          value: settings.turnRadius,
-          min: 0,
+    id: `${scope}-turn-radius-slider`,
+    label: "Turn radius",
+    value: settings.turnRadius,
+    min: 0,
     max: 48,
     step: 1,
-          valueId: `${scope}-turn-radius-value`,
-          attrs: `data-scope="${scope}" data-setting="turnRadius"`
-        })}
+    valueId: `${scope}-turn-radius-value`,
+    attrs: `data-scope="${scope}" data-setting="turnRadius"`
+  })}
         ${renderRangeControl({
-          id: `${scope}-u-turn-length-slider`,
-          label: "U-turn length",
-          value: settings.uTurnLength,
-          min: 0,
-          max: 300,
-          step: 1,
-          valueId: `${scope}-u-turn-length-value`,
-          attrs: `data-scope="${scope}" data-setting="uTurnLength"`
-        })}
+    id: `${scope}-u-turn-length-slider`,
+    label: "U-turn length",
+    value: settings.uTurnLength,
+    min: 0,
+    max: 300,
+    step: 1,
+    valueId: `${scope}-u-turn-length-value`,
+    attrs: `data-scope="${scope}" data-setting="uTurnLength"`
+  })}
         ${renderRangeControl({
-          id: `${scope}-arrow-length-slider`,
-          label: "Other arrow length",
-          value: settings.arrowLength,
-          min: 0,
-          max: 300,
+    id: `${scope}-arrow-length-slider`,
+    label: "Other arrow length",
+    value: settings.arrowLength,
+    min: 0,
+    max: 300,
     step: 1,
     valueId: `${scope}-arrow-length-value`,
     attrs: `data-scope="${scope}" data-setting="arrowLength"`
@@ -621,11 +621,11 @@ function renderAnnotationControlSection(
   })}
         <fieldset class="worksheet-app__checks" aria-label="${label}">
           ${renderAnnotationToggle(
-            scope,
-            "directional-dash",
-            "Directional dash",
-            settings.visibility["directional-dash"]
-          )}
+    scope,
+    "directional-dash",
+    "Directional dash",
+    settings.visibility["directional-dash"]
+  )}
           ${renderAnnotationToggle(scope, "turning-point", "Turns", settings.visibility["turning-point"])}
           ${renderAnnotationToggle(scope, "start-arrow", "Starts", settings.visibility["start-arrow"])}
           ${renderAnnotationToggle(scope, "draw-order-number", "Numbers", settings.visibility["draw-order-number"])}

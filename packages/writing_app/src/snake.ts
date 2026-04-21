@@ -101,7 +101,8 @@ const registerSnakeServiceWorker = () => {
 
 const FRUIT_EMOJI = "🍎";
 const DEFAULT_SNAKE_TRACE_TOLERANCE = 150;
-const SHOW_ME_SPEED_MULTIPLIER = 0.7;
+const DEFAULT_SNAKE_SKIN_ID: SnakeSkinId = "classic";
+const DEFAULT_ANIMATION_SPEED_MULTIPLIER = 0.7;
 const SNAKE_SEGMENT_SPACING = 76;
 const SNAKE_GROWTH_DISTANCE = 115;
 const BULGE_BODY_SPRITE_CHANCE = 0.25;
@@ -225,6 +226,22 @@ const DEFAULT_SNAKE_JOIN_SPACING = {
   exitHandleScale: 0.75,
   entryHandleScale: 0.75
 } as const satisfies Required<JoinSpacingOptions>;
+const SNAKE_URL_PARAM_KEYS = [
+  "skin",
+  "theme",
+  "tolerance",
+  "animationSpeed",
+  "turnRadius",
+  "offsetArrowLanes",
+  "targetBendRate",
+  "minSidebearingGap",
+  "bendSearchMinSidebearingGap",
+  "bendSearchMaxSidebearingGap",
+  "exitHandleScale",
+  "entryHandleScale",
+  "includeInitialLeadIn",
+  "includeFinalLeadOut"
+] as const;
 
 type FruitToken = {
   x: number;
@@ -422,7 +439,7 @@ const SNAKE_SKINS = {
   }
 } as const satisfies Record<SnakeSkinId, SnakeSkin>;
 
-let currentSnakeSkinId: SnakeSkinId = "classic";
+let currentSnakeSkinId: SnakeSkinId = DEFAULT_SNAKE_SKIN_ID;
 
 const getActiveSnakeSkin = (): SnakeSkin => SNAKE_SKINS[currentSnakeSkinId];
 
@@ -457,7 +474,7 @@ app.innerHTML = `
           </div>
           <div class="writing-app__topbar-actions">
             <button class="writing-app__button" id="show-me-button" type="button">
-              Demo
+              Animate
             </button>
             <details class="writing-app__settings" id="settings-menu">
               <summary
@@ -495,6 +512,21 @@ app.innerHTML = `
                     max="48"
                     step="1"
                     value="13"
+                  />
+                </label>
+                <label class="writing-app__settings-field" for="animation-speed-slider">
+                  <span class="writing-app__settings-label">
+                    Animation speed
+                    <span class="writing-app__tolerance-value" id="animation-speed-value"></span>
+                  </span>
+                  <input
+                    class="writing-app__tolerance-slider"
+                    id="animation-speed-slider"
+                    type="range"
+                    min="0.1"
+                    max="2"
+                    step="0.05"
+                    value="${DEFAULT_ANIMATION_SPEED_MULTIPLIER}"
                   />
                 </label>
                 <label class="writing-app__settings-toggle" for="offset-arrow-lanes">
@@ -678,6 +710,8 @@ const toleranceSlider = document.querySelector<HTMLInputElement>("#tolerance-sli
 const toleranceValue = document.querySelector<HTMLSpanElement>("#tolerance-value");
 const turnRadiusSlider = document.querySelector<HTMLInputElement>("#turn-radius-slider");
 const turnRadiusValue = document.querySelector<HTMLSpanElement>("#turn-radius-value");
+const animationSpeedSlider = document.querySelector<HTMLInputElement>("#animation-speed-slider");
+const animationSpeedValue = document.querySelector<HTMLSpanElement>("#animation-speed-value");
 const offsetArrowLanesInput = document.querySelector<HTMLInputElement>("#offset-arrow-lanes");
 const themeParkToggle = document.querySelector<HTMLInputElement>("#theme-park-toggle");
 const targetBendRateSlider = document.querySelector<HTMLInputElement>("#target-bend-rate-slider");
@@ -719,6 +753,8 @@ if (
   !toleranceValue ||
   !turnRadiusSlider ||
   !turnRadiusValue ||
+  !animationSpeedSlider ||
+  !animationSpeedValue ||
   !offsetArrowLanesInput ||
   !themeParkToggle ||
   !targetBendRateSlider ||
@@ -744,6 +780,164 @@ if (
   throw new Error("Missing elements for snake app.");
 }
 
+const getSliderValuePrecision = (input: HTMLInputElement): number => {
+  if (input.step === "any" || input.step.length === 0) {
+    return 0;
+  }
+
+  const [, fractional = ""] = input.step.split(".");
+  return fractional.length;
+};
+
+const normalizeSliderValue = (input: HTMLInputElement, value: number): number => {
+  const min = Number(input.min);
+  const max = Number(input.max);
+  const step = input.step === "any" ? Number.NaN : Number(input.step);
+  const base = Number.isFinite(min) ? min : 0;
+  let nextValue = value;
+
+  if (Number.isFinite(min)) {
+    nextValue = Math.max(min, nextValue);
+  }
+  if (Number.isFinite(max)) {
+    nextValue = Math.min(max, nextValue);
+  }
+  if (Number.isFinite(step) && step > 0) {
+    nextValue = base + Math.round((nextValue - base) / step) * step;
+  }
+  if (Number.isFinite(min)) {
+    nextValue = Math.max(min, nextValue);
+  }
+  if (Number.isFinite(max)) {
+    nextValue = Math.min(max, nextValue);
+  }
+
+  return Number(nextValue.toFixed(getSliderValuePrecision(input)));
+};
+
+const syncSliderValue = (input: HTMLInputElement, value: number): number => {
+  const normalizedValue = normalizeSliderValue(input, value);
+  input.value = normalizedValue.toFixed(getSliderValuePrecision(input));
+  return normalizedValue;
+};
+
+const parseBooleanSearchParam = (params: URLSearchParams, key: string): boolean | null => {
+  const rawValue = params.get(key);
+  if (rawValue === null) {
+    return null;
+  }
+
+  const normalizedValue = rawValue.trim().toLowerCase();
+  if (["1", "true", "yes", "on"].includes(normalizedValue)) {
+    return true;
+  }
+  if (["0", "false", "no", "off"].includes(normalizedValue)) {
+    return false;
+  }
+
+  return null;
+};
+
+const parseSliderSearchParam = (
+  params: URLSearchParams,
+  key: string,
+  input: HTMLInputElement
+): number | null => {
+  const rawValue = params.get(key);
+  if (rawValue === null) {
+    return null;
+  }
+
+  const parsedValue = Number(rawValue);
+  if (!Number.isFinite(parsedValue)) {
+    return null;
+  }
+
+  return normalizeSliderValue(input, parsedValue);
+};
+
+const parseSnakeSkinSearchParam = (params: URLSearchParams): SnakeSkinId | null => {
+  const rawValue = params.get("skin") ?? params.get("theme");
+  if (rawValue === null) {
+    return null;
+  }
+
+  const normalizedValue = rawValue.trim().toLowerCase();
+  if (normalizedValue === "classic") {
+    return "classic";
+  }
+  if (["themepark", "theme-park", "theme_park"].includes(normalizedValue)) {
+    return "themePark";
+  }
+
+  return null;
+};
+
+const syncSettingsUrl = () => {
+  const url = new URL(window.location.href);
+  SNAKE_URL_PARAM_KEYS.forEach((key) => {
+    url.searchParams.delete(key);
+  });
+
+  if (currentSnakeSkinId !== DEFAULT_SNAKE_SKIN_ID) {
+    url.searchParams.set("skin", currentSnakeSkinId === "themePark" ? "theme-park" : "classic");
+  }
+  if (currentTraceTolerance !== DEFAULT_SNAKE_TRACE_TOLERANCE) {
+    url.searchParams.set("tolerance", String(currentTraceTolerance));
+  }
+  if (currentAnimationSpeedMultiplier !== DEFAULT_ANIMATION_SPEED_MULTIPLIER) {
+    url.searchParams.set("animationSpeed", String(currentAnimationSpeedMultiplier));
+  }
+  if (currentTurnRadius !== 13) {
+    url.searchParams.set("turnRadius", String(currentTurnRadius));
+  }
+  if (shouldOffsetArrowLanes !== true) {
+    url.searchParams.set("offsetArrowLanes", shouldOffsetArrowLanes ? "1" : "0");
+  }
+  if (currentJoinSpacing.targetBendRate !== DEFAULT_SNAKE_JOIN_SPACING.targetBendRate) {
+    url.searchParams.set("targetBendRate", String(currentJoinSpacing.targetBendRate));
+  }
+  if (currentJoinSpacing.minSidebearingGap !== DEFAULT_SNAKE_JOIN_SPACING.minSidebearingGap) {
+    url.searchParams.set("minSidebearingGap", String(currentJoinSpacing.minSidebearingGap));
+  }
+  if (
+    currentJoinSpacing.bendSearchMinSidebearingGap !==
+    DEFAULT_SNAKE_JOIN_SPACING.bendSearchMinSidebearingGap
+  ) {
+    url.searchParams.set(
+      "bendSearchMinSidebearingGap",
+      String(currentJoinSpacing.bendSearchMinSidebearingGap)
+    );
+  }
+  if (
+    currentJoinSpacing.bendSearchMaxSidebearingGap !==
+    DEFAULT_SNAKE_JOIN_SPACING.bendSearchMaxSidebearingGap
+  ) {
+    url.searchParams.set(
+      "bendSearchMaxSidebearingGap",
+      String(currentJoinSpacing.bendSearchMaxSidebearingGap)
+    );
+  }
+  if (currentJoinSpacing.exitHandleScale !== DEFAULT_SNAKE_JOIN_SPACING.exitHandleScale) {
+    url.searchParams.set("exitHandleScale", String(currentJoinSpacing.exitHandleScale));
+  }
+  if (currentJoinSpacing.entryHandleScale !== DEFAULT_SNAKE_JOIN_SPACING.entryHandleScale) {
+    url.searchParams.set("entryHandleScale", String(currentJoinSpacing.entryHandleScale));
+  }
+  if (includeInitialLeadIn !== true) {
+    url.searchParams.set("includeInitialLeadIn", includeInitialLeadIn ? "1" : "0");
+  }
+  if (includeFinalLeadOut !== true) {
+    url.searchParams.set("includeFinalLeadOut", includeFinalLeadOut ? "1" : "0");
+  }
+
+  const nextUrl = `${url.pathname}${url.search}${url.hash}`;
+  const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+  if (nextUrl !== currentUrl) {
+    window.history.replaceState(null, "", nextUrl);
+  }
+};
+
 let currentWordIndex = -1;
 let currentWord = "";
 let customWordPrefillMode: "current" | "nextQueued" = "current";
@@ -761,6 +955,7 @@ let demoAnimationFrameId: number | null = null;
 let isDemoPlaying = false;
 let isDemoShortDeferredSnake = false;
 let currentTraceTolerance = DEFAULT_SNAKE_TRACE_TOLERANCE;
+let currentAnimationSpeedMultiplier = DEFAULT_ANIMATION_SPEED_MULTIPLIER;
 let currentTurnRadius = 13;
 let shouldOffsetArrowLanes = true;
 let currentJoinSpacing: Required<JoinSpacingOptions> = { ...DEFAULT_SNAKE_JOIN_SPACING };
@@ -818,6 +1013,10 @@ const syncTurnRadiusLabel = () => {
   turnRadiusValue.textContent = `${currentTurnRadius}px`;
 };
 
+const syncAnimationSpeedLabel = () => {
+  animationSpeedValue.textContent = `${currentAnimationSpeedMultiplier.toFixed(2)}x`;
+};
+
 const syncJoinSpacingLabels = () => {
   targetBendRateValue.textContent = `${currentJoinSpacing.targetBendRate}`;
   minSidebearingGapValue.textContent = `${currentJoinSpacing.minSidebearingGap}`;
@@ -825,6 +1024,33 @@ const syncJoinSpacingLabels = () => {
   bendSearchMaxSidebearingGapValue.textContent = `${currentJoinSpacing.bendSearchMaxSidebearingGap}`;
   exitHandleScaleValue.textContent = currentJoinSpacing.exitHandleScale.toFixed(2);
   entryHandleScaleValue.textContent = currentJoinSpacing.entryHandleScale.toFixed(2);
+};
+
+const syncSettingsControlsFromState = () => {
+  currentTraceTolerance = syncSliderValue(toleranceSlider, currentTraceTolerance);
+  currentAnimationSpeedMultiplier = syncSliderValue(
+    animationSpeedSlider,
+    currentAnimationSpeedMultiplier
+  );
+  currentTurnRadius = syncSliderValue(turnRadiusSlider, currentTurnRadius);
+  shouldOffsetArrowLanes = Boolean(shouldOffsetArrowLanes);
+  offsetArrowLanesInput.checked = shouldOffsetArrowLanes;
+  currentJoinSpacing = {
+    targetBendRate: syncSliderValue(targetBendRateSlider, currentJoinSpacing.targetBendRate),
+    minSidebearingGap: syncSliderValue(minSidebearingGapSlider, currentJoinSpacing.minSidebearingGap),
+    bendSearchMinSidebearingGap: syncSliderValue(
+      bendSearchMinSidebearingGapSlider,
+      currentJoinSpacing.bendSearchMinSidebearingGap
+    ),
+    bendSearchMaxSidebearingGap: syncSliderValue(
+      bendSearchMaxSidebearingGapSlider,
+      currentJoinSpacing.bendSearchMaxSidebearingGap
+    ),
+    exitHandleScale: syncSliderValue(exitHandleScaleSlider, currentJoinSpacing.exitHandleScale),
+    entryHandleScale: syncSliderValue(entryHandleScaleSlider, currentJoinSpacing.entryHandleScale)
+  };
+  includeInitialLeadInInput.checked = includeInitialLeadIn;
+  includeFinalLeadOutInput.checked = includeFinalLeadOut;
 };
 
 const rerenderCurrentWord = () => {
@@ -862,6 +1088,59 @@ const getUrlWordSequence = (): string[] => {
 
 const urlWordSequence = getUrlWordSequence();
 let nextUrlWordIndex = 0;
+
+const applyUrlSettings = () => {
+  const params = new URLSearchParams(window.location.search);
+
+  currentSnakeSkinId = parseSnakeSkinSearchParam(params) ?? currentSnakeSkinId;
+  currentTraceTolerance =
+    parseSliderSearchParam(params, "tolerance", toleranceSlider) ?? currentTraceTolerance;
+  currentAnimationSpeedMultiplier =
+    parseSliderSearchParam(params, "animationSpeed", animationSpeedSlider) ??
+    currentAnimationSpeedMultiplier;
+  currentTurnRadius =
+    parseSliderSearchParam(params, "turnRadius", turnRadiusSlider) ?? currentTurnRadius;
+  shouldOffsetArrowLanes =
+    parseBooleanSearchParam(params, "offsetArrowLanes") ?? shouldOffsetArrowLanes;
+  currentJoinSpacing = {
+    targetBendRate:
+      parseSliderSearchParam(params, "targetBendRate", targetBendRateSlider) ??
+      currentJoinSpacing.targetBendRate,
+    minSidebearingGap:
+      parseSliderSearchParam(params, "minSidebearingGap", minSidebearingGapSlider) ??
+      currentJoinSpacing.minSidebearingGap,
+    bendSearchMinSidebearingGap:
+      parseSliderSearchParam(
+        params,
+        "bendSearchMinSidebearingGap",
+        bendSearchMinSidebearingGapSlider
+      ) ?? currentJoinSpacing.bendSearchMinSidebearingGap,
+    bendSearchMaxSidebearingGap:
+      parseSliderSearchParam(
+        params,
+        "bendSearchMaxSidebearingGap",
+        bendSearchMaxSidebearingGapSlider
+      ) ?? currentJoinSpacing.bendSearchMaxSidebearingGap,
+    exitHandleScale:
+      parseSliderSearchParam(params, "exitHandleScale", exitHandleScaleSlider) ??
+      currentJoinSpacing.exitHandleScale,
+    entryHandleScale:
+      parseSliderSearchParam(params, "entryHandleScale", entryHandleScaleSlider) ??
+      currentJoinSpacing.entryHandleScale
+  };
+  includeInitialLeadIn =
+    parseBooleanSearchParam(params, "includeInitialLeadIn") ?? includeInitialLeadIn;
+  includeFinalLeadOut =
+    parseBooleanSearchParam(params, "includeFinalLeadOut") ?? includeFinalLeadOut;
+
+  syncSettingsControlsFromState();
+  syncToleranceLabel();
+  syncAnimationSpeedLabel();
+  syncTurnRadiusLabel();
+  syncJoinSpacingLabels();
+  syncSnakeSkinPresentation();
+  syncSettingsUrl();
+};
 
 const syncNextWordButtonLabel = () => {
   nextWordButton.textContent =
@@ -1207,6 +1486,26 @@ const getOverallDistanceForState = (
   }
 
   return total + getActiveStrokeTravelDistance(state);
+};
+
+const getOverallDistanceForDemoFrame = (frame: AnimationFrame): number => {
+  const preparedPath = preparedTracingPath;
+  if (!preparedPath) {
+    return 0;
+  }
+
+  if (frame.isPenDown && frame.activeStrokeIndex >= 0) {
+    return getOverallDistanceForState({
+      status: "tracing",
+      activeStrokeIndex: frame.activeStrokeIndex,
+      activeStrokeProgress: frame.activeStrokeProgress
+    });
+  }
+
+  return frame.completedStrokes.reduce(
+    (total, strokeIndex) => total + (preparedPath.strokes[strokeIndex]?.totalLength ?? 0),
+    0
+  );
 };
 
 const getCommittedSnakeTangent = (state: TracingState): Point => {
@@ -1802,6 +2101,43 @@ const advanceToNextTracingSection = () => {
   resetSnakeMoveSoundProgress();
 };
 
+const getTracingSectionBoundaryTolerance = (
+  currentSection: TracingSection,
+  nextSection: TracingSection
+) => {
+  const sectionLength = currentSection.endDistance - currentSection.startDistance;
+  return nextSection.startReason === "stroke-start"
+    ? 0.1
+    : Math.min(8, Math.max(0.1, sectionLength * 0.25));
+};
+
+const transitionSnakeToNextTracingSection = (
+  currentSection: TracingSection,
+  nextSection: TracingSection,
+  options: { preserveGrowth?: boolean } = {}
+) => {
+  const currentSectionDeferred = isSectionDeferred(currentSection);
+  const currentSectionIsDot =
+    preparedTracingPath?.strokes[currentSection.strokeIndex]?.isDot === true;
+  const nextSectionIsDot =
+    preparedTracingPath?.strokes[nextSection.strokeIndex]?.isDot === true;
+
+  if (!currentSectionDeferred || !currentSectionIsDot) {
+    appendSnakePose(currentSection.endPoint, currentSection.endTangent, true);
+    retireActiveSnake();
+  }
+
+  advanceToNextTracingSection();
+  resetSnakeTrail(nextSection.startPoint, nextSection.startTangent, !nextSectionIsDot, {
+    preserveGrowth: options.preserveGrowth
+  });
+
+  return {
+    nextSectionDeferred: isSectionDeferred(nextSection),
+    nextSectionIsDot
+  };
+};
+
 const maybePauseAtTracingSectionBoundary = (state: TracingState): boolean => {
   if (isDemoPlaying || isAwaitingSegmentRestart || tracingSections.length <= visibleSectionCount) {
     return false;
@@ -1814,28 +2150,12 @@ const maybePauseAtTracingSectionBoundary = (state: TracingState): boolean => {
   }
 
   const overallDistance = getOverallDistanceForState(state);
-  const sectionLength = currentSection.endDistance - currentSection.startDistance;
-  const boundaryTolerance =
-    nextSection.startReason === "stroke-start"
-      ? 0.1
-      : Math.min(8, Math.max(0.1, sectionLength * 0.25));
+  const boundaryTolerance = getTracingSectionBoundaryTolerance(currentSection, nextSection);
   if (overallDistance < currentSection.endDistance - boundaryTolerance) {
     return false;
   }
-
-  const currentSectionDeferred = isSectionDeferred(currentSection);
-  const currentSectionIsDot = preparedTracingPath?.strokes[currentSection.strokeIndex]?.isDot === true;
-  const nextSectionDeferred = isSectionDeferred(nextSection);
-  const nextSectionIsDot = preparedTracingPath?.strokes[nextSection.strokeIndex]?.isDot === true;
-
-  if (!currentSectionDeferred || !currentSectionIsDot) {
-    appendSnakePose(currentSection.endPoint, currentSection.endTangent, true);
-    retireActiveSnake();
-  }
-
-  advanceToNextTracingSection();
   tracingSession?.end();
-  resetSnakeTrail(nextSection.startPoint, nextSection.startTangent, !nextSectionIsDot, {
+  const { nextSectionDeferred } = transitionSnakeToNextTracingSection(currentSection, nextSection, {
     preserveGrowth: true
   });
 
@@ -2190,6 +2510,22 @@ const renderRetiringSnake = (snake: RetiringSnake) => {
   });
 };
 
+const getActiveSnakeRetractionDurationMs = (options: { isShortDeferredSnake?: boolean } = {}) => {
+  const bodyCount = options.isShortDeferredSnake ? 1 : getCurrentBodyCount();
+  const segmentSpacing = options.isShortDeferredSnake
+    ? getActiveDeferredSnakeSegmentSpacing({
+      activeStrokeIndex: tracingSession?.getState().activeStrokeIndex ?? 0
+    })
+    : getActiveSnakeSegmentSpacing();
+  const availableBodyCount = getVisibleSnakeSegments(
+    snakeHeadDistance,
+    bodyCount,
+    segmentSpacing
+  ).bodyCount;
+  const retractionDistance = (availableBodyCount + 1) * segmentSpacing;
+  return (retractionDistance / SNAKE_RETRACTION_SPEED) * 1000;
+};
+
 const animateRetiringSnake = (snake: RetiringSnake) => {
   let previousTimestamp: number | null = null;
 
@@ -2430,7 +2766,7 @@ const stopDemoAnimation = () => {
   isDemoPlaying = false;
   isDemoShortDeferredSnake = false;
   showMeButton.disabled = false;
-  showMeButton.textContent = "Demo";
+  showMeButton.textContent = "Animate";
 
   syncFruitDisplay();
   renderSnake();
@@ -2577,6 +2913,31 @@ const renderDemoDeferredFrame = (frame: AnimationFrame, tangent: Point) => {
   return false;
 };
 
+const maybeAdvanceDemoAtTracingSectionBoundary = (frame: AnimationFrame) => {
+  let advanced = false;
+  const overallDistance = getOverallDistanceForDemoFrame(frame);
+
+  while (tracingSections.length > visibleSectionCount) {
+    const currentSection = getCurrentTracingSection();
+    const nextSection = tracingSections[visibleSectionCount];
+    if (!currentSection || !nextSection) {
+      break;
+    }
+
+    const boundaryTolerance = getTracingSectionBoundaryTolerance(currentSection, nextSection);
+    if (overallDistance < currentSection.endDistance - boundaryTolerance) {
+      break;
+    }
+
+    transitionSnakeToNextTracingSection(currentSection, nextSection, {
+      preserveGrowth: true
+    });
+    advanced = true;
+  }
+
+  return advanced;
+};
+
 const playDemo = () => {
   if (!currentPath || isDemoPlaying) {
     return;
@@ -2586,25 +2947,28 @@ const playDemo = () => {
   stopDemoAnimation();
 
   const player = new AnimationPlayer(currentPath, {
-    speed: 1.7 * SHOW_ME_SPEED_MULTIPLIER,
-    penUpSpeed: 2.1 * SHOW_ME_SPEED_MULTIPLIER,
+    speed: 1.7 * currentAnimationSpeedMultiplier,
+    penUpSpeed: 2.1 * currentAnimationSpeedMultiplier,
     deferredDelayMs: 150
   });
 
   isDemoPlaying = true;
   showMeButton.disabled = true;
-  showMeButton.textContent = "Demo...";
+  showMeButton.textContent = "Animating...";
   syncFruitDisplay();
   renderSnake();
 
   const startedAt = performance.now();
   let lastDemoTangent = tracingSession?.getState().cursorTangent ?? { x: 1, y: 0 };
+  let demoRetractionStarted = false;
+  let demoEndAt = player.totalDuration + DEMO_PAUSE_MS;
 
   const tick = (now: number) => {
     const elapsed = now - startedAt;
     const clampedElapsed = Math.min(elapsed, player.totalDuration);
     const frame = player.getFrame(clampedElapsed);
     const demoTangent = getDemoFrameTangent(frame, lastDemoTangent);
+    maybeAdvanceDemoAtTracingSectionBoundary(frame);
     const isDeferredFrame = renderDemoDeferredFrame(frame, demoTangent);
 
     renderDemoTraceFrame(frame);
@@ -2615,7 +2979,22 @@ const playDemo = () => {
       renderSnake();
     }
 
-    if (elapsed < player.totalDuration + DEMO_PAUSE_MS) {
+    if (!demoRetractionStarted && elapsed >= player.totalDuration) {
+      demoRetractionStarted = true;
+      demoEndAt =
+        player.totalDuration +
+        Math.max(
+          DEMO_PAUSE_MS,
+          getActiveSnakeRetractionDurationMs({
+            isShortDeferredSnake: isDemoShortDeferredSnake
+          })
+        );
+      hideDotTarget();
+      retireActiveSnake();
+      hideSnakeSprites();
+    }
+
+    if (elapsed < demoEndAt || retiringSnakes.length > 0) {
       demoAnimationFrameId = requestAnimationFrame(tick);
       return;
     }
@@ -2624,7 +3003,7 @@ const playDemo = () => {
     hideDotTarget();
     isDemoPlaying = false;
     showMeButton.disabled = false;
-    showMeButton.textContent = "Demo";
+    showMeButton.textContent = "Animate";
     syncFruitDisplay();
     resetRoundProgress();
   };
@@ -2948,22 +3327,31 @@ showMeButton.addEventListener("click", playDemo);
 toleranceSlider.addEventListener("input", () => {
   currentTraceTolerance = Number(toleranceSlider.value);
   syncToleranceLabel();
+  syncSettingsUrl();
   rerenderCurrentWord();
+});
+animationSpeedSlider.addEventListener("input", () => {
+  currentAnimationSpeedMultiplier = Number(animationSpeedSlider.value);
+  syncAnimationSpeedLabel();
+  syncSettingsUrl();
 });
 turnRadiusSlider.addEventListener("input", () => {
   currentTurnRadius = Number(turnRadiusSlider.value);
   syncTurnRadiusLabel();
+  syncSettingsUrl();
   renderedSectionAnnotationSectionIndex = null;
   syncCurrentSectionAnnotations();
 });
 offsetArrowLanesInput.addEventListener("change", () => {
   shouldOffsetArrowLanes = offsetArrowLanesInput.checked;
+  syncSettingsUrl();
   renderedSectionAnnotationSectionIndex = null;
   syncCurrentSectionAnnotations();
 });
 themeParkToggle.addEventListener("change", () => {
   currentSnakeSkinId = themeParkToggle.checked ? "themePark" : "classic";
   syncSnakeSkinPresentation();
+  syncSettingsUrl();
   rerenderCurrentWord();
 });
 targetBendRateSlider.addEventListener("input", () => {
@@ -2972,6 +3360,7 @@ targetBendRateSlider.addEventListener("input", () => {
     targetBendRate: Number(targetBendRateSlider.value)
   };
   syncJoinSpacingLabels();
+  syncSettingsUrl();
   rerenderCurrentWord();
 });
 minSidebearingGapSlider.addEventListener("input", () => {
@@ -2980,6 +3369,7 @@ minSidebearingGapSlider.addEventListener("input", () => {
     minSidebearingGap: Number(minSidebearingGapSlider.value)
   };
   syncJoinSpacingLabels();
+  syncSettingsUrl();
   rerenderCurrentWord();
 });
 bendSearchMinSidebearingGapSlider.addEventListener("input", () => {
@@ -2988,6 +3378,7 @@ bendSearchMinSidebearingGapSlider.addEventListener("input", () => {
     bendSearchMinSidebearingGap: Number(bendSearchMinSidebearingGapSlider.value)
   };
   syncJoinSpacingLabels();
+  syncSettingsUrl();
   rerenderCurrentWord();
 });
 bendSearchMaxSidebearingGapSlider.addEventListener("input", () => {
@@ -2996,6 +3387,7 @@ bendSearchMaxSidebearingGapSlider.addEventListener("input", () => {
     bendSearchMaxSidebearingGap: Number(bendSearchMaxSidebearingGapSlider.value)
   };
   syncJoinSpacingLabels();
+  syncSettingsUrl();
   rerenderCurrentWord();
 });
 exitHandleScaleSlider.addEventListener("input", () => {
@@ -3004,6 +3396,7 @@ exitHandleScaleSlider.addEventListener("input", () => {
     exitHandleScale: Number(exitHandleScaleSlider.value)
   };
   syncJoinSpacingLabels();
+  syncSettingsUrl();
   rerenderCurrentWord();
 });
 entryHandleScaleSlider.addEventListener("input", () => {
@@ -3012,14 +3405,17 @@ entryHandleScaleSlider.addEventListener("input", () => {
     entryHandleScale: Number(entryHandleScaleSlider.value)
   };
   syncJoinSpacingLabels();
+  syncSettingsUrl();
   rerenderCurrentWord();
 });
 includeInitialLeadInInput.addEventListener("change", () => {
   includeInitialLeadIn = includeInitialLeadInInput.checked;
+  syncSettingsUrl();
   rerenderCurrentWord();
 });
 includeFinalLeadOutInput.addEventListener("change", () => {
   includeFinalLeadOut = includeFinalLeadOutInput.checked;
+  syncSettingsUrl();
   rerenderCurrentWord();
 });
 customWordForm.addEventListener("submit", (event) => {
@@ -3048,9 +3444,6 @@ document.addEventListener("keydown", (event) => {
     settingsMenu.open = false;
   }
 });
-syncToleranceLabel();
-syncTurnRadiusLabel();
-syncJoinSpacingLabels();
+applyUrlSettings();
 syncNextWordButtonLabel();
-syncSnakeSkinPresentation();
 goToNextWord();
