@@ -36,6 +36,45 @@ type WorksheetState = {
   practice: WorksheetAnnotationSettings;
 };
 
+type WorksheetRenderTiming = {
+  renderMs: number;
+  paintMs: number;
+  totalMs: number;
+};
+
+type WorksheetRenderTimingSummary = {
+  avgMs: number;
+  minMs: number;
+  maxMs: number;
+};
+
+type WorksheetRenderProfile = {
+  iterations: number;
+  state: {
+    text: string;
+    practiceRepeatCount: number;
+    practiceRowHeightMm: number;
+    topVisibility: FormationAnnotationVisibility;
+    practiceVisibility: FormationAnnotationVisibility;
+  };
+  render: WorksheetRenderTimingSummary;
+  paint: WorksheetRenderTimingSummary;
+  total: WorksheetRenderTimingSummary;
+  runs: WorksheetRenderTiming[];
+};
+
+declare global {
+  interface Window {
+    __worksheetProfiler?: {
+      getState: () => WorksheetRenderProfile["state"];
+      profileRender: (options?: {
+        iterations?: number;
+        warmupRuns?: number;
+      }) => Promise<WorksheetRenderProfile>;
+    };
+  }
+}
+
 type RangeControlOptions = {
   id: string;
   label: string;
@@ -665,6 +704,65 @@ const nextFrame = () =>
     requestAnimationFrame(() => resolve());
   });
 
+const summarizeTimingRuns = (
+  runs: WorksheetRenderTiming[],
+  pick: (run: WorksheetRenderTiming) => number
+): WorksheetRenderTimingSummary => {
+  const values = runs.map(pick);
+  return {
+    avgMs: Number((values.reduce((sum, value) => sum + value, 0) / values.length).toFixed(3)),
+    minMs: Number(Math.min(...values).toFixed(3)),
+    maxMs: Number(Math.max(...values).toFixed(3))
+  };
+};
+
+const getWorksheetProfilerState = (): WorksheetRenderProfile["state"] => ({
+  text: state.text,
+  practiceRepeatCount: state.practiceRepeatCount,
+  practiceRowHeightMm: state.practiceRowHeightMm,
+  topVisibility: cloneVisibility(state.top.visibility),
+  practiceVisibility: cloneVisibility(state.practice.visibility)
+});
+
+const profileWorksheetRender = async (
+  options: {
+    iterations?: number;
+    warmupRuns?: number;
+  } = {}
+): Promise<WorksheetRenderProfile> => {
+  const iterations = Math.max(1, Math.floor(options.iterations ?? 10));
+  const warmupRuns = Math.max(0, Math.floor(options.warmupRuns ?? 2));
+  const runs: WorksheetRenderTiming[] = [];
+
+  for (let index = 0; index < warmupRuns; index += 1) {
+    renderWorksheet();
+    await nextFrame();
+  }
+
+  for (let index = 0; index < iterations; index += 1) {
+    const startedAt = performance.now();
+    renderWorksheet();
+    const renderFinishedAt = performance.now();
+    await nextFrame();
+    const paintedAt = performance.now();
+
+    runs.push({
+      renderMs: renderFinishedAt - startedAt,
+      paintMs: paintedAt - renderFinishedAt,
+      totalMs: paintedAt - startedAt
+    });
+  }
+
+  return {
+    iterations,
+    state: getWorksheetProfilerState(),
+    render: summarizeTimingRuns(runs, (run) => run.renderMs),
+    paint: summarizeTimingRuns(runs, (run) => run.paintMs),
+    total: summarizeTimingRuns(runs, (run) => run.totalMs),
+    runs
+  };
+};
+
 const withPreviewZoom = async <T>(zoom: number, action: () => Promise<T>): Promise<T> => {
   const previousZoom = state.previewZoom;
   if (previousZoom !== zoom) {
@@ -833,11 +931,9 @@ const renderWorksheet = () => {
     keepInitialLeadIn: state.keepInitialLeadIn,
     keepFinalLeadOut: state.keepFinalLeadOut
   };
-  let topLayout: ShiftedWordLayout;
-  let practiceLayout: ShiftedWordLayout;
+  let layout: ShiftedWordLayout;
   try {
-    topLayout = buildShiftedWordLayout(state.text, layoutOptions);
-    practiceLayout = buildShiftedWordLayout(state.text, layoutOptions);
+    layout = buildShiftedWordLayout(state.text, layoutOptions);
   } catch {
     worksheetPage.innerHTML = `
       <div class="worksheet-page__empty">Use supported cursive letters and spaces.</div>
@@ -846,11 +942,10 @@ const renderWorksheet = () => {
     return;
   }
 
-  const topPreparedPath = compileTracingPath(topLayout.path);
-  const practicePreparedPath = compileTracingPath(practiceLayout.path);
+  const preparedPath = compileTracingPath(layout.path);
   const topSvg = renderWordSvg(
-    topLayout,
-    topPreparedPath,
+    layout,
+    preparedPath,
     state.top,
     "worksheet-word worksheet-word--top",
     `${state.text} with formation annotations`
@@ -858,8 +953,8 @@ const renderWorksheet = () => {
   const practiceRowCount = getPracticeRowCount();
   const practiceRows = Array.from({ length: practiceRowCount }, (_, rowIndex) =>
     renderPracticeRowSvg(
-      practiceLayout,
-      practicePreparedPath,
+      layout,
+      preparedPath,
       state.practice,
       state.practiceRepeatCount,
       rowIndex
@@ -1166,3 +1261,8 @@ document.querySelectorAll<HTMLInputElement>("[data-scope][data-annotation-kind]"
 syncLabels();
 applyPreviewZoom();
 renderWorksheet();
+
+window.__worksheetProfiler = {
+  getState: getWorksheetProfilerState,
+  profileRender: profileWorksheetRender
+};

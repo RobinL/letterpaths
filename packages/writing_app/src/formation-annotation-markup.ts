@@ -89,51 +89,66 @@ export const buildFormationAnnotationMarkup = (
   preparedPath: PreparedTracingPath,
   options: FormationAnnotationMarkupOptions
 ): string => {
+  const hasVisibleAnnotations = Object.values(options.visibility).some(Boolean);
+  if (!hasVisibleAnnotations) {
+    return "";
+  }
+
   const uTurnLength = Math.max(0, options.uTurnLength);
   const arrowLength = Math.max(0, options.arrowLength);
   const arrowHeadSize = Math.max(0, options.arrowHeadSize);
   const arrowLaneOffset = options.offsetArrowLanes ? options.turnRadius : 0;
   const annotations = compileFormationAnnotations(preparedPath, {
-    directionalDashes: {
-      spacing: options.directionalDashSpacing,
-      head: {
-        length: arrowHeadSize,
-        width: arrowHeadSize * ARROWHEAD_WIDTH_RATIO,
-        tipExtension: arrowHeadSize * ARROWHEAD_TIP_OVERHANG_RATIO
-      }
-    },
-    turningPoints: {
-      offset: options.turnRadius,
-      stemLength: uTurnLength * STRAIGHT_ARROW_LENGTH_RATIO,
-      head: {
-        length: arrowHeadSize,
-        width: arrowHeadSize * ARROWHEAD_WIDTH_RATIO,
-        tipExtension: arrowHeadSize * ARROWHEAD_TIP_OVERHANG_RATIO
-      }
-    },
-    startArrows: {
-      length: arrowLength,
-      minLength: arrowLength * START_ARROW_MIN_LENGTH_RATIO,
-      offset: arrowLaneOffset,
-      head: {
-        length: arrowHeadSize,
-        width: arrowHeadSize * ARROWHEAD_WIDTH_RATIO,
-        tipExtension: arrowHeadSize * ARROWHEAD_TIP_OVERHANG_RATIO
-      }
-    },
-    drawOrderNumbers: {
-      offset: 0
-    },
-    midpointArrows: {
-      density: options.midpointDensity,
-      length: arrowLength * STRAIGHT_ARROW_LENGTH_RATIO,
-      offset: arrowLaneOffset,
-      head: {
-        length: arrowHeadSize,
-        width: arrowHeadSize * ARROWHEAD_WIDTH_RATIO,
-        tipExtension: arrowHeadSize * ARROWHEAD_TIP_OVERHANG_RATIO
-      }
-    }
+    directionalDashes: options.visibility["directional-dash"]
+      ? {
+          spacing: options.directionalDashSpacing,
+          head: {
+            length: arrowHeadSize,
+            width: arrowHeadSize * ARROWHEAD_WIDTH_RATIO,
+            tipExtension: arrowHeadSize * ARROWHEAD_TIP_OVERHANG_RATIO
+          }
+        }
+      : false,
+    turningPoints: options.visibility["turning-point"]
+      ? {
+          offset: options.turnRadius,
+          stemLength: uTurnLength * STRAIGHT_ARROW_LENGTH_RATIO,
+          head: {
+            length: arrowHeadSize,
+            width: arrowHeadSize * ARROWHEAD_WIDTH_RATIO,
+            tipExtension: arrowHeadSize * ARROWHEAD_TIP_OVERHANG_RATIO
+          }
+        }
+      : false,
+    startArrows: options.visibility["start-arrow"]
+      ? {
+          length: arrowLength,
+          minLength: arrowLength * START_ARROW_MIN_LENGTH_RATIO,
+          offset: arrowLaneOffset,
+          head: {
+            length: arrowHeadSize,
+            width: arrowHeadSize * ARROWHEAD_WIDTH_RATIO,
+            tipExtension: arrowHeadSize * ARROWHEAD_TIP_OVERHANG_RATIO
+          }
+        }
+      : false,
+    drawOrderNumbers: options.visibility["draw-order-number"]
+      ? {
+          offset: 0
+        }
+      : false,
+    midpointArrows: options.visibility["midpoint-arrow"]
+      ? {
+          density: options.midpointDensity,
+          length: arrowLength * STRAIGHT_ARROW_LENGTH_RATIO,
+          offset: arrowLaneOffset,
+          head: {
+            length: arrowHeadSize,
+            width: arrowHeadSize * ARROWHEAD_WIDTH_RATIO,
+            tipExtension: arrowHeadSize * ARROWHEAD_TIP_OVERHANG_RATIO
+          }
+        }
+      : false
   });
   const visibleAnnotations = resolveVisibleFormationAnnotations(
     annotations,

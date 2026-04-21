@@ -20,6 +20,7 @@
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
+    "profile:worksheet": "node --import tsx ./scripts/profile-worksheet.ts",
     "typecheck": "tsc --noEmit",
     "test:formation-arrows": "pnpm run build && node --test test/formation-arrows.test.mjs",
     "test:join-spacing": "pnpm run build && node --test test/join-spacing.test.mjs"
