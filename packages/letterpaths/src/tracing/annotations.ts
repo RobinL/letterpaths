@@ -423,10 +423,10 @@ function compileStartArrowAnnotations(
           offset,
           ...(head
             ? {
-                headLength: head.length,
-                headWidth: head.width,
-                tipExtension: head.tipExtension
-              }
+              headLength: head.length,
+              headWidth: head.width,
+              tipExtension: head.tipExtension
+            }
             : {})
         }
       } satisfies StartArrowAnnotation;
@@ -529,10 +529,10 @@ function compileMidpointArrowAnnotations(
           offset,
           ...(head
             ? {
-                headLength: head.length,
-                headWidth: head.width,
-                tipExtension: head.tipExtension
-              }
+              headLength: head.length,
+              headWidth: head.width,
+              tipExtension: head.tipExtension
+            }
             : {})
         }
       });
@@ -897,9 +897,9 @@ function interpolateSamplePose(
   const last = samples[samples.length - 1];
   return last
     ? {
-        point: { x: last.x, y: last.y },
-        tangent: normalizeVector(last.tangent)
-      }
+      point: { x: last.x, y: last.y },
+      tangent: normalizeVector(last.tangent)
+    }
     : { point: { x: 0, y: 0 }, tangent: { x: 1, y: 0 } };
 }
 
@@ -979,8 +979,8 @@ function normalizeVector(vector: Point): Point {
   const length = Math.hypot(vector.x, vector.y);
   return length > 0.0001
     ? {
-        x: vector.x / length,
-        y: vector.y / length
-      }
+      x: vector.x / length,
+      y: vector.y / length
+    }
     : { x: 1, y: 0 };
 }
