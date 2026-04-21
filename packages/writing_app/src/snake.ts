@@ -1209,6 +1209,26 @@ const getOverallDistanceForState = (
   return total + getActiveStrokeTravelDistance(state);
 };
 
+const getOverallDistanceForDemoFrame = (frame: AnimationFrame): number => {
+  const preparedPath = preparedTracingPath;
+  if (!preparedPath) {
+    return 0;
+  }
+
+  if (frame.isPenDown && frame.activeStrokeIndex >= 0) {
+    return getOverallDistanceForState({
+      status: "tracing",
+      activeStrokeIndex: frame.activeStrokeIndex,
+      activeStrokeProgress: frame.activeStrokeProgress
+    });
+  }
+
+  return frame.completedStrokes.reduce(
+    (total, strokeIndex) => total + (preparedPath.strokes[strokeIndex]?.totalLength ?? 0),
+    0
+  );
+};
+
 const getCommittedSnakeTangent = (state: TracingState): Point => {
   if (!preparedTracingPath) {
     return state.cursorTangent;
@@ -1802,6 +1822,43 @@ const advanceToNextTracingSection = () => {
   resetSnakeMoveSoundProgress();
 };
 
+const getTracingSectionBoundaryTolerance = (
+  currentSection: TracingSection,
+  nextSection: TracingSection
+) => {
+  const sectionLength = currentSection.endDistance - currentSection.startDistance;
+  return nextSection.startReason === "stroke-start"
+    ? 0.1
+    : Math.min(8, Math.max(0.1, sectionLength * 0.25));
+};
+
+const transitionSnakeToNextTracingSection = (
+  currentSection: TracingSection,
+  nextSection: TracingSection,
+  options: { preserveGrowth?: boolean } = {}
+) => {
+  const currentSectionDeferred = isSectionDeferred(currentSection);
+  const currentSectionIsDot =
+    preparedTracingPath?.strokes[currentSection.strokeIndex]?.isDot === true;
+  const nextSectionIsDot =
+    preparedTracingPath?.strokes[nextSection.strokeIndex]?.isDot === true;
+
+  if (!currentSectionDeferred || !currentSectionIsDot) {
+    appendSnakePose(currentSection.endPoint, currentSection.endTangent, true);
+    retireActiveSnake();
+  }
+
+  advanceToNextTracingSection();
+  resetSnakeTrail(nextSection.startPoint, nextSection.startTangent, !nextSectionIsDot, {
+    preserveGrowth: options.preserveGrowth
+  });
+
+  return {
+    nextSectionDeferred: isSectionDeferred(nextSection),
+    nextSectionIsDot
+  };
+};
+
 const maybePauseAtTracingSectionBoundary = (state: TracingState): boolean => {
   if (isDemoPlaying || isAwaitingSegmentRestart || tracingSections.length <= visibleSectionCount) {
     return false;
@@ -1814,28 +1871,12 @@ const maybePauseAtTracingSectionBoundary = (state: TracingState): boolean => {
   }
 
   const overallDistance = getOverallDistanceForState(state);
-  const sectionLength = currentSection.endDistance - currentSection.startDistance;
-  const boundaryTolerance =
-    nextSection.startReason === "stroke-start"
-      ? 0.1
-      : Math.min(8, Math.max(0.1, sectionLength * 0.25));
+  const boundaryTolerance = getTracingSectionBoundaryTolerance(currentSection, nextSection);
   if (overallDistance < currentSection.endDistance - boundaryTolerance) {
     return false;
   }
-
-  const currentSectionDeferred = isSectionDeferred(currentSection);
-  const currentSectionIsDot = preparedTracingPath?.strokes[currentSection.strokeIndex]?.isDot === true;
-  const nextSectionDeferred = isSectionDeferred(nextSection);
-  const nextSectionIsDot = preparedTracingPath?.strokes[nextSection.strokeIndex]?.isDot === true;
-
-  if (!currentSectionDeferred || !currentSectionIsDot) {
-    appendSnakePose(currentSection.endPoint, currentSection.endTangent, true);
-    retireActiveSnake();
-  }
-
-  advanceToNextTracingSection();
   tracingSession?.end();
-  resetSnakeTrail(nextSection.startPoint, nextSection.startTangent, !nextSectionIsDot, {
+  const { nextSectionDeferred } = transitionSnakeToNextTracingSection(currentSection, nextSection, {
     preserveGrowth: true
   });
 
@@ -2188,6 +2229,22 @@ const renderRetiringSnake = (snake: RetiringSnake) => {
     retractionDistance: snake.retractionDistance,
     showTail: snake.showTail
   });
+};
+
+const getActiveSnakeRetractionDurationMs = (options: { isShortDeferredSnake?: boolean } = {}) => {
+  const bodyCount = options.isShortDeferredSnake ? 1 : getCurrentBodyCount();
+  const segmentSpacing = options.isShortDeferredSnake
+    ? getActiveDeferredSnakeSegmentSpacing({
+        activeStrokeIndex: tracingSession?.getState().activeStrokeIndex ?? 0
+      })
+    : getActiveSnakeSegmentSpacing();
+  const availableBodyCount = getVisibleSnakeSegments(
+    snakeHeadDistance,
+    bodyCount,
+    segmentSpacing
+  ).bodyCount;
+  const retractionDistance = (availableBodyCount + 1) * segmentSpacing;
+  return (retractionDistance / SNAKE_RETRACTION_SPEED) * 1000;
 };
 
 const animateRetiringSnake = (snake: RetiringSnake) => {
@@ -2577,6 +2634,31 @@ const renderDemoDeferredFrame = (frame: AnimationFrame, tangent: Point) => {
   return false;
 };
 
+const maybeAdvanceDemoAtTracingSectionBoundary = (frame: AnimationFrame) => {
+  let advanced = false;
+  const overallDistance = getOverallDistanceForDemoFrame(frame);
+
+  while (tracingSections.length > visibleSectionCount) {
+    const currentSection = getCurrentTracingSection();
+    const nextSection = tracingSections[visibleSectionCount];
+    if (!currentSection || !nextSection) {
+      break;
+    }
+
+    const boundaryTolerance = getTracingSectionBoundaryTolerance(currentSection, nextSection);
+    if (overallDistance < currentSection.endDistance - boundaryTolerance) {
+      break;
+    }
+
+    transitionSnakeToNextTracingSection(currentSection, nextSection, {
+      preserveGrowth: true
+    });
+    advanced = true;
+  }
+
+  return advanced;
+};
+
 const playDemo = () => {
   if (!currentPath || isDemoPlaying) {
     return;
@@ -2599,12 +2681,15 @@ const playDemo = () => {
 
   const startedAt = performance.now();
   let lastDemoTangent = tracingSession?.getState().cursorTangent ?? { x: 1, y: 0 };
+  let demoRetractionStarted = false;
+  let demoEndAt = player.totalDuration + DEMO_PAUSE_MS;
 
   const tick = (now: number) => {
     const elapsed = now - startedAt;
     const clampedElapsed = Math.min(elapsed, player.totalDuration);
     const frame = player.getFrame(clampedElapsed);
     const demoTangent = getDemoFrameTangent(frame, lastDemoTangent);
+    maybeAdvanceDemoAtTracingSectionBoundary(frame);
     const isDeferredFrame = renderDemoDeferredFrame(frame, demoTangent);
 
     renderDemoTraceFrame(frame);
@@ -2615,7 +2700,22 @@ const playDemo = () => {
       renderSnake();
     }
 
-    if (elapsed < player.totalDuration + DEMO_PAUSE_MS) {
+    if (!demoRetractionStarted && elapsed >= player.totalDuration) {
+      demoRetractionStarted = true;
+      demoEndAt =
+        player.totalDuration +
+        Math.max(
+          DEMO_PAUSE_MS,
+          getActiveSnakeRetractionDurationMs({
+            isShortDeferredSnake: isDemoShortDeferredSnake
+          })
+        );
+      hideDotTarget();
+      retireActiveSnake();
+      hideSnakeSprites();
+    }
+
+    if (elapsed < demoEndAt || retiringSnakes.length > 0) {
       demoAnimationFrameId = requestAnimationFrame(tick);
       return;
     }
