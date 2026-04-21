@@ -37,21 +37,6 @@ app.innerHTML = `
     <main class="writing-app__stage">
       <section class="writing-app__board">
         <header class="writing-app__topbar">
-          <div class="writing-app__title">
-            <p class="writing-app__eyebrow">Trace this word</p>
-            <h1 class="writing-app__word" id="word-label"></h1>
-            <label class="writing-app__word-input-label" for="word-input">
-              <span>Word</span>
-              <input
-                class="writing-app__word-input"
-                id="word-input"
-                type="text"
-                value="zephyr"
-                autocomplete="off"
-                spellcheck="false"
-              />
-            </label>
-          </div>
           <div class="writing-app__controls">
             <label class="writing-app__tolerance" for="tolerance-slider">
               <span class="writing-app__tolerance-label">
@@ -184,8 +169,6 @@ app.innerHTML = `
   </div>
 `;
 
-const wordLabel = document.querySelector<HTMLHeadingElement>("#word-label");
-const wordInput = document.querySelector<HTMLInputElement>("#word-input");
 const traceSvg = document.querySelector<SVGSVGElement>("#trace-svg");
 const showMeButton = document.querySelector<HTMLButtonElement>("#show-me-button");
 const successOverlay = document.querySelector<HTMLDivElement>("#success-overlay");
@@ -211,8 +194,6 @@ const annotationToggleEls = Array.from(
 );
 
 if (
-  !wordLabel ||
-  !wordInput ||
   !traceSvg ||
   !showMeButton ||
   !successOverlay ||
@@ -1403,7 +1384,6 @@ const normalizeWord = (word: string): string => word.trim().toLowerCase();
 const renderWord = (word: string) => {
   stopDemoAnimation();
   currentWord = normalizeWord(word);
-  wordLabel.textContent = currentWord;
 
   if (currentWord.length === 0) {
     clearScene();
@@ -1428,7 +1408,6 @@ const renderWord = (word: string) => {
 const goToNextWord = () => {
   currentWordIndex = chooseNextWordIndex(currentWordIndex);
   const nextWord = WORDS[currentWordIndex] ?? WORDS[0];
-  wordInput.value = nextWord;
   renderWord(nextWord);
 };
 
@@ -1490,10 +1469,6 @@ traceSvg.addEventListener("pointerup", onPointerUp);
 traceSvg.addEventListener("pointercancel", onPointerCancel);
 showMeButton.addEventListener("click", playDemo);
 nextWordButton.addEventListener("click", goToNextWord);
-wordInput.addEventListener("input", () => {
-  currentWordIndex = -1;
-  renderWord(wordInput.value);
-});
 toleranceSlider.addEventListener("input", () => {
   currentTraceTolerance = Number(toleranceSlider.value);
   syncToleranceLabel();
@@ -1552,5 +1527,4 @@ syncMidpointDensityLabel();
 syncDirectionalDashSpacingLabel();
 syncTurnRadiusLabel();
 syncNumberOffsetLabel();
-wordInput.value = currentWord;
 renderWord(currentWord);
