@@ -1,4 +1,4 @@
-import{M as Xe,a as Ue,T as ze,D as ve,W as he,b as je,c as Ke,d as B,e as Ge,g as Ae,f as ye}from"./shared-BptrW1eh.js";import{T as Be,A as Qe}from"./session-DFnIrfII.js";import{c as Je,a as Ze}from"./annotations-DoBsaDCT.js";const Se=document.querySelector("#app");if(!Se)throw new Error("Missing #app element for writing app.");Se.innerHTML=`
+import{M as Xe,a as Ue,T as ze,D as ve,W as he,b as je,c as Ke,d as B,e as Ge,g as Ae,f as ye}from"./shared-BptrW1eh.js";import{T as Be,A as Qe}from"./session-DFnIrfII.js";import{c as Je,a as Ze}from"./annotations-DVpM9QG8.js";const Se=document.querySelector("#app");if(!Se)throw new Error("Missing #app element for writing app.");Se.innerHTML=`
   <div class="writing-app">
     <main class="writing-app__stage">
       <section class="writing-app__board">
@@ -51,7 +51,7 @@ import{M as Xe,a as Ue,T as ze,D as ve,W as he,b as je,c as Ke,d as B,e as Ge,g 
             </label>
             <label class="writing-app__tolerance" for="directional-dash-spacing-slider">
               <span class="writing-app__tolerance-label">
-                Drectional dash spacing
+                Directional dash spacing
                 <span class="writing-app__tolerance-value" id="directional-dash-spacing-value"></span>
               </span>
               <input
@@ -97,7 +97,7 @@ import{M as Xe,a as Ue,T as ze,D as ve,W as he,b as je,c as Ke,d as B,e as Ge,g 
             <fieldset class="writing-app__annotation-controls" aria-label="Formation annotations">
               <label class="writing-app__annotation-toggle">
                 <input type="checkbox" data-annotation-kind="directional-dash" checked />
-                <span>Drectional dash</span>
+                <span>Directional dash</span>
               </label>
               <label class="writing-app__annotation-toggle">
                 <input type="checkbox" data-annotation-kind="turning-point" />
