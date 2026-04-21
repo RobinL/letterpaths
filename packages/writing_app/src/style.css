@@ -1264,25 +1264,9 @@ body {
 }
 
 .worksheet-word__guide {
-  stroke: rgba(35, 49, 61, 0.14);
-  stroke-width: 2;
+  stroke: var(--worksheet-guide-color, #b3bec7);
+  stroke-width: var(--worksheet-guide-stroke-width, 2);
   vector-effect: non-scaling-stroke;
-}
-
-.worksheet-word__guide--baseline {
-  stroke: rgba(47, 125, 104, 0.72);
-}
-
-.worksheet-word__guide--midline {
-  stroke: rgba(202, 83, 72, 0.45);
-}
-
-.worksheet-word__guide--ascender {
-  stroke: rgba(49, 90, 157, 0.38);
-}
-
-.worksheet-word__guide--descender {
-  stroke: rgba(13, 127, 140, 0.38);
 }
 
 .worksheet-page__empty {

@@ -1,8 +1,13 @@
 import "./style.css";
 import {
   compileTracingPath,
+  cursiveEntryVariantByExitVariant,
+  cursiveExitVariantByLetter,
+  defaultCursiveEntryVariant,
+  getCursiveLetterVariant,
   type FormationAnnotation,
   type JoinSpacingOptions,
+  type LetterGuides,
   type PreparedTracingPath
 } from "letterpaths";
 import {
@@ -28,8 +33,12 @@ type WorksheetState = {
   practiceRepeatCount: number;
   strokeWidth: number;
   joinSpacing: Required<JoinSpacingOptions>;
+  showBaselineGuide: boolean;
+  showXHeightGuide: boolean;
   showAscenderGuide: boolean;
   showDescenderGuide: boolean;
+  gridlineStrokeWidth: number;
+  gridlineColor: string;
   keepInitialLeadIn: boolean;
   keepFinalLeadOut: boolean;
   top: WorksheetAnnotationSettings;
@@ -103,6 +112,8 @@ const DEFAULT_PRACTICE_STROKE_COLOR = "#d5dbe2";
 const DEFAULT_PRACTICE_ROW_HEIGHT_MM = 24;
 const DEFAULT_PRACTICE_REPEAT_COUNT = 1;
 const DEFAULT_STROKE_WIDTH = 54;
+const DEFAULT_GRIDLINE_STROKE_WIDTH = 2;
+const DEFAULT_GRIDLINE_COLOR = "#b3bec7";
 const DEFAULT_PREVIEW_ZOOM = 100;
 const PRACTICE_AREA_HEIGHT_MM = 178;
 const ASCENDER_GUIDE_RATIO = 0.63;
@@ -123,21 +134,9 @@ const WORKSHEET_SVG_EXPORT_STYLES = `
     stroke-opacity: 1;
   }
   .worksheet-word__guide {
-    stroke: rgba(35, 49, 61, 0.14);
-    stroke-width: 2;
+    stroke: var(--worksheet-guide-color, #b3bec7);
+    stroke-width: var(--worksheet-guide-stroke-width, 2);
     vector-effect: non-scaling-stroke;
-  }
-  .worksheet-word__guide--baseline {
-    stroke: rgba(47, 125, 104, 0.72);
-  }
-  .worksheet-word__guide--midline {
-    stroke: rgba(202, 83, 72, 0.45);
-  }
-  .worksheet-word__guide--ascender {
-    stroke: rgba(49, 90, 157, 0.38);
-  }
-  .worksheet-word__guide--descender {
-    stroke: rgba(13, 127, 140, 0.38);
   }
   .writing-app__section-arrow {
     fill: none;
@@ -211,8 +210,12 @@ let state: WorksheetState = {
   practiceRepeatCount: DEFAULT_PRACTICE_REPEAT_COUNT,
   strokeWidth: DEFAULT_STROKE_WIDTH,
   joinSpacing: { ...DEFAULT_WORKSHEET_JOIN_SPACING },
-  showAscenderGuide: false,
-  showDescenderGuide: false,
+  showBaselineGuide: true,
+  showXHeightGuide: true,
+  showAscenderGuide: true,
+  showDescenderGuide: true,
+  gridlineStrokeWidth: DEFAULT_GRIDLINE_STROKE_WIDTH,
+  gridlineColor: DEFAULT_GRIDLINE_COLOR,
   keepInitialLeadIn: true,
   keepFinalLeadOut: true,
   top: createSettings(DEFAULT_FORMATION_ANNOTATION_VISIBILITY, DEFAULT_TOP_STROKE_COLOR),
@@ -279,6 +282,8 @@ app.innerHTML = `
   step: 2,
   valueId: "stroke-width-value"
 })}
+
+        ${renderGridlineSettings()}
 
         ${renderAdvancedSettings()}
 
@@ -429,8 +434,38 @@ function renderAdvancedSettings(): string {
         <fieldset class="worksheet-app__checks" aria-label="Advanced worksheet toggles">
           ${renderGlobalToggle("include-initial-lead-in", "keepInitialLeadIn", "Initial lead-in", true)}
           ${renderGlobalToggle("include-final-lead-out", "keepFinalLeadOut", "Final lead-out", true)}
-          ${renderGlobalToggle("show-ascender-guide", "showAscenderGuide", "Ascender gridline", false)}
-          ${renderGlobalToggle("show-descender-guide", "showDescenderGuide", "Descender gridline", false)}
+        </fieldset>
+      </div>
+    </details>
+  `;
+}
+
+function renderGridlineSettings(): string {
+  return `
+    <details class="worksheet-app__details">
+      <summary>Gridline settings</summary>
+      <div class="worksheet-app__details-body">
+        ${renderRangeControl({
+    id: "gridline-stroke-width-slider",
+    label: "Gridline thickness",
+    value: DEFAULT_GRIDLINE_STROKE_WIDTH,
+    min: 0.5,
+    max: 8,
+    step: 0.5,
+    valueId: "gridline-stroke-width-value",
+    attrs: 'data-global-setting="gridlineStrokeWidth"'
+  })}
+        ${renderGlobalColorControl(
+    "gridline-color-picker",
+    "gridlineColor",
+    "Gridline colour",
+    DEFAULT_GRIDLINE_COLOR
+  )}
+        <fieldset class="worksheet-app__checks" aria-label="Gridline visibility">
+          ${renderGlobalToggle("show-baseline-guide", "showBaselineGuide", "Baseline", true)}
+          ${renderGlobalToggle("show-descender-guide", "showDescenderGuide", "Descender", true)}
+          ${renderGlobalToggle("show-x-height-guide", "showXHeightGuide", "X-height", true)}
+          ${renderGlobalToggle("show-ascender-guide", "showAscenderGuide", "Ascender", true)}
         </fieldset>
       </div>
     </details>
@@ -441,7 +476,12 @@ function renderGlobalToggle(
   id: string,
   setting: keyof Pick<
     WorksheetState,
-    "keepInitialLeadIn" | "keepFinalLeadOut" | "showAscenderGuide" | "showDescenderGuide"
+    | "keepInitialLeadIn"
+    | "keepFinalLeadOut"
+    | "showBaselineGuide"
+    | "showXHeightGuide"
+    | "showAscenderGuide"
+    | "showDescenderGuide"
   >,
   label: string,
   checked: boolean
@@ -455,6 +495,26 @@ function renderGlobalToggle(
         ${checked ? "checked" : ""}
       />
       <span>${label}</span>
+    </label>
+  `;
+}
+
+function renderGlobalColorControl(
+  id: string,
+  setting: "gridlineColor",
+  label: string,
+  value: string
+): string {
+  return `
+    <label class="worksheet-app__field worksheet-app__field--inline" for="${id}">
+      <span>${label}</span>
+      <input
+        class="worksheet-app__color"
+        id="${id}"
+        type="color"
+        value="${value}"
+        data-global-setting="${setting}"
+      />
     </label>
   `;
 }
@@ -658,6 +718,7 @@ const syncLabels = () => {
   setText("practice-size-value", `${state.practiceRowHeightMm} mm`);
   setText("practice-repeat-value", `${state.practiceRepeatCount}`);
   setText("stroke-width-value", `${state.strokeWidth}px`);
+  setText("gridline-stroke-width-value", `${state.gridlineStrokeWidth.toFixed(1)}px`);
   setText("target-bend-rate-value", `${state.joinSpacing.targetBendRate}`);
   setText("min-sidebearing-gap-value", `${state.joinSpacing.minSidebearingGap}`);
   setText(
@@ -780,40 +841,105 @@ const withPreviewZoom = async <T>(zoom: number, action: () => Promise<T>): Promi
   }
 };
 
-const getGuideLineY = (layout: ShiftedWordLayout, kind: "ascender" | "descender"): number => {
+const normalizeGuideValue = (
+  value: number,
+  sourceGuides: LetterGuides,
+  targetGuides: LetterGuides
+): number => {
+  const sourceDelta = sourceGuides.xHeight - sourceGuides.baseline;
+  const targetDelta = targetGuides.xHeight - targetGuides.baseline;
+  const scale = sourceDelta !== 0 ? targetDelta / sourceDelta : 1;
+  const offset = targetGuides.baseline - sourceGuides.baseline * scale;
+  return value * scale + offset;
+};
+
+const getWordGuideFromMetadata = (
+  text: string,
+  targetGuides: LetterGuides,
+  kind: "ascender" | "descender"
+): number | null => {
+  let observedGuide = kind === "ascender" ? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY;
+  let previousExitVariant: keyof typeof cursiveEntryVariantByExitVariant | null = null;
+
+  for (const rawChar of text) {
+    if (rawChar.trim() === "") {
+      previousExitVariant = null;
+      continue;
+    }
+
+    const char = rawChar.toLowerCase();
+    const entryVariant =
+      previousExitVariant === null
+        ? defaultCursiveEntryVariant
+        : cursiveEntryVariantByExitVariant[previousExitVariant];
+    const letter = getCursiveLetterVariant(char, entryVariant);
+    if (!letter) {
+      previousExitVariant = null;
+      continue;
+    }
+
+    const sourceGuides = letter.guides;
+    const guideValue = sourceGuides?.[kind];
+    if (sourceGuides && typeof guideValue === "number") {
+      const normalizedGuide = normalizeGuideValue(guideValue, sourceGuides, targetGuides);
+      if (kind === "ascender") {
+        observedGuide = Math.min(observedGuide, normalizedGuide);
+      } else {
+        observedGuide = Math.max(observedGuide, normalizedGuide);
+      }
+    }
+
+    previousExitVariant = cursiveExitVariantByLetter[char] ?? "low";
+  }
+
+  return Number.isFinite(observedGuide) ? observedGuide : null;
+};
+
+const getGuideLineY = (
+  layout: ShiftedWordLayout,
+  kind: "baseline" | "xHeight" | "ascender" | "descender"
+): number => {
   const guides = layout.path.guides;
+  const halfStrokeWidth = state.strokeWidth / 2;
   const guideHeight = Math.abs(guides.baseline - guides.xHeight);
-  const rawGuide =
-    kind === "ascender"
-      ? guides.ascender ?? guides.xHeight - guideHeight * ASCENDER_GUIDE_RATIO
-      : guides.descender ?? guides.baseline + guideHeight * DESCENDER_GUIDE_RATIO;
-  return rawGuide + layout.offsetY;
+
+  if (kind === "baseline") {
+    return guides.baseline + layout.offsetY + halfStrokeWidth;
+  }
+
+  if (kind === "xHeight") {
+    return guides.xHeight + layout.offsetY - halfStrokeWidth;
+  }
+
+  if (kind === "ascender") {
+    const observedAscenderGuide = getWordGuideFromMetadata(state.text, guides, "ascender");
+    if (observedAscenderGuide !== null) {
+      return observedAscenderGuide + layout.offsetY - halfStrokeWidth;
+    }
+
+    const ascenderGuide = guides.ascender ?? guides.xHeight - guideHeight * ASCENDER_GUIDE_RATIO;
+    return ascenderGuide + layout.offsetY - halfStrokeWidth;
+  }
+
+  const observedDescenderGuide = getWordGuideFromMetadata(state.text, guides, "descender");
+  if (observedDescenderGuide !== null) {
+    return observedDescenderGuide + layout.offsetY + halfStrokeWidth;
+  }
+
+  const descenderGuide = guides.descender ?? guides.baseline + guideHeight * DESCENDER_GUIDE_RATIO;
+  return descenderGuide + layout.offsetY + halfStrokeWidth;
 };
 
 const renderGuideLines = (layout: ShiftedWordLayout, width: number): string => `
-  ${state.showAscenderGuide ? `
+  ${state.showBaselineGuide ? `
     <line
-      class="worksheet-word__guide worksheet-word__guide--ascender"
+      class="worksheet-word__guide worksheet-word__guide--baseline"
       x1="0"
-      y1="${getGuideLineY(layout, "ascender")}"
+      y1="${getGuideLineY(layout, "baseline")}"
       x2="${width}"
-      y2="${getGuideLineY(layout, "ascender")}"
+      y2="${getGuideLineY(layout, "baseline")}"
     ></line>
   ` : ""}
-  <line
-    class="worksheet-word__guide worksheet-word__guide--midline"
-    x1="0"
-    y1="${layout.path.guides.xHeight + layout.offsetY}"
-    x2="${width}"
-    y2="${layout.path.guides.xHeight + layout.offsetY}"
-  ></line>
-  <line
-    class="worksheet-word__guide worksheet-word__guide--baseline"
-    x1="0"
-    y1="${layout.path.guides.baseline + layout.offsetY}"
-    x2="${width}"
-    y2="${layout.path.guides.baseline + layout.offsetY}"
-  ></line>
   ${state.showDescenderGuide ? `
     <line
       class="worksheet-word__guide worksheet-word__guide--descender"
@@ -821,6 +947,24 @@ const renderGuideLines = (layout: ShiftedWordLayout, width: number): string => `
       y1="${getGuideLineY(layout, "descender")}"
       x2="${width}"
       y2="${getGuideLineY(layout, "descender")}"
+    ></line>
+  ` : ""}
+  ${state.showXHeightGuide ? `
+    <line
+      class="worksheet-word__guide worksheet-word__guide--midline"
+      x1="0"
+      y1="${getGuideLineY(layout, "xHeight")}"
+      x2="${width}"
+      y2="${getGuideLineY(layout, "xHeight")}"
+    ></line>
+  ` : ""}
+  ${state.showAscenderGuide ? `
+    <line
+      class="worksheet-word__guide worksheet-word__guide--ascender"
+      x1="0"
+      y1="${getGuideLineY(layout, "ascender")}"
+      x2="${width}"
+      y2="${getGuideLineY(layout, "ascender")}"
     ></line>
   ` : ""}
 `;
@@ -858,7 +1002,7 @@ const renderWordSvg = (
       preserveAspectRatio="xMidYMid meet"
       role="img"
       aria-label="${escapeHtml(ariaLabel)}"
-      style="--formation-arrow-color: ${settings.arrowColor}; --formation-arrow-stroke-width: ${settings.arrowStrokeWidth}; --worksheet-word-stroke: ${settings.strokeColor}; --worksheet-word-stroke-width: ${state.strokeWidth};"
+      style="--formation-arrow-color: ${settings.arrowColor}; --formation-arrow-stroke-width: ${settings.arrowStrokeWidth}; --worksheet-word-stroke: ${settings.strokeColor}; --worksheet-word-stroke-width: ${state.strokeWidth}; --worksheet-guide-color: ${state.gridlineColor}; --worksheet-guide-stroke-width: ${state.gridlineStrokeWidth};"
     >
       ${renderGuideLines(layout, layout.width)}
       ${wordContent}
@@ -895,7 +1039,7 @@ const renderPracticeRowSvg = (
       preserveAspectRatio="xMidYMid meet"
       role="img"
       aria-label="${escapeHtml(`${state.text} practice line, ${repeatCount} repeat${repeatCount === 1 ? "" : "s"}`)}"
-      style="--formation-arrow-color: ${settings.arrowColor}; --formation-arrow-stroke-width: ${settings.arrowStrokeWidth}; --worksheet-word-stroke: ${settings.strokeColor}; --worksheet-word-stroke-width: ${state.strokeWidth};"
+      style="--formation-arrow-color: ${settings.arrowColor}; --formation-arrow-stroke-width: ${settings.arrowStrokeWidth}; --worksheet-word-stroke: ${settings.strokeColor}; --worksheet-word-stroke-width: ${state.strokeWidth}; --worksheet-guide-color: ${state.gridlineColor}; --worksheet-guide-stroke-width: ${state.gridlineStrokeWidth};"
     >
       ${renderGuideLines(layout, rowWidth)}
       <defs>
@@ -1187,14 +1331,26 @@ document.querySelectorAll<HTMLInputElement>("[data-global-setting]").forEach((in
         ...state.joinSpacing,
         [setting]: Number(input.value)
       };
+    } else if (setting === "gridlineStrokeWidth") {
+      state.gridlineStrokeWidth = Number(input.value);
     } else if (setting === "keepInitialLeadIn") {
       state.keepInitialLeadIn = input.checked;
     } else if (setting === "keepFinalLeadOut") {
       state.keepFinalLeadOut = input.checked;
+    } else if (setting === "showBaselineGuide") {
+      state.showBaselineGuide = input.checked;
+    } else if (setting === "showXHeightGuide") {
+      state.showXHeightGuide = input.checked;
     } else if (setting === "showAscenderGuide") {
       state.showAscenderGuide = input.checked;
     } else if (setting === "showDescenderGuide") {
       state.showDescenderGuide = input.checked;
+    } else if (setting === "gridlineColor") {
+      const nextColor = normalizeColor(input.value);
+      if (!nextColor) {
+        return;
+      }
+      state.gridlineColor = nextColor;
     }
 
     renderWorksheet();
