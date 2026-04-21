@@ -12,6 +12,7 @@ import {
 export type FormationAnnotationVisibility = Record<FormationAnnotation["kind"], boolean>;
 
 export type FormationAnnotationMarkupOptions = {
+  directionalDashSpacing: number;
   midpointDensity: number;
   turnRadius: number;
   uTurnLength: number;
@@ -93,6 +94,14 @@ export const buildFormationAnnotationMarkup = (
   const arrowHeadSize = Math.max(0, options.arrowHeadSize);
   const arrowLaneOffset = options.offsetArrowLanes ? options.turnRadius : 0;
   const annotations = compileFormationAnnotations(preparedPath, {
+    directionalDashes: {
+      spacing: options.directionalDashSpacing,
+      head: {
+        length: arrowHeadSize,
+        width: arrowHeadSize * ARROWHEAD_WIDTH_RATIO,
+        tipExtension: arrowHeadSize * ARROWHEAD_TIP_OVERHANG_RATIO
+      }
+    },
     turningPoints: {
       offset: options.turnRadius,
       stemLength: uTurnLength * STRAIGHT_ARROW_LENGTH_RATIO,
