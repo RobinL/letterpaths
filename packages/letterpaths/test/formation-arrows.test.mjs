@@ -103,6 +103,43 @@ test("tracing sections include retrace restarts for annotation placement", () =>
   });
 });
 
+test("tracing sections use one-sided tangents at retrace boundaries", () => {
+  const prepared = compileTracingPath(buildHandwritingPath("p", { style: "cursive" }));
+  const boundary = prepared.boundaries.find(
+    (candidate) =>
+      candidate.previousSegment === "descender" && candidate.nextSegment === "ascender"
+  );
+  assert.ok(boundary, "Expected p to expose the descender-to-ascender boundary.");
+
+  const sections = analyzeTracingSections(prepared).sections;
+  const retraceSection = sections.find(
+    (section) => Math.abs(section.startDistance - boundary.overallDistance) < 0.001
+  );
+  assert.ok(retraceSection, "Expected a retrace section to start at the boundary.");
+  const previousSection = sections[retraceSection.index - 1];
+  assert.ok(previousSection, "Expected a section before the retrace boundary.");
+
+  const incomingDot =
+    previousSection.endTangent.x * boundary.incomingTangent.x +
+    previousSection.endTangent.y * boundary.incomingTangent.y;
+  const outgoingDot =
+    retraceSection.startTangent.x * boundary.outgoingTangent.x +
+    retraceSection.startTangent.y * boundary.outgoingTangent.y;
+
+  assert.ok(
+    incomingDot > 0.999,
+    `Expected previous section to end with incoming tangent, got ${incomingDot}.`
+  );
+  assert.ok(
+    outgoingDot > 0.999,
+    `Expected retrace section to start with outgoing tangent, got ${outgoingDot}.`
+  );
+  assert.ok(
+    previousSection.endTangent.y > 0.9 && retraceSection.startTangent.y < -0.9,
+    "Expected the p descender turn to switch from downward to upward."
+  );
+});
+
 test("tracing sections start lifted strokes at the next pen-down point", () => {
   const prepared = compileTracingPath(buildHandwritingPath("x", { style: "cursive" }));
   const analysis = analyzeTracingSections(prepared, { includeRetraceTurns: false });
@@ -194,6 +231,49 @@ test("offset start arrows at deferred stroke starts ignore pen-up travel", () =>
   );
 });
 
+test("offset start arrows at retrace starts follow the outgoing path", () => {
+  const prepared = compileTracingPath(buildHandwritingPath("p", { style: "cursive" }));
+  const sections = analyzeTracingSections(prepared).sections;
+  const annotations = compileFormationAnnotations(prepared, {
+    turningPoints: false,
+    drawOrderNumbers: false,
+    midpointArrows: false,
+    startArrows: {
+      offset: 30
+    }
+  });
+  const retraceStartArrow = annotations.find(
+    (annotation) =>
+      annotation.kind === "start-arrow" &&
+      sections[annotation.source.sectionIndex]?.startReason === "retrace-turn"
+  );
+  assert.ok(retraceStartArrow, "Expected p to include a start arrow for the retrace section.");
+
+  const points = retraceStartArrow.commands.map((command) => command.to);
+  assert.ok(points.length >= 3, "Expected the retrace start arrow to include multiple points.");
+  const first = points[0];
+  const second = points[1];
+  const third = points[2];
+  assert.ok(first);
+  assert.ok(second);
+  assert.ok(third);
+
+  const firstSegment = normalizeTestVector({
+    x: second.x - first.x,
+    y: second.y - first.y
+  });
+  const secondSegment = normalizeTestVector({
+    x: third.x - second.x,
+    y: third.y - second.y
+  });
+  const segmentDot = firstSegment.x * secondSegment.x + firstSegment.y * secondSegment.y;
+
+  assert.ok(
+    segmentDot > 0,
+    `Expected the start arrow to continue forward without an initial reversal, got ${segmentDot}.`
+  );
+});
+
 test("formation annotations include all supported annotation kinds by default", () => {
   const annotations = compileFormationAnnotations(preparedSys());
   const kinds = new Set(annotations.map((annotation) => annotation.kind));
@@ -253,3 +333,8 @@ test("midpoint arrow density controls midpoint threshold and fractional placemen
     );
   });
 });
+
+function normalizeTestVector(vector) {
+  const length = Math.hypot(vector.x, vector.y);
+  return length > 0.0001 ? { x: vector.x / length, y: vector.y / length } : { x: 1, y: 0 };
+}

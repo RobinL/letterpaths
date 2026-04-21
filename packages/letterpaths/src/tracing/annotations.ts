@@ -803,10 +803,32 @@ function getPoseAtOverallDistance(
 ): { point: Point; tangent: Point } {
   const totalLength = getTotalLength(path);
   const clampedDistance = Math.max(0, Math.min(targetDistance, totalLength));
+  const boundary = findBoundaryAtDistance(path, clampedDistance);
+  if (boundary && bias !== "center") {
+    return {
+      point: { x: boundary.point.x, y: boundary.point.y },
+      tangent:
+        bias === "forward"
+          ? normalizeVector(boundary.outgoingTangent)
+          : normalizeVector(boundary.incomingTangent)
+    };
+  }
+
   const position = findStrokePositionAtOverallDistance(path, clampedDistance, bias);
   return position
     ? interpolateSamplePose(position.stroke.samples, position.distanceAlongStroke)
     : { point: { x: 0, y: 0 }, tangent: { x: 1, y: 0 } };
+}
+
+function findBoundaryAtDistance(
+  path: PreparedTracingPath,
+  distance: number
+): PreparedTracingPath["boundaries"][number] | null {
+  return (
+    path.boundaries.find(
+      (boundary) => Math.abs(boundary.overallDistance - distance) <= DISTANCE_EPSILON
+    ) ?? null
+  );
 }
 
 function findStrokePositionAtOverallDistance(
