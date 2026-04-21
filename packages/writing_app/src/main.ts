@@ -73,6 +73,7 @@ const START_ARROW_MIN_LENGTH_RATIO = 0.18 / START_ARROW_LENGTH_RATIO;
 const ARROWHEAD_WIDTH_RATIO = 22 / 26;
 const ARROWHEAD_TIP_OVERHANG_RATIO = 11 / 26;
 const WRITING_APP_URL_PARAM_KEYS = [
+  "word",
   "tolerance",
   "strokeWidth",
   "gridlineStrokeWidth",
@@ -202,12 +203,22 @@ app.innerHTML = `
       <section class="writing-app__board">
         <header class="writing-app__topbar">
           <div class="writing-app__title">
-            <p class="writing-app__eyebrow">Tracing demo</p>
-            <h1 class="writing-app__word" id="word-label"></h1>
+            <label class="writing-app__word-input-label" for="word-input">
+              <span>Enter word</span>
+              <input
+                class="writing-app__word-input"
+                id="word-input"
+                type="text"
+                value="zephyr"
+                placeholder="zephyr"
+                spellcheck="false"
+                autocomplete="off"
+              />
+            </label>
           </div>
           <div class="writing-app__topbar-actions">
             <button class="writing-app__button" id="show-me-button" type="button">
-              Show me
+              Animate
             </button>
             <details class="writing-app__settings writing-app__settings--options" id="settings-menu">
               <summary class="writing-app__button writing-app__button--secondary writing-app__button--summary">
@@ -215,46 +226,46 @@ app.innerHTML = `
               </summary>
               <div class="writing-app__settings-panel writing-app__settings-panel--options">
                 ${renderOptionsGroup(
-    "Tracing settings",
-    `
+  "Tracing settings",
+  `
       ${renderRangeControl({
-        id: "tolerance-slider",
-        label: "Tolerance",
-        value: DEFAULT_TRACE_TOLERANCE,
-        min: MIN_TRACE_TOLERANCE,
-        max: MAX_TRACE_TOLERANCE,
-        step: TRACE_TOLERANCE_STEP,
-        valueId: "tolerance-value"
-      })}
+    id: "tolerance-slider",
+    label: "Tolerance",
+    value: DEFAULT_TRACE_TOLERANCE,
+    min: MIN_TRACE_TOLERANCE,
+    max: MAX_TRACE_TOLERANCE,
+    step: TRACE_TOLERANCE_STEP,
+    valueId: "tolerance-value"
+  })}
       ${renderRangeControl({
-        id: "stroke-width-slider",
-        label: "Main stroke thickness",
-        value: DEFAULT_STROKE_WIDTH,
-        min: 20,
-        max: 90,
-        step: 2,
-        valueId: "stroke-width-value"
-      })}
+    id: "stroke-width-slider",
+    label: "Main stroke thickness",
+    value: DEFAULT_STROKE_WIDTH,
+    min: 20,
+    max: 90,
+    step: 2,
+    valueId: "stroke-width-value"
+  })}
     `,
-    true
-  )}
+  true
+)}
                 ${renderOptionsGroup(
-    "Gridline settings",
-    `
+  "Gridline settings",
+  `
       ${renderRangeControl({
-        id: "gridline-stroke-width-slider",
-        label: "Gridline thickness",
-        value: DEFAULT_GRIDLINE_STROKE_WIDTH,
-        min: 0.5,
-        max: 8,
-        step: 0.5,
-        valueId: "gridline-stroke-width-value"
-      })}
+    id: "gridline-stroke-width-slider",
+    label: "Gridline thickness",
+    value: DEFAULT_GRIDLINE_STROKE_WIDTH,
+    min: 0.5,
+    max: 8,
+    step: 0.5,
+    valueId: "gridline-stroke-width-value"
+  })}
       ${renderColorControl(
-        "gridline-color-picker",
-        "Gridline colour",
-        DEFAULT_GRIDLINE_COLOR
-      )}
+    "gridline-color-picker",
+    "Gridline colour",
+    DEFAULT_GRIDLINE_COLOR
+  )}
       <fieldset class="worksheet-app__checks" aria-label="Gridline visibility">
         ${renderToggleControl("show-baseline-guide", "Baseline", true)}
         ${renderToggleControl("show-descender-guide", "Descender", false)}
@@ -262,185 +273,185 @@ app.innerHTML = `
         ${renderToggleControl("show-ascender-guide", "Ascender", false)}
       </fieldset>
     `
-  )}
+)}
                 ${renderOptionsGroup(
-    "Advanced settings",
-    `
+  "Advanced settings",
+  `
       ${renderRangeControl({
-        id: "target-bend-rate-slider",
-        label: "Target maximum bend rate",
-        value: DEFAULT_JOIN_SPACING.targetBendRate,
-        min: 0,
-        max: 60,
-        step: 1,
-        valueId: "target-bend-rate-value"
-      })}
+    id: "target-bend-rate-slider",
+    label: "Target maximum bend rate",
+    value: DEFAULT_JOIN_SPACING.targetBendRate,
+    min: 0,
+    max: 60,
+    step: 1,
+    valueId: "target-bend-rate-value"
+  })}
       ${renderRangeControl({
-        id: "min-sidebearing-gap-slider",
-        label: "Minimum sidebearing gap",
-        value: DEFAULT_JOIN_SPACING.minSidebearingGap,
-        min: -300,
-        max: 200,
-        step: 5,
-        valueId: "min-sidebearing-gap-value"
-      })}
+    id: "min-sidebearing-gap-slider",
+    label: "Minimum sidebearing gap",
+    value: DEFAULT_JOIN_SPACING.minSidebearingGap,
+    min: -300,
+    max: 200,
+    step: 5,
+    valueId: "min-sidebearing-gap-value"
+  })}
       ${renderRangeControl({
-        id: "bend-search-min-sidebearing-gap-slider",
-        label: "Search minimum sidebearing gap",
-        value: DEFAULT_JOIN_SPACING.bendSearchMinSidebearingGap,
-        min: -300,
-        max: 200,
-        step: 5,
-        valueId: "bend-search-min-sidebearing-gap-value"
-      })}
+    id: "bend-search-min-sidebearing-gap-slider",
+    label: "Search minimum sidebearing gap",
+    value: DEFAULT_JOIN_SPACING.bendSearchMinSidebearingGap,
+    min: -300,
+    max: 200,
+    step: 5,
+    valueId: "bend-search-min-sidebearing-gap-value"
+  })}
       ${renderRangeControl({
-        id: "bend-search-max-sidebearing-gap-slider",
-        label: "Search maximum sidebearing gap",
-        value: DEFAULT_JOIN_SPACING.bendSearchMaxSidebearingGap,
-        min: -100,
-        max: 300,
-        step: 5,
-        valueId: "bend-search-max-sidebearing-gap-value"
-      })}
+    id: "bend-search-max-sidebearing-gap-slider",
+    label: "Search maximum sidebearing gap",
+    value: DEFAULT_JOIN_SPACING.bendSearchMaxSidebearingGap,
+    min: -100,
+    max: 300,
+    step: 5,
+    valueId: "bend-search-max-sidebearing-gap-value"
+  })}
       ${renderRangeControl({
-        id: "exit-handle-scale-slider",
-        label: "p0-p1 handle scale",
-        value: DEFAULT_JOIN_SPACING.exitHandleScale,
-        min: 0,
-        max: 2,
-        step: 0.05,
-        valueId: "exit-handle-scale-value"
-      })}
+    id: "exit-handle-scale-slider",
+    label: "p0-p1 handle scale",
+    value: DEFAULT_JOIN_SPACING.exitHandleScale,
+    min: 0,
+    max: 2,
+    step: 0.05,
+    valueId: "exit-handle-scale-value"
+  })}
       ${renderRangeControl({
-        id: "entry-handle-scale-slider",
-        label: "p2-p3 handle scale",
-        value: DEFAULT_JOIN_SPACING.entryHandleScale,
-        min: 0,
-        max: 2,
-        step: 0.05,
-        valueId: "entry-handle-scale-value"
-      })}
+    id: "entry-handle-scale-slider",
+    label: "p2-p3 handle scale",
+    value: DEFAULT_JOIN_SPACING.entryHandleScale,
+    min: 0,
+    max: 2,
+    step: 0.05,
+    valueId: "entry-handle-scale-value"
+  })}
       <fieldset class="worksheet-app__checks" aria-label="Advanced writing settings">
         ${renderToggleControl("include-initial-lead-in", "Initial lead-in", true)}
         ${renderToggleControl("include-final-lead-out", "Final lead-out", true)}
       </fieldset>
     `
-  )}
+)}
                 ${renderOptionsGroup(
-    "Top word annotations",
-    `
+  "Top word annotations",
+  `
       ${renderRangeControl({
-        id: "directional-dash-spacing-slider",
-        label: "Directional dash spacing",
-        value: DEFAULT_DIRECTIONAL_DASH_SPACING,
-        min: 80,
-        max: 220,
-        step: 4,
-        valueId: "directional-dash-spacing-value"
-      })}
+    id: "directional-dash-spacing-slider",
+    label: "Directional dash spacing",
+    value: DEFAULT_DIRECTIONAL_DASH_SPACING,
+    min: 80,
+    max: 220,
+    step: 4,
+    valueId: "directional-dash-spacing-value"
+  })}
       ${renderRangeControl({
-        id: "midpoint-density-slider",
-        label: "Midpoint density",
-        value: DEFAULT_MIDPOINT_DENSITY,
-        min: 120,
-        max: 600,
-        step: 20,
-        valueId: "midpoint-density-value"
-      })}
+    id: "midpoint-density-slider",
+    label: "Midpoint density",
+    value: DEFAULT_MIDPOINT_DENSITY,
+    min: 120,
+    max: 600,
+    step: 20,
+    valueId: "midpoint-density-value"
+  })}
       ${renderRangeControl({
-        id: "turn-radius-slider",
-        label: "Turn radius",
-        value: DEFAULT_TURN_RADIUS,
-        min: 0,
-        max: 48,
-        step: 1,
-        valueId: "turn-radius-value"
-      })}
+    id: "turn-radius-slider",
+    label: "Turn radius",
+    value: DEFAULT_TURN_RADIUS,
+    min: 0,
+    max: 48,
+    step: 1,
+    valueId: "turn-radius-value"
+  })}
       ${renderRangeControl({
-        id: "u-turn-length-slider",
-        label: "U-turn length",
-        value: DEFAULT_U_TURN_LENGTH,
-        min: 0,
-        max: 300,
-        step: 1,
-        valueId: "u-turn-length-value"
-      })}
+    id: "u-turn-length-slider",
+    label: "U-turn length",
+    value: DEFAULT_U_TURN_LENGTH,
+    min: 0,
+    max: 300,
+    step: 1,
+    valueId: "u-turn-length-value"
+  })}
       ${renderRangeControl({
-        id: "arrow-length-slider",
-        label: "Other arrow length",
-        value: DEFAULT_ARROW_LENGTH,
-        min: 0,
-        max: 300,
-        step: 1,
-        valueId: "arrow-length-value"
-      })}
+    id: "arrow-length-slider",
+    label: "Other arrow length",
+    value: DEFAULT_ARROW_LENGTH,
+    min: 0,
+    max: 300,
+    step: 1,
+    valueId: "arrow-length-value"
+  })}
       ${renderRangeControl({
-        id: "arrow-head-size-slider",
-        label: "Arrow head size",
-        value: DEFAULT_ARROW_HEAD_SIZE,
-        min: 0,
-        max: 64,
-        step: 1,
-        valueId: "arrow-head-size-value"
-      })}
+    id: "arrow-head-size-slider",
+    label: "Arrow head size",
+    value: DEFAULT_ARROW_HEAD_SIZE,
+    min: 0,
+    max: 64,
+    step: 1,
+    valueId: "arrow-head-size-value"
+  })}
       ${renderRangeControl({
-        id: "arrow-stroke-width-slider",
-        label: "Arrow stroke width",
-        value: DEFAULT_ARROW_STROKE_WIDTH,
-        min: 1,
-        max: 14,
-        step: 0.5,
-        valueId: "arrow-stroke-width-value"
-      })}
+    id: "arrow-stroke-width-slider",
+    label: "Arrow stroke width",
+    value: DEFAULT_ARROW_STROKE_WIDTH,
+    min: 1,
+    max: 14,
+    step: 0.5,
+    valueId: "arrow-stroke-width-value"
+  })}
       ${renderRangeControl({
-        id: "number-size-slider",
-        label: "Number size",
-        value: DEFAULT_NUMBER_SIZE,
-        min: 8,
-        max: 72,
-        step: 1,
-        valueId: "number-size-value"
-      })}
+    id: "number-size-slider",
+    label: "Number size",
+    value: DEFAULT_NUMBER_SIZE,
+    min: 8,
+    max: 72,
+    step: 1,
+    valueId: "number-size-value"
+  })}
       ${renderRangeControl({
-        id: "number-offset-slider",
-        label: "Number offset",
-        value: DEFAULT_NUMBER_PATH_OFFSET,
-        min: -80,
-        max: 80,
-        step: 1,
-        valueId: "number-offset-value"
-      })}
+    id: "number-offset-slider",
+    label: "Number offset",
+    value: DEFAULT_NUMBER_PATH_OFFSET,
+    min: -80,
+    max: 80,
+    step: 1,
+    valueId: "number-offset-value"
+  })}
       <fieldset class="worksheet-app__checks" aria-label="Top word annotations">
         ${renderToggleControl(
-          "annotation-directional-dash",
-          "Directional dash",
-          DEFAULT_ANNOTATION_VISIBILITY["directional-dash"],
-          'data-annotation-kind="directional-dash"'
-        )}
+    "annotation-directional-dash",
+    "Directional dash",
+    DEFAULT_ANNOTATION_VISIBILITY["directional-dash"],
+    'data-annotation-kind="directional-dash"'
+  )}
         ${renderToggleControl(
-          "annotation-turning-point",
-          "Turns",
-          DEFAULT_ANNOTATION_VISIBILITY["turning-point"],
-          'data-annotation-kind="turning-point"'
-        )}
+    "annotation-turning-point",
+    "Turns",
+    DEFAULT_ANNOTATION_VISIBILITY["turning-point"],
+    'data-annotation-kind="turning-point"'
+  )}
         ${renderToggleControl(
-          "annotation-start-arrow",
-          "Starts",
-          DEFAULT_ANNOTATION_VISIBILITY["start-arrow"],
-          'data-annotation-kind="start-arrow"'
-        )}
+    "annotation-start-arrow",
+    "Starts",
+    DEFAULT_ANNOTATION_VISIBILITY["start-arrow"],
+    'data-annotation-kind="start-arrow"'
+  )}
         ${renderToggleControl(
-          "annotation-draw-order-number",
-          "Numbers",
-          DEFAULT_ANNOTATION_VISIBILITY["draw-order-number"],
-          'data-annotation-kind="draw-order-number"'
-        )}
+    "annotation-draw-order-number",
+    "Numbers",
+    DEFAULT_ANNOTATION_VISIBILITY["draw-order-number"],
+    'data-annotation-kind="draw-order-number"'
+  )}
         ${renderToggleControl(
-          "annotation-midpoint-arrow",
-          "Midpoints",
-          DEFAULT_ANNOTATION_VISIBILITY["midpoint-arrow"],
-          'data-annotation-kind="midpoint-arrow"'
-        )}
+    "annotation-midpoint-arrow",
+    "Midpoints",
+    DEFAULT_ANNOTATION_VISIBILITY["midpoint-arrow"],
+    'data-annotation-kind="midpoint-arrow"'
+  )}
         ${renderToggleControl("offset-arrow-lanes", "Offset lanes", true)}
         ${renderToggleControl("always-offset-arrow-lanes", "Always offset lanes", false)}
       </fieldset>
@@ -448,8 +459,8 @@ app.innerHTML = `
       ${renderColorControl("number-color-picker", "Number colour", DEFAULT_NUMBER_COLOR)}
       ${renderColorControl("arrow-color-picker", "Arrow colour", DEFAULT_ARROW_COLOR)}
     `,
-    true
-  )}
+  true
+)}
               </div>
             </details>
           </div>
@@ -475,7 +486,7 @@ app.innerHTML = `
   </div>
 `;
 
-const wordLabel = document.querySelector<HTMLHeadingElement>("#word-label");
+const wordInput = document.querySelector<HTMLInputElement>("#word-input");
 const traceSvg = document.querySelector<SVGSVGElement>("#trace-svg");
 const showMeButton = document.querySelector<HTMLButtonElement>("#show-me-button");
 const successOverlay = document.querySelector<HTMLDivElement>("#success-overlay");
@@ -555,7 +566,7 @@ const annotationToggleEls = Array.from(
 );
 
 if (
-  !wordLabel ||
+  !wordInput ||
   !traceSvg ||
   !showMeButton ||
   !successOverlay ||
@@ -738,6 +749,8 @@ const syncLabels = () => {
 const normalizeColor = (value: string): string | null =>
   /^#[0-9a-fA-F]{6}$/.test(value) ? value.toLowerCase() : null;
 
+const normalizeWord = (word: string): string => word.trim().toLowerCase();
+
 const getSliderValuePrecision = (input: HTMLInputElement): number => {
   const step = input.step;
   if (!step || step === "any") {
@@ -819,6 +832,7 @@ const parseColorSearchParam = (params: URLSearchParams, key: string): string | n
   normalizeColor(params.get(key) ?? "");
 
 const syncSettingsControlsFromState = () => {
+  wordInput.value = currentWord;
   currentTraceTolerance = syncSliderValue(toleranceSlider, currentTraceTolerance);
   currentStrokeWidth = syncSliderValue(strokeWidthSlider, currentStrokeWidth);
   currentGridlineStrokeWidth = syncSliderValue(
@@ -880,6 +894,10 @@ const syncSettingsUrl = () => {
   WRITING_APP_URL_PARAM_KEYS.forEach((key) => {
     url.searchParams.delete(key);
   });
+
+  if (currentWord !== "zephyr") {
+    url.searchParams.set("word", currentWord);
+  }
 
   if (currentTraceTolerance !== DEFAULT_TRACE_TOLERANCE) {
     url.searchParams.set("tolerance", String(currentTraceTolerance));
@@ -1011,6 +1029,11 @@ const syncSettingsUrl = () => {
 
 const applyUrlSettings = () => {
   const params = new URLSearchParams(window.location.search);
+  const wordParam = params.get("word");
+
+  if (wordParam !== null) {
+    currentWord = normalizeWord(wordParam);
+  }
 
   currentTraceTolerance =
     parseSliderSearchParam(params, "tolerance", toleranceSlider) ?? currentTraceTolerance;
@@ -1984,7 +2007,7 @@ const stopDemoAnimation = () => {
 
   isDemoPlaying = false;
   showMeButton.disabled = false;
-  showMeButton.textContent = "Show me";
+  showMeButton.textContent = "Animate";
 
   demoStrokeEls.forEach((el, index) => {
     const length = demoStrokeLengths[index] ?? 0.001;
@@ -2189,55 +2212,55 @@ const setupScene = (path: WritingPath, width: number, height: number, offsetY: n
   const annotations = compileFormationAnnotations(preparedPath, {
     directionalDashes: annotationVisibility["directional-dash"]
       ? {
-          spacing: currentDirectionalDashSpacing,
-          head: {
-            length: currentArrowHeadSize,
-            width: currentArrowHeadSize * ARROWHEAD_WIDTH_RATIO,
-            tipExtension: currentArrowHeadSize * ARROWHEAD_TIP_OVERHANG_RATIO
-          }
+        spacing: currentDirectionalDashSpacing,
+        head: {
+          length: currentArrowHeadSize,
+          width: currentArrowHeadSize * ARROWHEAD_WIDTH_RATIO,
+          tipExtension: currentArrowHeadSize * ARROWHEAD_TIP_OVERHANG_RATIO
         }
+      }
       : false,
     turningPoints: annotationVisibility["turning-point"]
       ? {
-          offset: currentTurnRadius,
-          stemLength: currentUTurnLength * STRAIGHT_ARROW_LENGTH_RATIO,
-          head: {
-            length: currentArrowHeadSize,
-            width: currentArrowHeadSize * ARROWHEAD_WIDTH_RATIO,
-            tipExtension: currentArrowHeadSize * ARROWHEAD_TIP_OVERHANG_RATIO
-          }
+        offset: currentTurnRadius,
+        stemLength: currentUTurnLength * STRAIGHT_ARROW_LENGTH_RATIO,
+        head: {
+          length: currentArrowHeadSize,
+          width: currentArrowHeadSize * ARROWHEAD_WIDTH_RATIO,
+          tipExtension: currentArrowHeadSize * ARROWHEAD_TIP_OVERHANG_RATIO
         }
+      }
       : false,
     startArrows: annotationVisibility["start-arrow"]
       ? {
-          length: currentArrowLength,
-          minLength: currentArrowLength * START_ARROW_MIN_LENGTH_RATIO,
-          offset: arrowLaneOffset,
-          offsetMode: arrowLaneOffsetMode,
-          head: {
-            length: currentArrowHeadSize,
-            width: currentArrowHeadSize * ARROWHEAD_WIDTH_RATIO,
-            tipExtension: currentArrowHeadSize * ARROWHEAD_TIP_OVERHANG_RATIO
-          }
+        length: currentArrowLength,
+        minLength: currentArrowLength * START_ARROW_MIN_LENGTH_RATIO,
+        offset: arrowLaneOffset,
+        offsetMode: arrowLaneOffsetMode,
+        head: {
+          length: currentArrowHeadSize,
+          width: currentArrowHeadSize * ARROWHEAD_WIDTH_RATIO,
+          tipExtension: currentArrowHeadSize * ARROWHEAD_TIP_OVERHANG_RATIO
         }
+      }
       : false,
     drawOrderNumbers: annotationVisibility["draw-order-number"]
       ? {
-          offset: 0
-        }
+        offset: 0
+      }
       : false,
     midpointArrows: annotationVisibility["midpoint-arrow"]
       ? {
-          density: currentMidpointDensity,
-          length: currentArrowLength * STRAIGHT_ARROW_LENGTH_RATIO,
-          offset: arrowLaneOffset,
-          offsetMode: arrowLaneOffsetMode,
-          head: {
-            length: currentArrowHeadSize,
-            width: currentArrowHeadSize * ARROWHEAD_WIDTH_RATIO,
-            tipExtension: currentArrowHeadSize * ARROWHEAD_TIP_OVERHANG_RATIO
-          }
+        density: currentMidpointDensity,
+        length: currentArrowLength * STRAIGHT_ARROW_LENGTH_RATIO,
+        offset: arrowLaneOffset,
+        offsetMode: arrowLaneOffsetMode,
+        head: {
+          length: currentArrowHeadSize,
+          width: currentArrowHeadSize * ARROWHEAD_WIDTH_RATIO,
+          tipExtension: currentArrowHeadSize * ARROWHEAD_TIP_OVERHANG_RATIO
         }
+      }
       : false
   });
   const visibleAnnotations = resolveVisibleFormationAnnotations(annotations, preparedPath);
@@ -2315,16 +2338,14 @@ const clearScene = () => {
   demoStrokeLengths = [];
   demoNibEl = null;
   traceSvg.innerHTML = "";
-  wordLabel.textContent = "";
   updateSuccessVisibility(false);
 };
-
-const normalizeWord = (word: string): string => word.trim().toLowerCase();
 
 const renderWord = (word: string) => {
   stopDemoAnimation();
   currentWord = normalizeWord(word);
-  wordLabel.textContent = currentWord;
+  wordInput.value = currentWord;
+  syncSettingsUrl();
 
   if (currentWord.length === 0) {
     clearScene();
@@ -2411,6 +2432,9 @@ traceSvg.addEventListener("pointerup", onPointerUp);
 traceSvg.addEventListener("pointercancel", onPointerCancel);
 showMeButton.addEventListener("click", playDemo);
 nextWordButton.addEventListener("click", goToNextWord);
+wordInput.addEventListener("input", () => {
+  renderWord(wordInput.value);
+});
 
 const rerenderFromSettings = () => {
   syncLabels();
