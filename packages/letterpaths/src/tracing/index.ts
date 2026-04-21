@@ -35,6 +35,7 @@ export {
 export type {
   AnalyzeTracingSectionsOptions,
   AnnotationArrowHead,
+  ArrowLaneOffsetMode,
   AnnotationPathCommand,
   AnnotationSource,
   CompileFormationAnnotationsOptions,

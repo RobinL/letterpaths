@@ -198,6 +198,7 @@ const createSettings = (
   numberPathOffset: DEFAULT_NUMBER_PATH_OFFSET,
   numberColor: DEFAULT_NUMBER_COLOR,
   offsetArrowLanes: true,
+  alwaysOffsetArrowLanes: false,
   visibility: cloneVisibility(visibility),
   arrowColor: DEFAULT_ARROW_COLOR,
   strokeColor
@@ -637,6 +638,15 @@ function renderAnnotationControlSection(
               ${settings.offsetArrowLanes ? "checked" : ""}
             />
             <span>Offset lanes</span>
+          </label>
+          <label class="worksheet-app__check">
+            <input
+              type="checkbox"
+              data-scope="${scope}"
+              data-setting="alwaysOffsetArrowLanes"
+              ${settings.alwaysOffsetArrowLanes ? "checked" : ""}
+            />
+            <span>Always offset lanes</span>
           </label>
         </fieldset>
         ${renderColorControl(scope, "strokeColor", "Word stroke colour", settings.strokeColor)}
@@ -1386,6 +1396,8 @@ document.querySelectorAll<HTMLInputElement>("[data-scope][data-setting]").forEac
       settings.numberPathOffset = Number(input.value);
     } else if (setting === "offsetArrowLanes") {
       settings.offsetArrowLanes = input.checked;
+    } else if (setting === "alwaysOffsetArrowLanes") {
+      settings.alwaysOffsetArrowLanes = input.checked;
     } else if (setting === "arrowColor" || setting === "numberColor" || setting === "strokeColor") {
       const nextColor = normalizeColor(input.value);
       if (!nextColor) {

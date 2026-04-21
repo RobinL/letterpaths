@@ -23,6 +23,7 @@ export type FormationAnnotationMarkupOptions = {
   numberPathOffset: number;
   numberColor: string;
   offsetArrowLanes: boolean;
+  alwaysOffsetArrowLanes: boolean;
   visibility: FormationAnnotationVisibility;
 };
 
@@ -98,6 +99,7 @@ export const buildFormationAnnotationMarkup = (
   const arrowLength = Math.max(0, options.arrowLength);
   const arrowHeadSize = Math.max(0, options.arrowHeadSize);
   const arrowLaneOffset = options.offsetArrowLanes ? options.turnRadius : 0;
+  const arrowLaneOffsetMode = options.alwaysOffsetArrowLanes ? "always" : "bidirectional-only";
   const annotations = compileFormationAnnotations(preparedPath, {
     directionalDashes: options.visibility["directional-dash"]
       ? {
@@ -125,6 +127,7 @@ export const buildFormationAnnotationMarkup = (
           length: arrowLength,
           minLength: arrowLength * START_ARROW_MIN_LENGTH_RATIO,
           offset: arrowLaneOffset,
+          offsetMode: arrowLaneOffsetMode,
           head: {
             length: arrowHeadSize,
             width: arrowHeadSize * ARROWHEAD_WIDTH_RATIO,
@@ -142,6 +145,7 @@ export const buildFormationAnnotationMarkup = (
           density: options.midpointDensity,
           length: arrowLength * STRAIGHT_ARROW_LENGTH_RATIO,
           offset: arrowLaneOffset,
+          offsetMode: arrowLaneOffsetMode,
           head: {
             length: arrowHeadSize,
             width: arrowHeadSize * ARROWHEAD_WIDTH_RATIO,
