@@ -44,25 +44,25 @@ type BuiltInLetterOption = {
   payload: unknown;
 };
 
-const builtInLetterModules = import.meta.glob(
-  "../../letterpaths/src/data/bezier/entry-low/*.json",
-  {
+type BuiltInLetterVariant = "low" | "high";
+
+const builtInLetterModulesByVariant: Record<BuiltInLetterVariant, Record<string, unknown>> = {
+  low: import.meta.glob("../../letterpaths/src/data/bezier/entry-low/*.json", {
     eager: true,
     import: "default"
-  }
-) as Record<string, unknown>;
-const builtInLetterOptions: BuiltInLetterOption[] = Object.entries(
-  builtInLetterModules
-)
-  .map(([path, payload]) => ({
-    path,
-    payload,
-    label: formatBuiltInLetterLabel(path, payload)
-  }))
-  .sort((first, second) => first.label.localeCompare(second.label));
-const builtInLettersByPath = new Map(
-  builtInLetterOptions.map((option) => [option.path, option])
-);
+  }) as Record<string, unknown>,
+  high: import.meta.glob("../../letterpaths/src/data/bezier/entry-high/*.json", {
+    eager: true,
+    import: "default"
+  }) as Record<string, unknown>
+};
+const builtInLetterOptionsByVariant: Record<
+  BuiltInLetterVariant,
+  BuiltInLetterOption[]
+> = {
+  low: buildBuiltInLetterOptions(builtInLetterModulesByVariant.low),
+  high: buildBuiltInLetterOptions(builtInLetterModulesByVariant.high)
+};
 
 const app = document.querySelector<HTMLDivElement>("#app");
 
@@ -137,6 +137,13 @@ app.innerHTML = `
         </div>
         <div class="bezier-editor__load">
           <label class="control">
+            <span>Entry variant</span>
+            <select id="editor-built-in-variant">
+              <option value="low">Low</option>
+              <option value="high">High</option>
+            </select>
+          </label>
+          <label class="control">
             <span>Existing JSON</span>
             <select id="editor-built-in-select"></select>
           </label>
@@ -209,13 +216,16 @@ const editorLoadDrop =
   document.querySelector<HTMLDivElement>("#editor-load-drop")!;
 const builtInLetterSelectEl =
   document.querySelector<HTMLSelectElement>("#editor-built-in-select")!;
+const builtInVariantSelectEl =
+  document.querySelector<HTMLSelectElement>("#editor-built-in-variant")!;
 
 const state = {
   editorIndex: 0,
   shortThreshold: Number(shortThresholdEl.value) || 12,
   drawMode: false,
   dotMode: false,
-  dotSize: Number(dotSizeEl.value) || 18
+  dotSize: Number(dotSizeEl.value) || 18,
+  builtInVariant: "low" as BuiltInLetterVariant
 };
 
 const MAX_TURN_ANGLE = 45;
@@ -408,11 +418,16 @@ editorLoadInput.addEventListener("change", async () => {
   editorLoadInput.value = "";
 });
 builtInLetterSelectEl.addEventListener("change", () => {
-  const option = builtInLettersByPath.get(builtInLetterSelectEl.value);
-  if (!option) {
+  loadSelectedBuiltInLetter();
+});
+builtInVariantSelectEl.addEventListener("change", () => {
+  const nextVariant = normalizeBuiltInVariant(builtInVariantSelectEl.value);
+  if (!nextVariant) {
     return;
   }
-  loadBuiltInLetter(option);
+  const previousPath = builtInLetterSelectEl.value;
+  state.builtInVariant = nextVariant;
+  populateBuiltInLetterSelectForVariant(previousPath, true);
 });
 ["dragenter", "dragover"].forEach((eventName) => {
   editorLoadDrop.addEventListener(eventName, (event) => {
@@ -662,22 +677,46 @@ editorSvg.addEventListener("keydown", onEditorKeyDown);
 updateEditorUI();
 
 function populateBuiltInLetterSelect() {
+  populateBuiltInLetterSelectForVariant();
+}
+
+function populateBuiltInLetterSelectForVariant(
+  previousPath?: string,
+  autoLoad = false
+) {
+  const options = builtInLetterOptionsByVariant[state.builtInVariant];
+  const previousOption = previousPath
+    ? getBuiltInLetterOptionByPath(state.builtInVariant, previousPath) ??
+      getBuiltInLetterOptionByChar(
+        state.builtInVariant,
+        getBuiltInLetterChar(previousPath)
+      )
+    : null;
+
+  builtInVariantSelectEl.value = state.builtInVariant;
+  builtInLetterSelectEl.innerHTML = "";
+
   const placeholder = document.createElement("option");
   placeholder.value = "";
   placeholder.textContent =
-    builtInLetterOptions.length > 0
-      ? "Choose an entry-low letter..."
-      : "No built-in letters found";
+    options.length > 0
+      ? `Choose an entry-${state.builtInVariant} letter...`
+      : `No entry-${state.builtInVariant} letters found`;
   builtInLetterSelectEl.append(placeholder);
 
-  builtInLetterOptions.forEach((option) => {
+  options.forEach((option) => {
     const optionEl = document.createElement("option");
     optionEl.value = option.path;
     optionEl.textContent = option.label;
     builtInLetterSelectEl.append(optionEl);
   });
 
-  builtInLetterSelectEl.disabled = builtInLetterOptions.length === 0;
+  builtInLetterSelectEl.disabled = options.length === 0;
+  builtInLetterSelectEl.value = previousOption?.path ?? "";
+
+  if (autoLoad && builtInLetterSelectEl.value) {
+    loadSelectedBuiltInLetter();
+  }
 }
 
 function loadBuiltInLetter(option: BuiltInLetterOption) {
@@ -688,6 +727,17 @@ function loadBuiltInLetter(option: BuiltInLetterOption) {
   }
   setEditorCurves(result.curves, result.context, result.label);
   editorStatusEl.textContent = `Loaded ${result.label}.`;
+}
+
+function loadSelectedBuiltInLetter() {
+  const option = getBuiltInLetterOptionByPath(
+    state.builtInVariant,
+    builtInLetterSelectEl.value
+  );
+  if (!option) {
+    return;
+  }
+  loadBuiltInLetter(option);
 }
 
 async function handleEditorLoadFile(file: File) {
@@ -1473,6 +1523,52 @@ function formatBuiltInLetterLabel(path: string, payload: unknown) {
     return formatGlyphLabel(payload.glyph);
   }
   return path.split("/").pop()?.replace(/\.json$/u, "") ?? path;
+}
+
+function buildBuiltInLetterOptions(modules: Record<string, unknown>) {
+  return Object.entries(modules)
+    .map(([path, payload]) => ({
+      path,
+      payload,
+      label: formatBuiltInLetterLabel(path, payload)
+    }))
+    .sort((first, second) => first.label.localeCompare(second.label));
+}
+
+function normalizeBuiltInVariant(
+  value: string
+): BuiltInLetterVariant | null {
+  return value === "low" || value === "high" ? value : null;
+}
+
+function getBuiltInLetterOptionByPath(
+  variant: BuiltInLetterVariant,
+  path: string
+) {
+  return builtInLetterOptionsByVariant[variant].find(
+    (option) => option.path === path
+  );
+}
+
+function getBuiltInLetterOptionByChar(
+  variant: BuiltInLetterVariant,
+  char: string | null
+) {
+  if (!char) {
+    return null;
+  }
+  return builtInLetterOptionsByVariant[variant].find((option) => {
+    if (!isBezierLetter(option.payload)) {
+      return false;
+    }
+    return option.payload.glyph?.char === char;
+  });
+}
+
+function getBuiltInLetterChar(path: string) {
+  const fileName = path.split("/").pop();
+  const match = fileName?.match(/^([^-]+)/u);
+  return match?.[1] ?? null;
 }
 
 function buildEditorCurvesFromLetter(letter: BezierLetter): {
