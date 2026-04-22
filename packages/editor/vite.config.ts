@@ -10,6 +10,7 @@ export default defineConfig(({ command }) => ({
       input: {
         main: path.resolve(__dirname, "index.html"),
         editor: path.resolve(__dirname, "editor.html"),
+        gallery: path.resolve(__dirname, "gallery.html"),
         joinStats: path.resolve(__dirname, "join_stats/index.html"),
       },
     },
