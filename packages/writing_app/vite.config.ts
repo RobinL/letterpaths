@@ -13,6 +13,10 @@ export default defineConfig(({ command }) => ({
           __dirname,
           "cursive_worksheet_generator/index.html"
         ),
+        singleLetterWorksheetGenerator: path.resolve(
+          __dirname,
+          "single_letter_worksheet_generator/index.html"
+        ),
         scorePoints: path.resolve(__dirname, "score_points/index.html"),
         snake: path.resolve(__dirname, "snake/index.html")
       }

@@ -1,0 +1,1838 @@
+import "./style.css";
+import {
+  CubicBezier,
+  analyzeTracingSections,
+  compileTracingPath,
+  getCursiveLetterVariant,
+  getPrintLetter,
+  type BezierLetter,
+  type FormationAnnotation,
+  type HandwritingStyle,
+  type LetterGuides,
+  type PreparedTracingPath,
+  type WritingPath
+} from "letterpaths";
+import {
+  buildFormationAnnotationMarkup,
+  DEFAULT_FORMATION_ANNOTATION_VISIBILITY,
+  EMPTY_FORMATION_ANNOTATION_VISIBILITY,
+  type FormationAnnotationMarkupOptions,
+  type FormationAnnotationVisibility
+} from "./formation-annotation-markup";
+import {
+  buildPathD,
+  buildShiftedHandwritingLayout,
+  type ShiftedWordLayout
+} from "./shared";
+
+type AnnotationScope = "top" | "practice";
+type SingleLetterStyle = Extract<HandwritingStyle, "pre-cursive" | "print">;
+
+type WorksheetAnnotationSettings = FormationAnnotationMarkupOptions & {
+  arrowColor: string;
+  strokeColor: string;
+};
+
+type WorksheetState = {
+  letter: string;
+  style: SingleLetterStyle;
+  previewZoom: number;
+  practiceRowHeightMm: number;
+  practiceRepeatCount: number;
+  strokeWidth: number;
+  showBaselineGuide: boolean;
+  showXHeightGuide: boolean;
+  showAscenderGuide: boolean;
+  showDescenderGuide: boolean;
+  gridlineStrokeWidth: number;
+  gridlineColor: string;
+  keepInitialLeadIn: boolean;
+  keepFinalLeadOut: boolean;
+  top: WorksheetAnnotationSettings;
+  practice: WorksheetAnnotationSettings;
+};
+
+type RangeControlOptions = {
+  id: string;
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  valueId?: string;
+  attrs?: string;
+};
+
+const LETTERS = "abcdefghijklmnopqrstuvwxyz".split("");
+const DEFAULT_LETTER = "a";
+const DEFAULT_STYLE: SingleLetterStyle = "pre-cursive";
+const DEFAULT_DIRECTIONAL_DASH_SPACING = 96;
+const DEFAULT_MIDPOINT_DENSITY = 320;
+const DEFAULT_TURN_RADIUS = 13;
+const DEFAULT_U_TURN_LENGTH = 53;
+const DEFAULT_ARROW_LENGTH = 53;
+const DEFAULT_ARROW_HEAD_SIZE = 26;
+const DEFAULT_ARROW_STROKE_WIDTH = 5.5;
+const DEFAULT_NUMBER_SIZE = DEFAULT_TURN_RADIUS * 2;
+const DEFAULT_NUMBER_PATH_OFFSET = 0;
+const DEFAULT_NUMBER_COLOR = "#3f454b";
+const DEFAULT_ARROW_COLOR = "#ffffff";
+const DEFAULT_TOP_STROKE_COLOR = "#83b0dd";
+const DEFAULT_PRACTICE_STROKE_COLOR = "#d5dbe2";
+const DEFAULT_PRACTICE_ROW_HEIGHT_MM = 24;
+const DEFAULT_PRACTICE_REPEAT_COUNT = 7;
+const DEFAULT_STROKE_WIDTH = 54;
+const DEFAULT_GRIDLINE_STROKE_WIDTH = 1;
+const DEFAULT_GRIDLINE_COLOR = "#ffb35c";
+const DEFAULT_PREVIEW_ZOOM = 100;
+const PRACTICE_AREA_HEIGHT_MM = 178;
+const ASCENDER_GUIDE_RATIO = 0.63;
+const DESCENDER_GUIDE_RATIO = 0.66;
+const PNG_EXPORT_SCALE = 2;
+const SVG_NS = "http://www.w3.org/2000/svg";
+const WORKSHEET_SVG_EXPORT_STYLES = `
+  .worksheet-word__stroke {
+    fill: none;
+    stroke: var(--worksheet-word-stroke, #d5dbe2);
+    stroke-width: var(--worksheet-word-stroke-width, 54);
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-opacity: 0.92;
+  }
+  .worksheet-word--top .worksheet-word__stroke {
+    stroke: var(--worksheet-word-stroke, #bac4ce);
+    stroke-opacity: 1;
+  }
+  .worksheet-word__guide {
+    stroke: var(--worksheet-guide-color, #b3bec7);
+    stroke-width: var(--worksheet-guide-stroke-width, 2);
+    vector-effect: non-scaling-stroke;
+  }
+  .writing-app__section-arrow {
+    fill: none;
+    stroke-width: var(--formation-arrow-stroke-width, 5.6);
+    stroke-linecap: butt;
+    stroke-linejoin: round;
+  }
+  .writing-app__section-arrow--formation {
+    stroke: var(--formation-arrow-color, #ffffff);
+  }
+  .writing-app__section-arrowhead--formation {
+    fill: var(--formation-arrow-color, #ffffff);
+    stroke: none;
+  }
+  .writing-app__annotation-number {
+    font-weight: 800;
+  }
+`;
+const WORKSHEET_URL_PARAM_KEYS = [
+  "letter",
+  "style",
+  "previewZoom",
+  "practiceSize",
+  "practiceRepeats",
+  "strokeWidth",
+  "showBaselineGuide",
+  "showXHeightGuide",
+  "showAscenderGuide",
+  "showDescenderGuide",
+  "gridlineStrokeWidth",
+  "gridlineColor",
+  "keepInitialLeadIn",
+  "keepFinalLeadOut",
+  "topDirectionalDashSpacing",
+  "topMidpointDensity",
+  "topTurnRadius",
+  "topUTurnLength",
+  "topArrowLength",
+  "topArrowHeadSize",
+  "topArrowStrokeWidth",
+  "topNumberSize",
+  "topNumberPathOffset",
+  "topOffsetArrowLanes",
+  "topAlwaysOffsetArrowLanes",
+  "topStrokeColor",
+  "topNumberColor",
+  "topArrowColor",
+  "topDirectionalDash",
+  "topTurningPoint",
+  "topStartArrow",
+  "topDrawOrderNumber",
+  "topMidpointArrow",
+  "practiceDirectionalDashSpacing",
+  "practiceMidpointDensity",
+  "practiceTurnRadius",
+  "practiceUTurnLength",
+  "practiceArrowLength",
+  "practiceArrowHeadSize",
+  "practiceArrowStrokeWidth",
+  "practiceNumberSize",
+  "practiceNumberPathOffset",
+  "practiceOffsetArrowLanes",
+  "practiceAlwaysOffsetArrowLanes",
+  "practiceStrokeColor",
+  "practiceNumberColor",
+  "practiceArrowColor",
+  "practiceDirectionalDash",
+  "practiceTurningPoint",
+  "practiceStartArrow",
+  "practiceDrawOrderNumber",
+  "practiceMidpointArrow"
+] as const;
+const SCOPED_NUMERIC_SETTING_KEYS = [
+  "directionalDashSpacing",
+  "midpointDensity",
+  "turnRadius",
+  "uTurnLength",
+  "arrowLength",
+  "arrowHeadSize",
+  "arrowStrokeWidth",
+  "numberSize",
+  "numberPathOffset"
+] as const;
+const SCOPED_BOOLEAN_SETTING_KEYS = ["offsetArrowLanes", "alwaysOffsetArrowLanes"] as const;
+const SCOPED_COLOR_SETTING_KEYS = ["strokeColor", "numberColor", "arrowColor"] as const;
+const SCOPED_VISIBILITY_PARAM_SUFFIXES: Record<FormationAnnotation["kind"], string> = {
+  "directional-dash": "DirectionalDash",
+  "turning-point": "TurningPoint",
+  "start-arrow": "StartArrow",
+  "draw-order-number": "DrawOrderNumber",
+  "midpoint-arrow": "MidpointArrow"
+};
+
+const app = document.querySelector<HTMLDivElement>("#app");
+
+if (!app) {
+  throw new Error("Missing #app element for single letter worksheet generator.");
+}
+
+document.body.classList.add("worksheet-body");
+app.classList.add("worksheet-root");
+
+const cloneVisibility = (
+  visibility: FormationAnnotationVisibility
+): FormationAnnotationVisibility => ({
+  "directional-dash": visibility["directional-dash"],
+  "turning-point": visibility["turning-point"],
+  "start-arrow": visibility["start-arrow"],
+  "draw-order-number": visibility["draw-order-number"],
+  "midpoint-arrow": visibility["midpoint-arrow"]
+});
+
+const createSettings = (
+  visibility: FormationAnnotationVisibility,
+  strokeColor: string
+): WorksheetAnnotationSettings => ({
+  directionalDashSpacing: DEFAULT_DIRECTIONAL_DASH_SPACING,
+  midpointDensity: DEFAULT_MIDPOINT_DENSITY,
+  turnRadius: DEFAULT_TURN_RADIUS,
+  uTurnLength: DEFAULT_U_TURN_LENGTH,
+  arrowLength: DEFAULT_ARROW_LENGTH,
+  arrowHeadSize: DEFAULT_ARROW_HEAD_SIZE,
+  arrowStrokeWidth: DEFAULT_ARROW_STROKE_WIDTH,
+  numberSize: DEFAULT_NUMBER_SIZE,
+  numberPathOffset: DEFAULT_NUMBER_PATH_OFFSET,
+  numberColor: DEFAULT_NUMBER_COLOR,
+  offsetArrowLanes: true,
+  alwaysOffsetArrowLanes: false,
+  visibility: cloneVisibility(visibility),
+  arrowColor: DEFAULT_ARROW_COLOR,
+  strokeColor
+});
+
+const createDefaultState = (): WorksheetState => ({
+  letter: DEFAULT_LETTER,
+  style: DEFAULT_STYLE,
+  previewZoom: DEFAULT_PREVIEW_ZOOM,
+  practiceRowHeightMm: DEFAULT_PRACTICE_ROW_HEIGHT_MM,
+  practiceRepeatCount: DEFAULT_PRACTICE_REPEAT_COUNT,
+  strokeWidth: DEFAULT_STROKE_WIDTH,
+  showBaselineGuide: true,
+  showXHeightGuide: true,
+  showAscenderGuide: false,
+  showDescenderGuide: false,
+  gridlineStrokeWidth: DEFAULT_GRIDLINE_STROKE_WIDTH,
+  gridlineColor: DEFAULT_GRIDLINE_COLOR,
+  keepInitialLeadIn: true,
+  keepFinalLeadOut: true,
+  top: createSettings(DEFAULT_FORMATION_ANNOTATION_VISIBILITY, DEFAULT_TOP_STROKE_COLOR),
+  practice: createSettings(EMPTY_FORMATION_ANNOTATION_VISIBILITY, DEFAULT_PRACTICE_STROKE_COLOR)
+});
+
+const DEFAULT_STATE = createDefaultState();
+let state: WorksheetState = createDefaultState();
+
+app.innerHTML = `
+  <div class="worksheet-app">
+    <aside class="worksheet-app__controls" aria-label="Worksheet controls">
+      <div class="worksheet-app__controls-inner">
+        <div class="worksheet-app__heading">
+          <p class="worksheet-app__eyebrow">Worksheet generator</p>
+          <h1 class="worksheet-app__title">Single letter worksheet</h1>
+        </div>
+
+        ${renderLetterSelect()}
+        ${renderStyleSelect()}
+
+        ${renderRangeControl({
+  id: "preview-zoom-slider",
+  label: "Preview zoom",
+  value: DEFAULT_PREVIEW_ZOOM,
+  min: 50,
+  max: 200,
+  step: 5,
+  valueId: "preview-zoom-value"
+})}
+
+        ${renderRangeControl({
+  id: "practice-size-slider",
+  label: "Practice size",
+  value: DEFAULT_PRACTICE_ROW_HEIGHT_MM,
+  min: 14,
+  max: 38,
+  step: 1,
+  valueId: "practice-size-value"
+})}
+
+        ${renderRangeControl({
+  id: "practice-repeat-slider",
+  label: "Practice repeats",
+  value: DEFAULT_PRACTICE_REPEAT_COUNT,
+  min: 1,
+  max: 14,
+  step: 1,
+  valueId: "practice-repeat-value"
+})}
+
+        ${renderRangeControl({
+  id: "stroke-width-slider",
+  label: "Main stroke thickness",
+  value: DEFAULT_STROKE_WIDTH,
+  min: 20,
+  max: 90,
+  step: 2,
+  valueId: "stroke-width-value"
+})}
+
+        ${renderLetterStrokeSettings()}
+        ${renderGridlineSettings()}
+
+        ${renderAnnotationControlSection("top", "Top formation annotations", state.top)}
+        ${renderAnnotationControlSection("practice", "Practice annotations", state.practice)}
+
+        <div class="worksheet-app__button-row">
+          <button class="worksheet-app__button" id="print-worksheet-button" type="button">
+            Print worksheet
+          </button>
+          <button class="worksheet-app__button worksheet-app__button--secondary" id="download-png-button" type="button">
+            Download PNG
+          </button>
+        </div>
+        <p class="worksheet-app__status" id="worksheet-status" role="status" aria-live="polite"></p>
+      </div>
+    </aside>
+
+    <main class="worksheet-app__preview" aria-label="Worksheet preview">
+      <div class="worksheet-app__page-frame" id="worksheet-page-frame">
+        <section class="worksheet-page worksheet-page--single-letter" id="worksheet-page" aria-label="Printable worksheet"></section>
+      </div>
+    </main>
+  </div>
+`;
+
+const letterSelect = document.querySelector<HTMLSelectElement>("#worksheet-letter-select");
+const styleSelect = document.querySelector<HTMLSelectElement>("#worksheet-style-select");
+const previewZoomSlider = document.querySelector<HTMLInputElement>("#preview-zoom-slider");
+const practiceSizeSlider = document.querySelector<HTMLInputElement>("#practice-size-slider");
+const practiceRepeatSlider = document.querySelector<HTMLInputElement>("#practice-repeat-slider");
+const strokeWidthSlider = document.querySelector<HTMLInputElement>("#stroke-width-slider");
+const printButton = document.querySelector<HTMLButtonElement>("#print-worksheet-button");
+const downloadPngButton = document.querySelector<HTMLButtonElement>("#download-png-button");
+const worksheetPageFrame = document.querySelector<HTMLElement>("#worksheet-page-frame");
+const worksheetPage = document.querySelector<HTMLElement>("#worksheet-page");
+const statusEl = document.querySelector<HTMLParagraphElement>("#worksheet-status");
+
+if (
+  !letterSelect ||
+  !styleSelect ||
+  !previewZoomSlider ||
+  !practiceSizeSlider ||
+  !practiceRepeatSlider ||
+  !strokeWidthSlider ||
+  !printButton ||
+  !downloadPngButton ||
+  !worksheetPageFrame ||
+  !worksheetPage ||
+  !statusEl
+) {
+  throw new Error("Missing elements for single letter worksheet generator.");
+}
+
+const globalSettingInputs = Array.from(
+  document.querySelectorAll<HTMLInputElement>("[data-global-setting]")
+);
+const scopedSettingInputs = Array.from(
+  document.querySelectorAll<HTMLInputElement>("[data-scope][data-setting]")
+);
+const annotationKindInputs = Array.from(
+  document.querySelectorAll<HTMLInputElement>("[data-scope][data-annotation-kind]")
+);
+
+function renderLetterSelect(): string {
+  const options = LETTERS.map(
+    (letter) => `<option value="${letter}" ${letter === DEFAULT_LETTER ? "selected" : ""}>${letter}</option>`
+  ).join("");
+
+  return `
+    <label class="worksheet-app__field" for="worksheet-letter-select">
+      <span>Letter</span>
+      <select class="worksheet-app__select" id="worksheet-letter-select">
+        ${options}
+      </select>
+    </label>
+  `;
+}
+
+function renderStyleSelect(): string {
+  return `
+    <label class="worksheet-app__field" for="worksheet-style-select">
+      <span>Style</span>
+      <select class="worksheet-app__select" id="worksheet-style-select">
+        <option value="pre-cursive" selected>Pre-cursive</option>
+        <option value="print">Print</option>
+      </select>
+    </label>
+  `;
+}
+
+function renderRangeControl({
+  id,
+  label,
+  value,
+  min,
+  max,
+  step,
+  valueId = `${id}-value`,
+  attrs = ""
+}: RangeControlOptions): string {
+  return `
+    <label class="worksheet-app__field" for="${id}">
+      <span>
+        ${label}
+        <strong id="${valueId}"></strong>
+      </span>
+      <input
+        class="worksheet-app__range"
+        id="${id}"
+        type="range"
+        min="${min}"
+        max="${max}"
+        step="${step}"
+        value="${value}"
+        ${attrs}
+      />
+    </label>
+  `;
+}
+
+function renderLetterStrokeSettings(): string {
+  return `
+    <details class="worksheet-app__details">
+      <summary>Letter stroke settings</summary>
+      <div class="worksheet-app__details-body">
+        <fieldset class="worksheet-app__checks" aria-label="Letter stroke toggles">
+          ${renderGlobalToggle("include-initial-lead-in", "keepInitialLeadIn", "Initial lead-in", true)}
+          ${renderGlobalToggle("include-final-lead-out", "keepFinalLeadOut", "Final lead-out", true)}
+        </fieldset>
+      </div>
+    </details>
+  `;
+}
+
+function renderGridlineSettings(): string {
+  return `
+    <details class="worksheet-app__details">
+      <summary>Gridline settings</summary>
+      <div class="worksheet-app__details-body">
+        ${renderRangeControl({
+    id: "gridline-stroke-width-slider",
+    label: "Gridline thickness",
+    value: DEFAULT_GRIDLINE_STROKE_WIDTH,
+    min: 0.5,
+    max: 8,
+    step: 0.5,
+    valueId: "gridline-stroke-width-value",
+    attrs: 'data-global-setting="gridlineStrokeWidth"'
+  })}
+        ${renderGlobalColorControl(
+    "gridline-color-picker",
+    "gridlineColor",
+    "Gridline colour",
+    DEFAULT_GRIDLINE_COLOR
+  )}
+        <fieldset class="worksheet-app__checks" aria-label="Gridline visibility">
+          ${renderGlobalToggle("show-baseline-guide", "showBaselineGuide", "Baseline", true)}
+          ${renderGlobalToggle("show-descender-guide", "showDescenderGuide", "Descender", false)}
+          ${renderGlobalToggle("show-x-height-guide", "showXHeightGuide", "X-height", true)}
+          ${renderGlobalToggle("show-ascender-guide", "showAscenderGuide", "Ascender", false)}
+        </fieldset>
+      </div>
+    </details>
+  `;
+}
+
+function renderGlobalToggle(
+  id: string,
+  setting: keyof Pick<
+    WorksheetState,
+    | "keepInitialLeadIn"
+    | "keepFinalLeadOut"
+    | "showBaselineGuide"
+    | "showXHeightGuide"
+    | "showAscenderGuide"
+    | "showDescenderGuide"
+  >,
+  label: string,
+  checked: boolean
+): string {
+  return `
+    <label class="worksheet-app__check" for="${id}">
+      <input
+        id="${id}"
+        type="checkbox"
+        data-global-setting="${setting}"
+        ${checked ? "checked" : ""}
+      />
+      <span>${label}</span>
+    </label>
+  `;
+}
+
+function renderGlobalColorControl(
+  id: string,
+  setting: "gridlineColor",
+  label: string,
+  value: string
+): string {
+  return `
+    <label class="worksheet-app__field worksheet-app__field--inline" for="${id}">
+      <span>${label}</span>
+      <input
+        class="worksheet-app__color"
+        id="${id}"
+        type="color"
+        value="${value}"
+        data-global-setting="${setting}"
+      />
+    </label>
+  `;
+}
+
+function renderAnnotationControlSection(
+  scope: AnnotationScope,
+  label: string,
+  settings: WorksheetAnnotationSettings
+): string {
+  return `
+    <details class="worksheet-app__details" open>
+      <summary>${label}</summary>
+      <div class="worksheet-app__details-body">
+        ${renderRangeControl({
+    id: `${scope}-directional-dash-spacing-slider`,
+    label: "Directional dash spacing",
+    value: settings.directionalDashSpacing,
+    min: 80,
+    max: 220,
+    step: 4,
+    valueId: `${scope}-directional-dash-spacing-value`,
+    attrs: `data-scope="${scope}" data-setting="directionalDashSpacing"`
+  })}
+        ${renderRangeControl({
+    id: `${scope}-midpoint-density-slider`,
+    label: "Midpoint density",
+    value: settings.midpointDensity,
+    min: 120,
+    max: 600,
+    step: 20,
+    valueId: `${scope}-midpoint-density-value`,
+    attrs: `data-scope="${scope}" data-setting="midpointDensity"`
+  })}
+        ${renderRangeControl({
+    id: `${scope}-turn-radius-slider`,
+    label: "Turn radius",
+    value: settings.turnRadius,
+    min: 0,
+    max: 48,
+    step: 1,
+    valueId: `${scope}-turn-radius-value`,
+    attrs: `data-scope="${scope}" data-setting="turnRadius"`
+  })}
+        ${renderRangeControl({
+    id: `${scope}-u-turn-length-slider`,
+    label: "U-turn length",
+    value: settings.uTurnLength,
+    min: 0,
+    max: 300,
+    step: 1,
+    valueId: `${scope}-u-turn-length-value`,
+    attrs: `data-scope="${scope}" data-setting="uTurnLength"`
+  })}
+        ${renderRangeControl({
+    id: `${scope}-arrow-length-slider`,
+    label: "Other arrow length",
+    value: settings.arrowLength,
+    min: 0,
+    max: 300,
+    step: 1,
+    valueId: `${scope}-arrow-length-value`,
+    attrs: `data-scope="${scope}" data-setting="arrowLength"`
+  })}
+        ${renderRangeControl({
+    id: `${scope}-arrow-head-size-slider`,
+    label: "Arrow head size",
+    value: settings.arrowHeadSize,
+    min: 0,
+    max: 64,
+    step: 1,
+    valueId: `${scope}-arrow-head-size-value`,
+    attrs: `data-scope="${scope}" data-setting="arrowHeadSize"`
+  })}
+        ${renderRangeControl({
+    id: `${scope}-arrow-stroke-width-slider`,
+    label: "Arrow stroke width",
+    value: settings.arrowStrokeWidth,
+    min: 1,
+    max: 14,
+    step: 0.5,
+    valueId: `${scope}-arrow-stroke-width-value`,
+    attrs: `data-scope="${scope}" data-setting="arrowStrokeWidth"`
+  })}
+        ${renderRangeControl({
+    id: `${scope}-number-size-slider`,
+    label: "Number size",
+    value: settings.numberSize,
+    min: 8,
+    max: 72,
+    step: 1,
+    valueId: `${scope}-number-size-value`,
+    attrs: `data-scope="${scope}" data-setting="numberSize"`
+  })}
+        ${renderRangeControl({
+    id: `${scope}-number-offset-slider`,
+    label: "Number offset",
+    value: settings.numberPathOffset,
+    min: -80,
+    max: 80,
+    step: 1,
+    valueId: `${scope}-number-offset-value`,
+    attrs: `data-scope="${scope}" data-setting="numberPathOffset"`
+  })}
+        <fieldset class="worksheet-app__checks" aria-label="${label}">
+          ${renderAnnotationToggle(
+    scope,
+    "directional-dash",
+    "Directional dash",
+    settings.visibility["directional-dash"]
+  )}
+          ${renderAnnotationToggle(scope, "turning-point", "Turns", settings.visibility["turning-point"])}
+          ${renderAnnotationToggle(scope, "start-arrow", "Starts", settings.visibility["start-arrow"])}
+          ${renderAnnotationToggle(scope, "draw-order-number", "Numbers", settings.visibility["draw-order-number"])}
+          ${renderAnnotationToggle(scope, "midpoint-arrow", "Midpoints", settings.visibility["midpoint-arrow"])}
+          <label class="worksheet-app__check">
+            <input
+              type="checkbox"
+              data-scope="${scope}"
+              data-setting="offsetArrowLanes"
+              ${settings.offsetArrowLanes ? "checked" : ""}
+            />
+            <span>Offset lanes</span>
+          </label>
+          <label class="worksheet-app__check">
+            <input
+              type="checkbox"
+              data-scope="${scope}"
+              data-setting="alwaysOffsetArrowLanes"
+              ${settings.alwaysOffsetArrowLanes ? "checked" : ""}
+            />
+            <span>Always offset lanes</span>
+          </label>
+        </fieldset>
+        ${renderColorControl(scope, "strokeColor", "Letter stroke colour", settings.strokeColor)}
+        ${renderColorControl(scope, "numberColor", "Number colour", settings.numberColor)}
+        ${renderColorControl(scope, "arrowColor", "Arrow colour", settings.arrowColor)}
+      </div>
+    </details>
+  `;
+}
+
+function renderColorControl(
+  scope: AnnotationScope,
+  setting: "arrowColor" | "numberColor" | "strokeColor",
+  label: string,
+  value: string
+): string {
+  return `
+    <label class="worksheet-app__field worksheet-app__field--inline" for="${scope}-${setting}-picker">
+      <span>${label}</span>
+      <input
+        class="worksheet-app__color"
+        id="${scope}-${setting}-picker"
+        type="color"
+        value="${value}"
+        data-scope="${scope}"
+        data-setting="${setting}"
+      />
+    </label>
+  `;
+}
+
+function renderAnnotationToggle(
+  scope: AnnotationScope,
+  kind: FormationAnnotation["kind"],
+  label: string,
+  checked: boolean
+): string {
+  return `
+    <label class="worksheet-app__check">
+      <input
+        type="checkbox"
+        data-scope="${scope}"
+        data-annotation-kind="${kind}"
+        ${checked ? "checked" : ""}
+      />
+      <span>${label}</span>
+    </label>
+  `;
+}
+
+const normalizeLetter = (value: string): string => {
+  const [letter = ""] = value.trim().toLowerCase();
+  return LETTERS.includes(letter) ? letter : DEFAULT_LETTER;
+};
+
+const normalizeStyle = (value: string): SingleLetterStyle | null =>
+  value === "pre-cursive" || value === "print" ? value : null;
+
+const escapeHtml = (value: string): string =>
+  value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+
+const normalizeColor = (value: string): string | null =>
+  /^#[0-9a-fA-F]{6}$/.test(value) ? value.toLowerCase() : null;
+
+const getSliderValuePrecision = (input: HTMLInputElement): number => {
+  if (input.step === "any" || input.step.length === 0) {
+    return 0;
+  }
+
+  const [, fractional = ""] = input.step.split(".");
+  return fractional.length;
+};
+
+const normalizeSliderValue = (input: HTMLInputElement, value: number): number => {
+  const min = input.min === "" ? Number.NEGATIVE_INFINITY : Number(input.min);
+  const max = input.max === "" ? Number.POSITIVE_INFINITY : Number(input.max);
+  const step = input.step === "" || input.step === "any" ? Number.NaN : Number(input.step);
+  const base = Number.isFinite(min) ? min : 0;
+  let nextValue = value;
+
+  if (Number.isFinite(min)) {
+    nextValue = Math.max(min, nextValue);
+  }
+  if (Number.isFinite(max)) {
+    nextValue = Math.min(max, nextValue);
+  }
+  if (Number.isFinite(step) && step > 0) {
+    nextValue = base + Math.round((nextValue - base) / step) * step;
+  }
+  if (Number.isFinite(min)) {
+    nextValue = Math.max(min, nextValue);
+  }
+  if (Number.isFinite(max)) {
+    nextValue = Math.min(max, nextValue);
+  }
+
+  return Number(nextValue.toFixed(getSliderValuePrecision(input)));
+};
+
+const syncSliderValue = (input: HTMLInputElement, value: number): number => {
+  const normalizedValue = normalizeSliderValue(input, value);
+  input.value = normalizedValue.toFixed(getSliderValuePrecision(input));
+  return normalizedValue;
+};
+
+const parseBooleanSearchParam = (params: URLSearchParams, key: string): boolean | null => {
+  const rawValue = params.get(key);
+  if (rawValue === null) {
+    return null;
+  }
+
+  const normalizedValue = rawValue.trim().toLowerCase();
+  if (["1", "true", "yes", "on"].includes(normalizedValue)) {
+    return true;
+  }
+  if (["0", "false", "no", "off"].includes(normalizedValue)) {
+    return false;
+  }
+
+  return null;
+};
+
+const parseSliderSearchParam = (
+  params: URLSearchParams,
+  key: string,
+  input: HTMLInputElement
+): number | null => {
+  const rawValue = params.get(key);
+  if (rawValue === null) {
+    return null;
+  }
+
+  const parsedValue = Number(rawValue);
+  if (!Number.isFinite(parsedValue)) {
+    return null;
+  }
+
+  return normalizeSliderValue(input, parsedValue);
+};
+
+const parseColorSearchParam = (params: URLSearchParams, key: string): string | null =>
+  normalizeColor(params.get(key) ?? "");
+
+const toScopedParamKey = (scope: AnnotationScope, key: string): string =>
+  `${scope}${key.charAt(0).toUpperCase()}${key.slice(1)}`;
+
+const getScopeSettings = (scope: AnnotationScope): WorksheetAnnotationSettings => state[scope];
+
+const syncScopedSettingsControlsFromState = (scope: AnnotationScope) => {
+  const settings = getScopeSettings(scope);
+
+  scopedSettingInputs.forEach((input) => {
+    if (input.dataset.scope !== scope) {
+      return;
+    }
+
+    const setting = input.dataset.setting;
+    if (setting === "directionalDashSpacing") {
+      settings.directionalDashSpacing = syncSliderValue(input, settings.directionalDashSpacing);
+    } else if (setting === "midpointDensity") {
+      settings.midpointDensity = syncSliderValue(input, settings.midpointDensity);
+    } else if (setting === "turnRadius") {
+      settings.turnRadius = syncSliderValue(input, settings.turnRadius);
+    } else if (setting === "uTurnLength") {
+      settings.uTurnLength = syncSliderValue(input, settings.uTurnLength);
+    } else if (setting === "arrowLength") {
+      settings.arrowLength = syncSliderValue(input, settings.arrowLength);
+    } else if (setting === "arrowHeadSize") {
+      settings.arrowHeadSize = syncSliderValue(input, settings.arrowHeadSize);
+    } else if (setting === "arrowStrokeWidth") {
+      settings.arrowStrokeWidth = syncSliderValue(input, settings.arrowStrokeWidth);
+    } else if (setting === "numberSize") {
+      settings.numberSize = syncSliderValue(input, settings.numberSize);
+    } else if (setting === "numberPathOffset") {
+      settings.numberPathOffset = syncSliderValue(input, settings.numberPathOffset);
+    } else if (setting === "offsetArrowLanes") {
+      input.checked = settings.offsetArrowLanes;
+    } else if (setting === "alwaysOffsetArrowLanes") {
+      input.checked = settings.alwaysOffsetArrowLanes;
+    } else if (setting === "arrowColor") {
+      input.value = settings.arrowColor;
+    } else if (setting === "numberColor") {
+      input.value = settings.numberColor;
+    } else if (setting === "strokeColor") {
+      input.value = settings.strokeColor;
+    }
+  });
+
+  annotationKindInputs.forEach((input) => {
+    if (input.dataset.scope !== scope) {
+      return;
+    }
+
+    const kind = input.dataset.annotationKind as FormationAnnotation["kind"] | undefined;
+    if (!kind) {
+      return;
+    }
+
+    input.checked = settings.visibility[kind];
+  });
+};
+
+const syncSettingsControlsFromState = () => {
+  letterSelect.value = state.letter;
+  styleSelect.value = state.style;
+  state.previewZoom = syncSliderValue(previewZoomSlider, state.previewZoom);
+  state.practiceRowHeightMm = syncSliderValue(practiceSizeSlider, state.practiceRowHeightMm);
+  state.practiceRepeatCount = syncSliderValue(practiceRepeatSlider, state.practiceRepeatCount);
+  state.strokeWidth = syncSliderValue(strokeWidthSlider, state.strokeWidth);
+
+  globalSettingInputs.forEach((input) => {
+    const setting = input.dataset.globalSetting;
+    if (setting === "gridlineStrokeWidth") {
+      state.gridlineStrokeWidth = syncSliderValue(input, state.gridlineStrokeWidth);
+    } else if (setting === "keepInitialLeadIn") {
+      input.checked = state.keepInitialLeadIn;
+    } else if (setting === "keepFinalLeadOut") {
+      input.checked = state.keepFinalLeadOut;
+    } else if (setting === "showBaselineGuide") {
+      input.checked = state.showBaselineGuide;
+    } else if (setting === "showXHeightGuide") {
+      input.checked = state.showXHeightGuide;
+    } else if (setting === "showAscenderGuide") {
+      input.checked = state.showAscenderGuide;
+    } else if (setting === "showDescenderGuide") {
+      input.checked = state.showDescenderGuide;
+    } else if (setting === "gridlineColor") {
+      input.value = state.gridlineColor;
+    }
+  });
+
+  syncScopedSettingsControlsFromState("top");
+  syncScopedSettingsControlsFromState("practice");
+  applyPreviewZoom();
+  syncLabels();
+};
+
+const syncScopedSettingsUrl = (
+  url: URL,
+  scope: AnnotationScope,
+  settings: WorksheetAnnotationSettings,
+  defaultSettings: WorksheetAnnotationSettings
+) => {
+  SCOPED_NUMERIC_SETTING_KEYS.forEach((key) => {
+    if (settings[key] !== defaultSettings[key]) {
+      url.searchParams.set(toScopedParamKey(scope, key), String(settings[key]));
+    }
+  });
+
+  SCOPED_BOOLEAN_SETTING_KEYS.forEach((key) => {
+    if (settings[key] !== defaultSettings[key]) {
+      url.searchParams.set(toScopedParamKey(scope, key), settings[key] ? "1" : "0");
+    }
+  });
+
+  SCOPED_COLOR_SETTING_KEYS.forEach((key) => {
+    if (settings[key] !== defaultSettings[key]) {
+      url.searchParams.set(toScopedParamKey(scope, key), settings[key]);
+    }
+  });
+
+  (Object.entries(SCOPED_VISIBILITY_PARAM_SUFFIXES) as Array<
+    [FormationAnnotation["kind"], string]
+  >).forEach(([kind, suffix]) => {
+    if (settings.visibility[kind] !== defaultSettings.visibility[kind]) {
+      url.searchParams.set(`${scope}${suffix}`, settings.visibility[kind] ? "1" : "0");
+    }
+  });
+};
+
+const syncSettingsUrl = () => {
+  const url = new URL(window.location.href);
+  WORKSHEET_URL_PARAM_KEYS.forEach((key) => {
+    url.searchParams.delete(key);
+  });
+
+  if (state.letter !== DEFAULT_STATE.letter) {
+    url.searchParams.set("letter", state.letter);
+  }
+  if (state.style !== DEFAULT_STATE.style) {
+    url.searchParams.set("style", state.style);
+  }
+  if (state.previewZoom !== DEFAULT_STATE.previewZoom) {
+    url.searchParams.set("previewZoom", String(state.previewZoom));
+  }
+  if (state.practiceRowHeightMm !== DEFAULT_STATE.practiceRowHeightMm) {
+    url.searchParams.set("practiceSize", String(state.practiceRowHeightMm));
+  }
+  if (state.practiceRepeatCount !== DEFAULT_STATE.practiceRepeatCount) {
+    url.searchParams.set("practiceRepeats", String(state.practiceRepeatCount));
+  }
+  if (state.strokeWidth !== DEFAULT_STATE.strokeWidth) {
+    url.searchParams.set("strokeWidth", String(state.strokeWidth));
+  }
+  if (state.showBaselineGuide !== DEFAULT_STATE.showBaselineGuide) {
+    url.searchParams.set("showBaselineGuide", state.showBaselineGuide ? "1" : "0");
+  }
+  if (state.showXHeightGuide !== DEFAULT_STATE.showXHeightGuide) {
+    url.searchParams.set("showXHeightGuide", state.showXHeightGuide ? "1" : "0");
+  }
+  if (state.showAscenderGuide !== DEFAULT_STATE.showAscenderGuide) {
+    url.searchParams.set("showAscenderGuide", state.showAscenderGuide ? "1" : "0");
+  }
+  if (state.showDescenderGuide !== DEFAULT_STATE.showDescenderGuide) {
+    url.searchParams.set("showDescenderGuide", state.showDescenderGuide ? "1" : "0");
+  }
+  if (state.gridlineStrokeWidth !== DEFAULT_STATE.gridlineStrokeWidth) {
+    url.searchParams.set("gridlineStrokeWidth", String(state.gridlineStrokeWidth));
+  }
+  if (state.gridlineColor !== DEFAULT_STATE.gridlineColor) {
+    url.searchParams.set("gridlineColor", state.gridlineColor);
+  }
+  if (state.keepInitialLeadIn !== DEFAULT_STATE.keepInitialLeadIn) {
+    url.searchParams.set("keepInitialLeadIn", state.keepInitialLeadIn ? "1" : "0");
+  }
+  if (state.keepFinalLeadOut !== DEFAULT_STATE.keepFinalLeadOut) {
+    url.searchParams.set("keepFinalLeadOut", state.keepFinalLeadOut ? "1" : "0");
+  }
+
+  syncScopedSettingsUrl(url, "top", state.top, DEFAULT_STATE.top);
+  syncScopedSettingsUrl(url, "practice", state.practice, DEFAULT_STATE.practice);
+
+  const nextUrl = `${url.pathname}${url.search}${url.hash}`;
+  const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+  if (nextUrl !== currentUrl) {
+    window.history.replaceState(null, "", nextUrl);
+  }
+};
+
+const applyScopedUrlSettings = (params: URLSearchParams, scope: AnnotationScope) => {
+  const settings = getScopeSettings(scope);
+
+  scopedSettingInputs.forEach((input) => {
+    if (input.dataset.scope !== scope) {
+      return;
+    }
+
+    const setting = input.dataset.setting;
+    if (!setting) {
+      return;
+    }
+
+    const paramKey = toScopedParamKey(scope, setting);
+    if (setting === "directionalDashSpacing") {
+      settings.directionalDashSpacing =
+        parseSliderSearchParam(params, paramKey, input) ?? settings.directionalDashSpacing;
+    } else if (setting === "midpointDensity") {
+      settings.midpointDensity = parseSliderSearchParam(params, paramKey, input) ?? settings.midpointDensity;
+    } else if (setting === "turnRadius") {
+      settings.turnRadius = parseSliderSearchParam(params, paramKey, input) ?? settings.turnRadius;
+    } else if (setting === "uTurnLength") {
+      settings.uTurnLength = parseSliderSearchParam(params, paramKey, input) ?? settings.uTurnLength;
+    } else if (setting === "arrowLength") {
+      settings.arrowLength = parseSliderSearchParam(params, paramKey, input) ?? settings.arrowLength;
+    } else if (setting === "arrowHeadSize") {
+      settings.arrowHeadSize = parseSliderSearchParam(params, paramKey, input) ?? settings.arrowHeadSize;
+    } else if (setting === "arrowStrokeWidth") {
+      settings.arrowStrokeWidth =
+        parseSliderSearchParam(params, paramKey, input) ?? settings.arrowStrokeWidth;
+    } else if (setting === "numberSize") {
+      settings.numberSize = parseSliderSearchParam(params, paramKey, input) ?? settings.numberSize;
+    } else if (setting === "numberPathOffset") {
+      settings.numberPathOffset =
+        parseSliderSearchParam(params, paramKey, input) ?? settings.numberPathOffset;
+    } else if (setting === "offsetArrowLanes") {
+      settings.offsetArrowLanes =
+        parseBooleanSearchParam(params, paramKey) ?? settings.offsetArrowLanes;
+    } else if (setting === "alwaysOffsetArrowLanes") {
+      settings.alwaysOffsetArrowLanes =
+        parseBooleanSearchParam(params, paramKey) ?? settings.alwaysOffsetArrowLanes;
+    } else if (setting === "arrowColor") {
+      settings.arrowColor = parseColorSearchParam(params, paramKey) ?? settings.arrowColor;
+    } else if (setting === "numberColor") {
+      settings.numberColor = parseColorSearchParam(params, paramKey) ?? settings.numberColor;
+    } else if (setting === "strokeColor") {
+      settings.strokeColor = parseColorSearchParam(params, paramKey) ?? settings.strokeColor;
+    }
+  });
+
+  (Object.entries(SCOPED_VISIBILITY_PARAM_SUFFIXES) as Array<
+    [FormationAnnotation["kind"], string]
+  >).forEach(([kind, suffix]) => {
+    settings.visibility = {
+      ...settings.visibility,
+      [kind]: parseBooleanSearchParam(params, `${scope}${suffix}`) ?? settings.visibility[kind]
+    };
+  });
+};
+
+const applyUrlSettings = () => {
+  const params = new URLSearchParams(window.location.search);
+  state = createDefaultState();
+
+  const letterParam = params.get("letter");
+  if (letterParam !== null) {
+    state.letter = normalizeLetter(letterParam);
+  }
+
+  const styleParam = params.get("style");
+  if (styleParam !== null) {
+    state.style = normalizeStyle(styleParam) ?? state.style;
+  }
+
+  state.previewZoom =
+    parseSliderSearchParam(params, "previewZoom", previewZoomSlider) ?? state.previewZoom;
+  state.practiceRowHeightMm =
+    parseSliderSearchParam(params, "practiceSize", practiceSizeSlider) ?? state.practiceRowHeightMm;
+  state.practiceRepeatCount =
+    parseSliderSearchParam(params, "practiceRepeats", practiceRepeatSlider) ??
+    state.practiceRepeatCount;
+  state.strokeWidth =
+    parseSliderSearchParam(params, "strokeWidth", strokeWidthSlider) ?? state.strokeWidth;
+
+  globalSettingInputs.forEach((input) => {
+    const setting = input.dataset.globalSetting;
+    if (setting === "gridlineStrokeWidth") {
+      state.gridlineStrokeWidth =
+        parseSliderSearchParam(params, setting, input) ?? state.gridlineStrokeWidth;
+    } else if (setting === "keepInitialLeadIn") {
+      state.keepInitialLeadIn =
+        parseBooleanSearchParam(params, setting) ?? state.keepInitialLeadIn;
+    } else if (setting === "keepFinalLeadOut") {
+      state.keepFinalLeadOut =
+        parseBooleanSearchParam(params, setting) ?? state.keepFinalLeadOut;
+    } else if (setting === "showBaselineGuide") {
+      state.showBaselineGuide =
+        parseBooleanSearchParam(params, setting) ?? state.showBaselineGuide;
+    } else if (setting === "showXHeightGuide") {
+      state.showXHeightGuide =
+        parseBooleanSearchParam(params, setting) ?? state.showXHeightGuide;
+    } else if (setting === "showAscenderGuide") {
+      state.showAscenderGuide =
+        parseBooleanSearchParam(params, setting) ?? state.showAscenderGuide;
+    } else if (setting === "showDescenderGuide") {
+      state.showDescenderGuide =
+        parseBooleanSearchParam(params, setting) ?? state.showDescenderGuide;
+    } else if (setting === "gridlineColor") {
+      state.gridlineColor = parseColorSearchParam(params, setting) ?? state.gridlineColor;
+    }
+  });
+
+  applyScopedUrlSettings(params, "top");
+  applyScopedUrlSettings(params, "practice");
+  syncSettingsControlsFromState();
+};
+
+const getPracticeRowCount = (): number =>
+  Math.max(1, Math.floor(PRACTICE_AREA_HEIGHT_MM / state.practiceRowHeightMm));
+
+const formatScale = (value: number): string => value.toFixed(2);
+
+const setText = (id: string, value: string) => {
+  const element = document.querySelector<HTMLElement>(`#${id}`);
+  if (element) {
+    element.textContent = value;
+  }
+};
+
+const syncLabels = () => {
+  setText("preview-zoom-value", `${state.previewZoom}%`);
+  setText("practice-size-value", `${state.practiceRowHeightMm} mm`);
+  setText("practice-repeat-value", `${state.practiceRepeatCount}`);
+  setText("stroke-width-value", `${state.strokeWidth}px`);
+  setText("gridline-stroke-width-value", `${state.gridlineStrokeWidth.toFixed(1)}px`);
+
+  (["top", "practice"] as const).forEach((scope) => {
+    const settings = getScopeSettings(scope);
+    setText(
+      `${scope}-directional-dash-spacing-value`,
+      `${settings.directionalDashSpacing}px`
+    );
+    setText(`${scope}-midpoint-density-value`, `1 per ${settings.midpointDensity}px`);
+    setText(`${scope}-turn-radius-value`, `${settings.turnRadius}px`);
+    setText(`${scope}-u-turn-length-value`, `${settings.uTurnLength}px`);
+    setText(`${scope}-arrow-length-value`, `${settings.arrowLength}px`);
+    setText(`${scope}-arrow-head-size-value`, `${settings.arrowHeadSize}px`);
+    setText(`${scope}-arrow-stroke-width-value`, `${settings.arrowStrokeWidth.toFixed(1)}px`);
+    setText(`${scope}-number-size-value`, `${settings.numberSize}px`);
+    setText(`${scope}-number-offset-value`, `${settings.numberPathOffset}px`);
+  });
+};
+
+const applyPreviewZoom = () => {
+  worksheetPageFrame.style.setProperty("--worksheet-preview-scale", `${state.previewZoom / 100}`);
+};
+
+const setPreviewZoom = (value: number) => {
+  state.previewZoom = syncSliderValue(previewZoomSlider, value);
+  applyPreviewZoom();
+  syncLabels();
+  syncSettingsUrl();
+};
+
+const nextFrame = () =>
+  new Promise<void>((resolve) => {
+    requestAnimationFrame(() => resolve());
+  });
+
+const withPreviewZoom = async <T>(zoom: number, action: () => Promise<T>): Promise<T> => {
+  const previousZoom = state.previewZoom;
+  if (previousZoom !== zoom) {
+    setPreviewZoom(zoom);
+    await nextFrame();
+  }
+
+  try {
+    return await action();
+  } finally {
+    if (previousZoom !== zoom) {
+      setPreviewZoom(previousZoom);
+      await nextFrame();
+    }
+  }
+};
+
+const normalizeGuideValue = (
+  value: number,
+  sourceGuides: LetterGuides,
+  targetGuides: LetterGuides
+): number => {
+  const sourceDelta = sourceGuides.xHeight - sourceGuides.baseline;
+  const targetDelta = targetGuides.xHeight - targetGuides.baseline;
+  const scale = sourceDelta !== 0 ? targetDelta / sourceDelta : 1;
+  const offset = targetGuides.baseline - sourceGuides.baseline * scale;
+  return value * scale + offset;
+};
+
+const getLetterMetadata = (): BezierLetter | null =>
+  state.style === "print"
+    ? getPrintLetter(state.letter)
+    : getCursiveLetterVariant(state.letter);
+
+const getLetterGuideFromMetadata = (
+  targetGuides: LetterGuides,
+  kind: "ascender" | "descender"
+): number | null => {
+  const letter = getLetterMetadata();
+  const sourceGuides = letter?.guides;
+  const guideValue = sourceGuides?.[kind];
+  if (!sourceGuides || typeof guideValue !== "number") {
+    return null;
+  }
+
+  return normalizeGuideValue(guideValue, sourceGuides, targetGuides);
+};
+
+const getGuideLineY = (
+  layout: ShiftedWordLayout,
+  kind: "baseline" | "xHeight" | "ascender" | "descender"
+): number => {
+  const guides = layout.path.guides;
+  const halfStrokeWidth = state.strokeWidth / 2;
+  const guideHeight = Math.abs(guides.baseline - guides.xHeight);
+
+  if (kind === "baseline") {
+    return guides.baseline + layout.offsetY + halfStrokeWidth;
+  }
+
+  if (kind === "xHeight") {
+    return guides.xHeight + layout.offsetY - halfStrokeWidth;
+  }
+
+  if (kind === "ascender") {
+    const observedAscenderGuide = getLetterGuideFromMetadata(guides, "ascender");
+    if (observedAscenderGuide !== null) {
+      return observedAscenderGuide + layout.offsetY - halfStrokeWidth;
+    }
+
+    const ascenderGuide = guides.ascender ?? guides.xHeight - guideHeight * ASCENDER_GUIDE_RATIO;
+    return ascenderGuide + layout.offsetY - halfStrokeWidth;
+  }
+
+  const observedDescenderGuide = getLetterGuideFromMetadata(guides, "descender");
+  if (observedDescenderGuide !== null) {
+    return observedDescenderGuide + layout.offsetY + halfStrokeWidth;
+  }
+
+  const descenderGuide = guides.descender ?? guides.baseline + guideHeight * DESCENDER_GUIDE_RATIO;
+  return descenderGuide + layout.offsetY + halfStrokeWidth;
+};
+
+const renderGuideLines = (layout: ShiftedWordLayout, width: number): string => `
+  ${state.showBaselineGuide ? `
+    <line
+      class="worksheet-word__guide worksheet-word__guide--baseline"
+      x1="0"
+      y1="${getGuideLineY(layout, "baseline")}"
+      x2="${width}"
+      y2="${getGuideLineY(layout, "baseline")}"
+    ></line>
+  ` : ""}
+  ${state.showDescenderGuide ? `
+    <line
+      class="worksheet-word__guide worksheet-word__guide--descender"
+      x1="0"
+      y1="${getGuideLineY(layout, "descender")}"
+      x2="${width}"
+      y2="${getGuideLineY(layout, "descender")}"
+    ></line>
+  ` : ""}
+  ${state.showXHeightGuide ? `
+    <line
+      class="worksheet-word__guide worksheet-word__guide--midline"
+      x1="0"
+      y1="${getGuideLineY(layout, "xHeight")}"
+      x2="${width}"
+      y2="${getGuideLineY(layout, "xHeight")}"
+    ></line>
+  ` : ""}
+  ${state.showAscenderGuide ? `
+    <line
+      class="worksheet-word__guide worksheet-word__guide--ascender"
+      x1="0"
+      y1="${getGuideLineY(layout, "ascender")}"
+      x2="${width}"
+      y2="${getGuideLineY(layout, "ascender")}"
+    ></line>
+  ` : ""}
+`;
+
+const getDrawableStrokeCount = (path: WritingPath): number =>
+  path.strokes.filter((stroke) => stroke.type !== "lift").length;
+
+const lerpPoint = (a: { x: number; y: number }, b: { x: number; y: number }, t: number) => ({
+  x: a.x + (b.x - a.x) * t,
+  y: a.y + (b.y - a.y) * t
+});
+
+const trimCubicBezier = (curve: CubicBezier, distance: number): CubicBezier => {
+  const t = curve.getTAtLength(distance);
+  const p01 = lerpPoint(curve.p0, curve.p1, t);
+  const p12 = lerpPoint(curve.p1, curve.p2, t);
+  const p23 = lerpPoint(curve.p2, curve.p3, t);
+  const p012 = lerpPoint(p01, p12, t);
+  const p123 = lerpPoint(p12, p23, t);
+  const p0123 = lerpPoint(p012, p123, t);
+  return new CubicBezier(curve.p0, p01, p012, p0123);
+};
+
+const trimCurvesToDistance = (
+  curves: CubicBezier[],
+  distance: number
+): CubicBezier[] => {
+  const trimmedCurves: CubicBezier[] = [];
+  let remainingDistance = Math.max(0, distance);
+
+  for (const curve of curves) {
+    const curveLength = curve.length();
+    if (remainingDistance >= curveLength) {
+      trimmedCurves.push(curve);
+      remainingDistance -= curveLength;
+      continue;
+    }
+
+    if (remainingDistance > 0.001) {
+      trimmedCurves.push(trimCubicBezier(curve, remainingDistance));
+    }
+    break;
+  }
+
+  return trimmedCurves;
+};
+
+const createPartialPathAtDistance = (path: WritingPath, endDistance: number): WritingPath => {
+  const strokes: WritingPath["strokes"] = [];
+  let remainingDistance = Math.max(0, endDistance);
+
+  for (const stroke of path.strokes) {
+    if (stroke.type === "lift") {
+      strokes.push(stroke);
+      continue;
+    }
+
+    const strokeLength = stroke.curves.reduce((sum, curve) => sum + curve.length(), 0);
+    if (remainingDistance >= strokeLength) {
+      strokes.push(stroke);
+      remainingDistance -= strokeLength;
+      continue;
+    }
+
+    const trimmedCurves = trimCurvesToDistance(stroke.curves, remainingDistance);
+    if (trimmedCurves.length > 0) {
+      strokes.push({
+        ...stroke,
+        curves: trimmedCurves,
+        curveSegments: stroke.curveSegments?.slice(0, trimmedCurves.length)
+      });
+    }
+    break;
+  }
+
+  return {
+    ...path,
+    strokes
+  };
+};
+
+const createPartialPathByDrawableCount = (path: WritingPath, drawableCount: number): WritingPath => {
+  const strokes: WritingPath["strokes"] = [];
+  let seenDrawableStrokes = 0;
+
+  path.strokes.forEach((stroke) => {
+    if (stroke.type === "lift") {
+      if (seenDrawableStrokes < drawableCount) {
+        strokes.push(stroke);
+      }
+      return;
+    }
+
+    if (seenDrawableStrokes < drawableCount) {
+      strokes.push(stroke);
+    }
+    seenDrawableStrokes += 1;
+  });
+
+  return {
+    ...path,
+    strokes
+  };
+};
+
+const getFormationStepEndDistances = (preparedPath: PreparedTracingPath): number[] => {
+  const sectionAnalysis = analyzeTracingSections(preparedPath);
+  const distances = sectionAnalysis.sections
+    .map((section) => section.endDistance)
+    .filter((distance) => Number.isFinite(distance) && distance > 0);
+
+  return distances.length > 0 ? distances : [sectionAnalysis.totalLength];
+};
+
+const renderLetterContent = (
+  path: WritingPath,
+  preparedPath: PreparedTracingPath,
+  settings: WorksheetAnnotationSettings
+): string => {
+  const drawableStrokes = path.strokes.filter((stroke) => stroke.type !== "lift");
+  const strokePaths = drawableStrokes
+    .map((stroke) => `<path class="worksheet-word__stroke" d="${buildPathD(stroke.curves)}"></path>`)
+    .join("");
+  const annotationMarkup = buildFormationAnnotationMarkup(path, preparedPath, settings);
+
+  return `
+    ${strokePaths}
+    ${annotationMarkup}
+  `;
+};
+
+const renderLetterSvg = (
+  layout: ShiftedWordLayout,
+  path: WritingPath,
+  preparedPath: PreparedTracingPath,
+  settings: WorksheetAnnotationSettings,
+  className: string,
+  ariaLabel: string
+): string => {
+  const letterContent = renderLetterContent(path, preparedPath, settings);
+
+  return `
+    <svg
+      class="${className}"
+      viewBox="0 0 ${layout.width} ${layout.height}"
+      preserveAspectRatio="xMidYMid meet"
+      role="img"
+      aria-label="${escapeHtml(ariaLabel)}"
+      style="--formation-arrow-color: ${settings.arrowColor}; --formation-arrow-stroke-width: ${settings.arrowStrokeWidth}; --worksheet-word-stroke: ${settings.strokeColor}; --worksheet-word-stroke-width: ${state.strokeWidth}; --worksheet-guide-color: ${state.gridlineColor}; --worksheet-guide-stroke-width: ${state.gridlineStrokeWidth};"
+    >
+      ${renderGuideLines(layout, layout.width)}
+      ${letterContent}
+    </svg>
+  `;
+};
+
+const getPracticeAdvance = (layout: ShiftedWordLayout): number => {
+  const contentWidth = layout.path.bounds.maxX - layout.path.bounds.minX;
+  const leadingPadding = layout.path.bounds.minX;
+  return contentWidth + leadingPadding;
+};
+
+const renderPracticeRowSvg = (
+  layout: ShiftedWordLayout,
+  preparedPath: PreparedTracingPath,
+  settings: WorksheetAnnotationSettings,
+  repeatCount: number,
+  rowIndex: number
+): string => {
+  const advance = getPracticeAdvance(layout);
+  const rowWidth = layout.width + advance * (repeatCount - 1);
+  const letterContent = renderLetterContent(layout.path, preparedPath, settings);
+  const symbolId = `practice-letter-${rowIndex}`;
+  const repeatedLetters = Array.from({ length: repeatCount }, (_, repeatIndex) => {
+    const x = repeatIndex * advance;
+    return `<use href="#${symbolId}" x="${x}" y="0"></use>`;
+  }).join("");
+
+  return `
+    <svg
+      class="worksheet-word worksheet-word--practice"
+      viewBox="0 0 ${rowWidth} ${layout.height}"
+      preserveAspectRatio="xMidYMid meet"
+      role="img"
+      aria-label="${escapeHtml(`${state.letter} practice line, ${repeatCount} repeat${repeatCount === 1 ? "" : "s"}`)}"
+      style="--formation-arrow-color: ${settings.arrowColor}; --formation-arrow-stroke-width: ${settings.arrowStrokeWidth}; --worksheet-word-stroke: ${settings.strokeColor}; --worksheet-word-stroke-width: ${state.strokeWidth}; --worksheet-guide-color: ${state.gridlineColor}; --worksheet-guide-stroke-width: ${state.gridlineStrokeWidth};"
+    >
+      ${renderGuideLines(layout, rowWidth)}
+      <defs>
+        <g id="${symbolId}">
+          ${letterContent}
+        </g>
+      </defs>
+      ${repeatedLetters}
+    </svg>
+  `;
+};
+
+const renderWorksheet = () => {
+  state = {
+    ...state,
+    letter: normalizeLetter(letterSelect.value),
+    style: normalizeStyle(styleSelect.value) ?? state.style,
+    practiceRowHeightMm: Number(practiceSizeSlider.value),
+    practiceRepeatCount: Number(practiceRepeatSlider.value),
+    strokeWidth: Number(strokeWidthSlider.value)
+  };
+  syncLabels();
+  syncSettingsUrl();
+
+  let layout: ShiftedWordLayout;
+  try {
+    layout = buildShiftedHandwritingLayout(state.letter, {
+      style: state.style,
+      keepInitialLeadIn: state.keepInitialLeadIn,
+      keepFinalLeadOut: state.keepFinalLeadOut
+    });
+  } catch {
+    worksheetPage.innerHTML = `
+      <div class="worksheet-page__empty">Choose a supported letter.</div>
+    `;
+    statusEl.textContent = "This letter could not be drawn.";
+    return;
+  }
+
+  const fullPreparedPath = compileTracingPath(layout.path);
+  const formationStepEndDistances = getFormationStepEndDistances(fullPreparedPath);
+  const topStepPaths =
+    formationStepEndDistances.length > 0
+      ? formationStepEndDistances.map((endDistance) =>
+          createPartialPathAtDistance(layout.path, endDistance)
+        )
+      : Array.from({ length: Math.max(1, getDrawableStrokeCount(layout.path)) }, (_, stepIndex) =>
+          createPartialPathByDrawableCount(layout.path, stepIndex + 1)
+        );
+  const formationStepCount = topStepPaths.length;
+  const topStepSvgs = topStepPaths.map((partialPath, stepIndex) => {
+    const visibleStepCount = stepIndex + 1;
+    const partialPreparedPath = compileTracingPath(partialPath);
+    return renderLetterSvg(
+      layout,
+      partialPath,
+      partialPreparedPath,
+      state.top,
+      "worksheet-word worksheet-word--top worksheet-word--step",
+      `${state.letter} formation step ${visibleStepCount} of ${formationStepCount}`
+    );
+  }).join("");
+  const practiceRowCount = getPracticeRowCount();
+  const practiceRows = Array.from({ length: practiceRowCount }, (_, rowIndex) =>
+    renderPracticeRowSvg(
+      layout,
+      fullPreparedPath,
+      state.practice,
+      state.practiceRepeatCount,
+      rowIndex
+    )
+  ).join("");
+
+  worksheetPage.style.setProperty("--practice-row-height", `${state.practiceRowHeightMm}mm`);
+  worksheetPage.style.setProperty("--formation-step-count", String(formationStepCount));
+  worksheetPage.innerHTML = `
+    <header class="worksheet-page__header">
+      <div class="worksheet-page__meta-line">
+        <span>Name</span>
+        <span>Date</span>
+      </div>
+    </header>
+    <section class="worksheet-page__example worksheet-page__example--steps" aria-label="Formation steps">
+      ${topStepSvgs}
+    </section>
+    <section class="worksheet-page__practice" aria-label="Practice lines">
+      ${practiceRows}
+    </section>
+  `;
+  statusEl.textContent = `${formationStepCount} formation step${formationStepCount === 1 ? "" : "s"}, ${practiceRowCount} practice lines`;
+};
+
+const loadImage = (src: string): Promise<HTMLImageElement> =>
+  new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error("Could not render worksheet image."));
+    image.src = src;
+  });
+
+const downloadBlob = (blob: Blob, filename: string) => {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+};
+
+const getRelativeRect = (
+  element: Element,
+  containerRect: DOMRect
+): { x: number; y: number; width: number; height: number } => {
+  const rect = element.getBoundingClientRect();
+  return {
+    x: rect.left - containerRect.left,
+    y: rect.top - containerRect.top,
+    width: rect.width,
+    height: rect.height
+  };
+};
+
+const drawHorizontalLine = (
+  context: CanvasRenderingContext2D,
+  x1: number,
+  x2: number,
+  y: number,
+  color: string,
+  width: number
+) => {
+  context.save();
+  context.beginPath();
+  context.strokeStyle = color;
+  context.lineWidth = width;
+  context.moveTo(x1, y);
+  context.lineTo(x2, y);
+  context.stroke();
+  context.restore();
+};
+
+const drawWorksheetHeader = (
+  context: CanvasRenderingContext2D,
+  containerRect: DOMRect
+) => {
+  context.save();
+  context.fillStyle = "#23313d";
+  context.font = "700 14.5px system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+  context.textBaseline = "alphabetic";
+
+  worksheetPage.querySelectorAll<HTMLElement>(".worksheet-page__meta-line span").forEach((span) => {
+    const rect = getRelativeRect(span, containerRect);
+    const label = span.textContent?.trim() ?? "";
+    const textY = rect.y + rect.height - 3;
+    context.fillText(label, rect.x, textY);
+    const lineStart = rect.x + context.measureText(label).width + 15;
+    drawHorizontalLine(
+      context,
+      lineStart,
+      rect.x + rect.width,
+      rect.y + rect.height - 1,
+      "#cfd6dc",
+      1.3
+    );
+  });
+  context.restore();
+};
+
+const createSerializableSvg = (svg: SVGSVGElement): string => {
+  const clone = svg.cloneNode(true) as SVGSVGElement;
+  clone.setAttribute("xmlns", SVG_NS);
+  const styleEl = document.createElementNS(SVG_NS, "style");
+  styleEl.textContent = WORKSHEET_SVG_EXPORT_STYLES;
+  clone.insertBefore(styleEl, clone.firstChild);
+  return new XMLSerializer().serializeToString(clone);
+};
+
+const drawSvgElement = async (
+  context: CanvasRenderingContext2D,
+  svg: SVGSVGElement,
+  containerRect: DOMRect
+) => {
+  const rect = getRelativeRect(svg, containerRect);
+  const svgSource = createSerializableSvg(svg);
+  const svgUrl = URL.createObjectURL(
+    new Blob([svgSource], { type: "image/svg+xml;charset=utf-8" })
+  );
+  try {
+    const image = await loadImage(svgUrl);
+    context.drawImage(image, rect.x, rect.y, rect.width, rect.height);
+  } finally {
+    URL.revokeObjectURL(svgUrl);
+  }
+};
+
+const createWorksheetPngBlob = async (): Promise<Blob> => {
+  return await withPreviewZoom(DEFAULT_PREVIEW_ZOOM, async () => {
+    renderWorksheet();
+
+    const rect = worksheetPage.getBoundingClientRect();
+    const width = Math.ceil(rect.width);
+    const height = Math.ceil(rect.height);
+    const canvas = document.createElement("canvas");
+    canvas.width = width * PNG_EXPORT_SCALE;
+    canvas.height = height * PNG_EXPORT_SCALE;
+    const context = canvas.getContext("2d");
+    if (!context) {
+      throw new Error("Could not prepare worksheet image.");
+    }
+
+    context.fillStyle = "#ffffff";
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.scale(PNG_EXPORT_SCALE, PNG_EXPORT_SCALE);
+
+    drawWorksheetHeader(context, rect);
+    for (const svg of worksheetPage.querySelectorAll<SVGSVGElement>(".worksheet-word")) {
+      await drawSvgElement(context, svg, rect);
+    }
+
+    const exampleSection = worksheetPage.querySelector<HTMLElement>(".worksheet-page__example");
+    if (exampleSection) {
+      const exampleRect = getRelativeRect(exampleSection, rect);
+      drawHorizontalLine(
+        context,
+        exampleRect.x,
+        exampleRect.x + exampleRect.width,
+        exampleRect.y + exampleRect.height - 1,
+        "#d7dde2",
+        1.3
+      );
+    }
+
+    worksheetPage.querySelectorAll<SVGSVGElement>(".worksheet-word--practice").forEach((svg) => {
+      const rowRect = getRelativeRect(svg, rect);
+      drawHorizontalLine(
+        context,
+        rowRect.x,
+        rowRect.x + rowRect.width,
+        rowRect.y + rowRect.height - 0.6,
+        "#d7dde2",
+        1.1
+      );
+    });
+
+    return await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob((blob) => {
+        if (blob) {
+          resolve(blob);
+        } else {
+          reject(new Error("Could not encode worksheet image."));
+        }
+      }, "image/png");
+    });
+  });
+};
+
+letterSelect.addEventListener("change", renderWorksheet);
+styleSelect.addEventListener("change", renderWorksheet);
+previewZoomSlider.addEventListener("input", () => {
+  setPreviewZoom(Number(previewZoomSlider.value));
+});
+practiceSizeSlider.addEventListener("input", renderWorksheet);
+practiceRepeatSlider.addEventListener("input", renderWorksheet);
+strokeWidthSlider.addEventListener("input", renderWorksheet);
+printButton.addEventListener("click", () => {
+  renderWorksheet();
+  window.print();
+});
+downloadPngButton.addEventListener("click", () => {
+  downloadPngButton.disabled = true;
+  statusEl.textContent = "Preparing PNG...";
+  createWorksheetPngBlob()
+    .then((blob) => {
+      downloadBlob(blob, `${state.letter}-${state.style}-single-letter-worksheet.png`);
+      statusEl.textContent = "PNG downloaded.";
+    })
+    .catch((error) => {
+      statusEl.textContent = error instanceof Error ? error.message : "Could not download PNG.";
+    })
+    .finally(() => {
+      downloadPngButton.disabled = false;
+    });
+});
+
+globalSettingInputs.forEach((input) => {
+  input.addEventListener("input", () => {
+    const setting = input.dataset.globalSetting;
+    if (setting === "gridlineStrokeWidth") {
+      state.gridlineStrokeWidth = Number(input.value);
+    } else if (setting === "keepInitialLeadIn") {
+      state.keepInitialLeadIn = input.checked;
+    } else if (setting === "keepFinalLeadOut") {
+      state.keepFinalLeadOut = input.checked;
+    } else if (setting === "showBaselineGuide") {
+      state.showBaselineGuide = input.checked;
+    } else if (setting === "showXHeightGuide") {
+      state.showXHeightGuide = input.checked;
+    } else if (setting === "showAscenderGuide") {
+      state.showAscenderGuide = input.checked;
+    } else if (setting === "showDescenderGuide") {
+      state.showDescenderGuide = input.checked;
+    } else if (setting === "gridlineColor") {
+      const nextColor = normalizeColor(input.value);
+      if (!nextColor) {
+        return;
+      }
+      state.gridlineColor = nextColor;
+    }
+
+    renderWorksheet();
+  });
+});
+
+scopedSettingInputs.forEach((input) => {
+  input.addEventListener("input", () => {
+    const scope = input.dataset.scope as AnnotationScope | undefined;
+    const setting = input.dataset.setting;
+    if (!scope || (scope !== "top" && scope !== "practice")) {
+      return;
+    }
+
+    const settings = getScopeSettings(scope);
+    if (setting === "directionalDashSpacing") {
+      settings.directionalDashSpacing = Number(input.value);
+    } else if (setting === "midpointDensity") {
+      settings.midpointDensity = Number(input.value);
+    } else if (setting === "turnRadius") {
+      settings.turnRadius = Number(input.value);
+    } else if (setting === "uTurnLength") {
+      settings.uTurnLength = Number(input.value);
+    } else if (setting === "arrowLength") {
+      settings.arrowLength = Number(input.value);
+    } else if (setting === "arrowHeadSize") {
+      settings.arrowHeadSize = Number(input.value);
+    } else if (setting === "arrowStrokeWidth") {
+      settings.arrowStrokeWidth = Number(input.value);
+    } else if (setting === "numberSize") {
+      settings.numberSize = Number(input.value);
+    } else if (setting === "numberPathOffset") {
+      settings.numberPathOffset = Number(input.value);
+    } else if (setting === "offsetArrowLanes") {
+      settings.offsetArrowLanes = input.checked;
+    } else if (setting === "alwaysOffsetArrowLanes") {
+      settings.alwaysOffsetArrowLanes = input.checked;
+    } else if (setting === "arrowColor" || setting === "numberColor" || setting === "strokeColor") {
+      const nextColor = normalizeColor(input.value);
+      if (!nextColor) {
+        return;
+      }
+      settings[setting] = nextColor;
+    }
+
+    renderWorksheet();
+  });
+});
+
+annotationKindInputs.forEach((input) => {
+  input.addEventListener("change", () => {
+    const scope = input.dataset.scope as AnnotationScope | undefined;
+    const kind = input.dataset.annotationKind as FormationAnnotation["kind"] | undefined;
+    if (!scope || (scope !== "top" && scope !== "practice") || !kind) {
+      return;
+    }
+
+    getScopeSettings(scope).visibility = {
+      ...getScopeSettings(scope).visibility,
+      [kind]: input.checked
+    };
+    renderWorksheet();
+  });
+});
+
+applyUrlSettings();
+renderWorksheet();

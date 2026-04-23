@@ -1050,7 +1050,8 @@ body {
   align-items: center;
 }
 
-.worksheet-app__text-input {
+.worksheet-app__text-input,
+.worksheet-app__select {
   width: 100%;
   min-width: 0;
   padding: 11px 12px;
@@ -1066,11 +1067,26 @@ body {
 }
 
 .worksheet-app__text-input:focus,
+.worksheet-app__select:focus,
 .worksheet-app__range:focus,
 .worksheet-app__color:focus,
 .worksheet-app__button:focus {
   outline: 3px solid rgba(47, 125, 104, 0.25);
   outline-offset: 2px;
+}
+
+.worksheet-app__select {
+  appearance: none;
+  background-image:
+    linear-gradient(45deg, transparent 50%, #5b6773 50%),
+    linear-gradient(135deg, #5b6773 50%, transparent 50%);
+  background-position:
+    calc(100% - 18px) 50%,
+    calc(100% - 12px) 50%;
+  background-size:
+    6px 6px,
+    6px 6px;
+  background-repeat: no-repeat;
 }
 
 .worksheet-app__range {
@@ -1248,6 +1264,18 @@ body {
 .worksheet-page__example {
   min-height: 0;
   border-bottom: 0.35mm solid #d7dde2;
+}
+
+.worksheet-page__example--steps {
+  display: grid;
+  grid-template-columns: repeat(var(--formation-step-count, 1), minmax(0, 1fr));
+  gap: 3mm;
+  align-items: stretch;
+  padding-bottom: 3mm;
+}
+
+.worksheet-page__example--steps .worksheet-word--top {
+  min-height: 0;
 }
 
 .worksheet-page__practice {

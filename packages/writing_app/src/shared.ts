@@ -3,6 +3,7 @@ import {
   buildHandwritingPath,
   lettersByVariantId,
   type BuildHandwritingOptions,
+  type HandwritingStyle,
   type Point,
   type WritingPath
 } from "letterpaths";
@@ -37,6 +38,10 @@ export type ShiftedWordLayoutOptions = Pick<
   BuildHandwritingOptions,
   "joinSpacing" | "keepInitialLeadIn" | "keepFinalLeadOut"
 >;
+
+export type ShiftedHandwritingLayoutOptions = ShiftedWordLayoutOptions & {
+  style?: HandwritingStyle;
+};
 
 export const chooseNextWordIndex = (previousIndex: number): number => {
   if (WORDS.length <= 1) {
@@ -87,12 +92,13 @@ export const shiftWritingPath = (path: WritingPath, dx: number, dy: number): Wri
   }
 });
 
-export const buildShiftedWordLayout = (
-  word: string,
-  options: ShiftedWordLayoutOptions = {}
+export const buildShiftedHandwritingLayout = (
+  text: string,
+  options: ShiftedHandwritingLayoutOptions = {}
 ): ShiftedWordLayout => {
-  const writingPath = buildHandwritingPath(word, {
-    style: "cursive",
+  const style = options.style ?? "cursive";
+  const writingPath = buildHandwritingPath(text, {
+    style,
     targetGuides: TARGET_GUIDES,
     joinSpacing: options.joinSpacing ?? JOIN_SPACING,
     letters: lettersByVariantId,
@@ -101,7 +107,7 @@ export const buildShiftedWordLayout = (
   });
 
   if (writingPath.strokes.length === 0) {
-    throw new Error(`No drawable strokes found for "${word}".`);
+    throw new Error(`No drawable strokes found for "${text}".`);
   }
 
   const paddingX = 180;
@@ -118,6 +124,11 @@ export const buildShiftedWordLayout = (
     offsetY
   };
 };
+
+export const buildShiftedWordLayout = (
+  word: string,
+  options: ShiftedWordLayoutOptions = {}
+): ShiftedWordLayout => buildShiftedHandwritingLayout(word, { ...options, style: "cursive" });
 
 export const getPointerInSvg = (
   svg: SVGSVGElement,

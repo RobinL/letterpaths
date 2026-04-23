@@ -10,10 +10,10 @@ export function buildPrintWord(
   options: JoinCursiveOptions = {}
 ): WritingPath {
   return buildStandaloneWord(text, options, {
-    keepLeadIn: true,
+    keepLeadIn: options.keepInitialLeadIn ?? true,
     keepEntry: true,
     keepExit: true,
-    keepLeadOut: true,
+    keepLeadOut: options.keepFinalLeadOut ?? true,
     additionalSpacing: printLetterSpacing
   }, "print");
 }
