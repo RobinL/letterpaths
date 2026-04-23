@@ -38,13 +38,65 @@ type EditorLoadResult = {
   label: string;
 };
 
+type EditablePermissionState = "granted" | "denied" | "prompt";
+
+type EditableFileHandle = {
+  kind?: "file";
+  name: string;
+  getFile(): Promise<File>;
+  createWritable(): Promise<{
+    write(data: string): Promise<void>;
+    truncate(size: number): Promise<void>;
+    close(): Promise<void>;
+  }>;
+  queryPermission?(
+    descriptor: { mode: "read" | "readwrite" }
+  ): Promise<EditablePermissionState>;
+  requestPermission?(
+    descriptor: { mode: "read" | "readwrite" }
+  ): Promise<EditablePermissionState>;
+};
+
+type EditableDirectoryHandle = {
+  kind?: "directory";
+  name: string;
+  entries(): AsyncIterableIterator<[string, EditableDirectoryChildHandle]>;
+  queryPermission?(
+    descriptor: { mode: "read" | "readwrite" }
+  ): Promise<EditablePermissionState>;
+  requestPermission?(
+    descriptor: { mode: "read" | "readwrite" }
+  ): Promise<EditablePermissionState>;
+};
+
+type EditableDirectoryChildHandle =
+  | (EditableFileHandle & { kind: "file" })
+  | (EditableDirectoryHandle & { kind: "directory" });
+
+type FilePickerWindow = Window &
+  typeof globalThis & {
+    showDirectoryPicker?: (options: {
+      id?: string;
+      mode?: "read" | "readwrite";
+      startIn?: string;
+    }) => Promise<EditableDirectoryHandle>;
+  };
+
 type BuiltInLetterOption = {
   path: string;
   label: string;
   payload: unknown;
 };
 
+type EditableFolderLetterOption = {
+  path: string;
+  label: string;
+  handle: EditableFileHandle;
+  payload: unknown;
+};
+
 type BuiltInLetterVariant = "low" | "high" | "print";
+type LetterSelectorMode = "built-in" | "editable-folder";
 
 const builtInLetterModulesByVariant: Record<BuiltInLetterVariant, Record<string, unknown>> = {
   low: import.meta.glob("../../letterpaths/src/data/bezier/entry-low/*.json", {
@@ -137,6 +189,7 @@ app.innerHTML = `
           <button class="editor-button" id="curve-join" type="button">Join</button>
           <button class="editor-button" id="curve-scissors" type="button">Scissors</button>
           <button class="editor-button" id="curve-draw" type="button">Draw stroke</button>
+          <button class="editor-button" id="curve-save" type="button">Save</button>
           <button class="editor-button" id="curve-copy" type="button">Copy JSON</button>
           <button class="editor-button" id="curve-download" type="button">Download JSON</button>
         </div>
@@ -156,6 +209,9 @@ app.innerHTML = `
           <input id="editor-load-input" type="file" accept="application/json,.json" hidden />
           <button class="editor-button" id="editor-load-json" type="button">
             Load JSON
+          </button>
+          <button class="editor-button" id="editor-open-folder" type="button">
+            Open folder
           </button>
           <div class="bezier-editor__drop" id="editor-load-drop">
             Drop JSON here or click to load.
@@ -210,6 +266,8 @@ const curveScissorsEl =
   document.querySelector<HTMLButtonElement>("#curve-scissors")!;
 const curveDrawEl =
   document.querySelector<HTMLButtonElement>("#curve-draw")!;
+const curveSaveEl =
+  document.querySelector<HTMLButtonElement>("#curve-save")!;
 const curveCopyEl =
   document.querySelector<HTMLButtonElement>("#curve-copy")!;
 const curveDownloadEl =
@@ -218,12 +276,18 @@ const editorLoadButton =
   document.querySelector<HTMLButtonElement>("#editor-load-json")!;
 const editorLoadInput =
   document.querySelector<HTMLInputElement>("#editor-load-input")!;
+const editorOpenFolderButton =
+  document.querySelector<HTMLButtonElement>("#editor-open-folder")!;
 const editorLoadDrop =
   document.querySelector<HTMLDivElement>("#editor-load-drop")!;
 const builtInLetterSelectEl =
   document.querySelector<HTMLSelectElement>("#editor-built-in-select")!;
 const builtInVariantSelectEl =
   document.querySelector<HTMLSelectElement>("#editor-built-in-variant")!;
+
+const EDITABLE_HANDLE_DB_NAME = "letterpaths-editor-handles";
+const EDITABLE_HANDLE_STORE_NAME = "handles";
+const EDITABLE_HANDLE_DB_VERSION = 1;
 
 const state = {
   editorIndex: 0,
@@ -272,6 +336,16 @@ let draggingGuideId: keyof LetterGuides | null = null;
 let draggingGuidePointerId: number | null = null;
 let selectionState: { start: Point; end: Point } | null = null;
 let selectedHandles: Array<{ curveIndex: number; pointIndex: number }> = [];
+let editableFileHandle: EditableFileHandle | null = null;
+let editableFileHandleKey: string | null = null;
+let editableFileName: string | null = null;
+let editableFilePath: string | null = null;
+let editableFileSource: "file" | "folder" | null = null;
+let letterSelectorMode: LetterSelectorMode = "built-in";
+let editableFolderHandle: EditableDirectoryHandle | null = null;
+let editableFolderHandleKey: string | null = null;
+let editableFolderName: string | null = null;
+let editableFolderOptions: EditableFolderLetterOption[] = [];
 let editorViewBox = {
   x: 0,
   y: 0,
@@ -379,6 +453,9 @@ curveDrawEl.addEventListener("click", () => {
     ? "Draw stroke enabled: drag on the canvas to create a disconnected bezier."
     : "Draw stroke disabled.";
 });
+curveSaveEl.addEventListener("click", () => {
+  void saveEditableFile();
+});
 curveCopyEl.addEventListener("click", async () => {
   const payload = buildBezierExport();
   if (!payload) {
@@ -411,6 +488,9 @@ curveDownloadEl.addEventListener("click", () => {
 editorLoadButton.addEventListener("click", () => {
   editorLoadInput.click();
 });
+editorOpenFolderButton.addEventListener("click", () => {
+  void openEditableFolder();
+});
 editorLoadDrop.addEventListener("click", () => {
   editorLoadInput.click();
 });
@@ -420,11 +500,11 @@ editorLoadInput.addEventListener("change", async () => {
     return;
   }
   builtInLetterSelectEl.value = "";
-  await handleEditorLoadFile(file);
+  await handleEditorLoadFile(file, { kind: "readonly" });
   editorLoadInput.value = "";
 });
 builtInLetterSelectEl.addEventListener("change", () => {
-  loadSelectedBuiltInLetter();
+  void loadSelectedLetter();
 });
 builtInVariantSelectEl.addEventListener("change", () => {
   const nextVariant = normalizeBuiltInVariant(builtInVariantSelectEl.value);
@@ -433,6 +513,7 @@ builtInVariantSelectEl.addEventListener("change", () => {
   }
   const previousPath = builtInLetterSelectEl.value;
   state.builtInVariant = nextVariant;
+  clearEditableFolder();
   populateBuiltInLetterSelectForVariant(previousPath, true);
 });
 ["dragenter", "dragover"].forEach((eventName) => {
@@ -454,7 +535,8 @@ editorLoadDrop.addEventListener("drop", async (event) => {
   if (!file) {
     return;
   }
-  await handleEditorLoadFile(file);
+  builtInLetterSelectEl.value = "";
+  await handleEditorLoadFile(file, { kind: "readonly" });
 });
 
 editorSvg.addEventListener("pointerdown", (event) => {
@@ -680,7 +762,7 @@ editorSvg.addEventListener("pointerleave", () => {
 editorSvg.addEventListener("wheel", onEditorWheel, { passive: false });
 editorSvg.addEventListener("keydown", onEditorKeyDown);
 
-updateEditorUI();
+void restoreEditorFromUrl();
 
 function populateBuiltInLetterSelect() {
   populateBuiltInLetterSelectForVariant();
@@ -690,6 +772,8 @@ function populateBuiltInLetterSelectForVariant(
   previousPath?: string,
   autoLoad = false
 ) {
+  letterSelectorMode = "built-in";
+  builtInVariantSelectEl.disabled = false;
   const options = builtInLetterOptionsByVariant[state.builtInVariant];
   const previousOption = previousPath
     ? getBuiltInLetterOptionByPath(state.builtInVariant, previousPath) ??
@@ -723,8 +807,34 @@ function populateBuiltInLetterSelectForVariant(
   builtInLetterSelectEl.value = previousOption?.path ?? "";
 
   if (autoLoad && builtInLetterSelectEl.value) {
-    loadSelectedBuiltInLetter();
+    void loadSelectedBuiltInLetter();
   }
+}
+
+function populateEditableFolderLetterSelect(previousPath?: string) {
+  letterSelectorMode = "editable-folder";
+  builtInVariantSelectEl.disabled = false;
+  builtInLetterSelectEl.innerHTML = "";
+
+  const placeholder = document.createElement("option");
+  placeholder.value = "";
+  placeholder.textContent =
+    editableFolderOptions.length > 0
+      ? `Choose editable JSON from ${editableFolderName ?? "folder"}...`
+      : `No editable letter JSON found in ${editableFolderName ?? "folder"}`;
+  builtInLetterSelectEl.append(placeholder);
+
+  editableFolderOptions.forEach((option) => {
+    const optionEl = document.createElement("option");
+    optionEl.value = option.path;
+    optionEl.textContent = option.label;
+    builtInLetterSelectEl.append(optionEl);
+  });
+
+  builtInLetterSelectEl.disabled = editableFolderOptions.length === 0;
+  builtInLetterSelectEl.value =
+    editableFolderOptions.find((option) => option.path === previousPath)
+      ?.path ?? "";
 }
 
 function loadBuiltInLetter(option: BuiltInLetterOption) {
@@ -733,11 +843,21 @@ function loadBuiltInLetter(option: BuiltInLetterOption) {
     editorStatusEl.textContent = `No bezier curves found in ${option.label}.`;
     return;
   }
+  clearEditableFileHandle();
   setEditorCurves(result.curves, result.context, result.label);
+  updateUrlForBuiltInLetter(state.builtInVariant, option.path);
   editorStatusEl.textContent = `Loaded ${result.label}.`;
 }
 
-function loadSelectedBuiltInLetter() {
+async function loadSelectedLetter() {
+  if (letterSelectorMode === "editable-folder") {
+    await loadSelectedEditableFolderLetter();
+    return;
+  }
+  await loadSelectedBuiltInLetter();
+}
+
+async function loadSelectedBuiltInLetter() {
   const option = getBuiltInLetterOptionByPath(
     state.builtInVariant,
     builtInLetterSelectEl.value
@@ -748,20 +868,675 @@ function loadSelectedBuiltInLetter() {
   loadBuiltInLetter(option);
 }
 
-async function handleEditorLoadFile(file: File) {
+async function loadSelectedEditableFolderLetter() {
+  const option = getEditableFolderLetterOptionByPath(builtInLetterSelectEl.value);
+  if (!option) {
+    return;
+  }
+  await loadEditableFolderLetter(option);
+}
+
+async function openEditableFolder() {
+  const directoryPicker = (window as FilePickerWindow).showDirectoryPicker;
+  if (!directoryPicker) {
+    editorStatusEl.textContent =
+      "Editable folder access is not supported in this browser.";
+    return;
+  }
+  try {
+    const handle = await directoryPicker({
+      id: "letterpaths-bezier-folder",
+      mode: "readwrite"
+    });
+    const hasPermission = await ensureEditableDirectoryPermission(
+      handle,
+      "readwrite"
+    );
+    if (!hasPermission) {
+      editorStatusEl.textContent = "Folder write permission was not granted.";
+      return;
+    }
+    await loadEditableFolderHandle(handle);
+  } catch (error) {
+    if (isAbortError(error)) {
+      return;
+    }
+    editorStatusEl.textContent = "Failed to open editable folder.";
+  }
+}
+
+async function loadEditableFolderHandle(
+  handle: EditableDirectoryHandle,
+  options: {
+    handleKey?: string;
+    selectedPath?: string | null;
+    updateUrl?: boolean;
+    restored?: boolean;
+  } = {}
+) {
+  try {
+    const foundOptions = await buildEditableFolderOptions(handle);
+    editableFolderHandle = handle;
+    editableFolderName = handle.name;
+    editableFolderHandleKey =
+      options.handleKey ?? (await persistEditableDirectoryHandle(handle));
+    editableFolderOptions = foundOptions;
+    clearEditableFileHandle();
+    populateEditableFolderLetterSelect(options.selectedPath ?? undefined);
+    updateEditorUI();
+
+    if (options.selectedPath && builtInLetterSelectEl.value) {
+      await loadSelectedEditableFolderLetter();
+      return;
+    }
+
+    if (options.updateUrl !== false) {
+      updateUrlForEditableFolder(null);
+    }
+    const prefix = options.restored ? "Restored" : "Opened";
+    editorStatusEl.textContent = `${prefix} editable folder ${handle.name} with ${foundOptions.length} JSON letter files.`;
+  } catch (error) {
+    editorStatusEl.textContent = "Failed to read editable folder.";
+  }
+}
+
+async function loadEditableFolderLetter(
+  option: EditableFolderLetterOption,
+  options: { restored?: boolean } = {}
+) {
+  try {
+    const file = await option.handle.getFile();
+    const loaded = await handleEditorLoadFile(file, {
+      kind: "editable",
+      handle: option.handle,
+      handleKey: null,
+      persistHandle: false,
+      updateUrl: false,
+      sourceKind: "folder",
+      sourcePath: option.path
+    });
+    if (!loaded) {
+      return;
+    }
+    builtInLetterSelectEl.value = option.path;
+    updateUrlForEditableFolder(option.path);
+    const prefix = options.restored ? "Restored" : "Loaded";
+    editorStatusEl.textContent = `${prefix} editable ${option.label} from ${option.path}.`;
+  } catch (error) {
+    editorStatusEl.textContent = "Failed to load editable folder letter.";
+  }
+}
+
+async function loadEditableFileHandle(
+  handle: EditableFileHandle,
+  options: { handleKey?: string; updateUrl?: boolean; restored?: boolean } = {}
+) {
+  try {
+    const file = await handle.getFile();
+    await handleEditorLoadFile(file, {
+      kind: "editable",
+      handle,
+      handleKey: options.handleKey,
+      updateUrl: options.updateUrl,
+      restored: options.restored
+    });
+  } catch (error) {
+    editorStatusEl.textContent = "Failed to read editable JSON file.";
+  }
+}
+
+async function handleEditorLoadFile(
+  file: File,
+  source:
+    | {
+        kind: "editable";
+        handle: EditableFileHandle;
+        handleKey?: string | null;
+        persistHandle?: boolean;
+        updateUrl?: boolean;
+        restored?: boolean;
+        sourceKind?: "file" | "folder";
+        sourcePath?: string;
+      }
+    | { kind: "readonly" }
+) {
   try {
     const text = await file.text();
     const payload = JSON.parse(text) as unknown;
     const result = extractEditorLoadResult(payload);
     if (!result || result.curves.length === 0) {
       editorStatusEl.textContent = "No bezier curves found in that file.";
-      return;
+      return false;
+    }
+    if (source.kind === "editable") {
+      editableFileHandle = source.handle;
+      editableFileName = file.name;
+      editableFilePath = source.sourcePath ?? file.name;
+      editableFileSource = source.sourceKind ?? "file";
+      editableFileHandleKey =
+        source.handleKey ??
+        (source.persistHandle === false
+          ? null
+          : await persistEditableFileHandle(source.handle));
+    } else {
+      clearEditableFileHandle();
+      clearEditableFolder();
+      populateBuiltInLetterSelectForVariant();
+      clearEditorUrl();
     }
     setEditorCurves(result.curves, result.context, result.label);
-    editorStatusEl.textContent = `Loaded ${result.label}.`;
+    if (source.kind === "editable") {
+      if (source.updateUrl !== false) {
+        updateUrlForEditableFile(file.name, editableFileHandleKey);
+      }
+      const restorePrefix = source.restored ? "Restored" : "Loaded";
+      editorStatusEl.textContent = `${restorePrefix} editable ${result.label} from ${file.name}.`;
+    } else {
+      editorStatusEl.textContent = `Loaded ${result.label} read-only.`;
+    }
+    return true;
   } catch (error) {
     editorStatusEl.textContent = "Failed to load JSON file.";
+    return false;
   }
+}
+
+async function saveEditableFile() {
+  if (!editableFileHandle) {
+    editorStatusEl.textContent =
+      "Open an editable JSON file before saving over it.";
+    return;
+  }
+  const payload = buildBezierExport();
+  if (!payload) {
+    editorStatusEl.textContent = "No curves to save.";
+    return;
+  }
+  const data = `${JSON.stringify(payload, null, 2)}\n`;
+  const saveTarget =
+    editableFilePath ?? editableFileName ?? editableFileHandle.name;
+  editorStatusEl.textContent = `Saving ${saveTarget}...`;
+  const hasPermission = await ensureEditableWritePermission();
+  if (!hasPermission) {
+    editorStatusEl.textContent = "Write permission was not granted.";
+    return;
+  }
+  try {
+    const writable = await editableFileHandle.createWritable();
+    await writable.write(data);
+    await writable.truncate(data.length);
+    await writable.close();
+    const savedFile = await editableFileHandle.getFile();
+    const savedText = await savedFile.text();
+    if (savedText !== data) {
+      editorStatusEl.textContent =
+        `Save verification failed for ${saveTarget}; file contents did not match.`;
+      return;
+    }
+    editorOriginal = editorCurves.map((curve) => ({
+      ...curve,
+      points: curve.points.map((point) => ({ ...point }))
+    }));
+    const location =
+      editableFileSource === "folder" && editableFolderName
+        ? `${editableFolderName}/${saveTarget}`
+        : saveTarget;
+    editorStatusEl.textContent = `Saved ${location} (${formatBytes(
+      data.length
+    )}, hash ${hashText(data)}, modified ${formatTimestamp(
+      savedFile.lastModified
+    )}).`;
+  } catch (error) {
+    editorStatusEl.textContent = "Failed to save editable JSON file.";
+  }
+}
+
+function formatBytes(bytes: number) {
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+  return `${(bytes / 1024).toFixed(1)} KB`;
+}
+
+function formatTimestamp(timestamp: number) {
+  if (!Number.isFinite(timestamp)) {
+    return "unknown time";
+  }
+  return new Date(timestamp).toLocaleTimeString();
+}
+
+function hashText(text: string) {
+  let hash = 2166136261;
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
+}
+
+async function ensureEditableWritePermission() {
+  if (
+    editableFileSource === "folder" &&
+    editableFolderHandle &&
+    (await ensureEditableDirectoryPermission(editableFolderHandle, "readwrite"))
+  ) {
+    return true;
+  }
+  if (!editableFileHandle) {
+    return false;
+  }
+  return ensureEditableFilePermission(editableFileHandle, "readwrite");
+}
+
+function clearEditableFileHandle() {
+  editableFileHandle = null;
+  editableFileHandleKey = null;
+  editableFileName = null;
+  editableFilePath = null;
+  editableFileSource = null;
+}
+
+function clearEditableFolder() {
+  editableFolderHandle = null;
+  editableFolderHandleKey = null;
+  editableFolderName = null;
+  editableFolderOptions = [];
+  letterSelectorMode = "built-in";
+  builtInVariantSelectEl.disabled = false;
+}
+
+async function buildEditableFolderOptions(
+  handle: EditableDirectoryHandle,
+  prefix = ""
+): Promise<EditableFolderLetterOption[]> {
+  const options: EditableFolderLetterOption[] = [];
+  for await (const [name, childHandle] of handle.entries()) {
+    const path = prefix ? `${prefix}/${name}` : name;
+    if (childHandle.kind === "directory") {
+      const childOptions = await buildEditableFolderOptions(childHandle, path);
+      options.push(...childOptions);
+      continue;
+    }
+    if (!name.toLowerCase().endsWith(".json")) {
+      continue;
+    }
+    try {
+      const file = await childHandle.getFile();
+      const payload = JSON.parse(await file.text()) as unknown;
+      if (!extractEditorLoadResult(payload)) {
+        continue;
+      }
+      options.push({
+        path,
+        payload,
+        handle: childHandle,
+        label: formatEditableFolderLetterLabel(path, payload)
+      });
+    } catch (error) {
+      // Ignore non-JSON or invalid letter files inside the chosen folder.
+    }
+  }
+  return options.sort((first, second) =>
+    first.label.localeCompare(second.label)
+  );
+}
+
+function formatEditableFolderLetterLabel(path: string, payload: unknown) {
+  const baseLabel = formatBuiltInLetterLabel(path, payload);
+  const fileName = path.split("/").pop() ?? path;
+  return path === fileName ? baseLabel : `${baseLabel} - ${path}`;
+}
+
+function getEditableFolderLetterOptionByPath(path: string) {
+  return editableFolderOptions.find((option) => option.path === path);
+}
+
+async function ensureEditableFilePermission(
+  handle: EditableFileHandle,
+  mode: "read" | "readwrite"
+) {
+  const current = await queryEditableFilePermission(handle, mode);
+  if (current === "granted") {
+    return true;
+  }
+  if (!handle.requestPermission) {
+    return false;
+  }
+  try {
+    const next = await handle.requestPermission({ mode });
+    return next === "granted";
+  } catch (error) {
+    return false;
+  }
+}
+
+async function ensureEditableDirectoryPermission(
+  handle: EditableDirectoryHandle,
+  mode: "read" | "readwrite"
+) {
+  const current = await queryEditableDirectoryPermission(handle, mode);
+  if (current === "granted") {
+    return true;
+  }
+  if (!handle.requestPermission) {
+    return false;
+  }
+  try {
+    const next = await handle.requestPermission({ mode });
+    return next === "granted";
+  } catch (error) {
+    return false;
+  }
+}
+
+async function queryEditableFilePermission(
+  handle: EditableFileHandle,
+  mode: "read" | "readwrite"
+): Promise<EditablePermissionState> {
+  if (!handle.queryPermission) {
+    return "prompt";
+  }
+  try {
+    return await handle.queryPermission({ mode });
+  } catch (error) {
+    return "prompt";
+  }
+}
+
+async function queryEditableDirectoryPermission(
+  handle: EditableDirectoryHandle,
+  mode: "read" | "readwrite"
+): Promise<EditablePermissionState> {
+  if (!handle.queryPermission) {
+    return "prompt";
+  }
+  try {
+    return await handle.queryPermission({ mode });
+  } catch (error) {
+    return "prompt";
+  }
+}
+
+async function persistEditableFileHandle(handle: EditableFileHandle) {
+  const key = makeEditableFileHandleKey(handle.name);
+  try {
+    const db = await openEditableHandleDb();
+    await putEditableFileHandle(db, key, handle);
+    db.close();
+    return key;
+  } catch (error) {
+    editorStatusEl.textContent =
+      "Loaded editable file; live-reload restore is unavailable in this browser.";
+    return null;
+  }
+}
+
+async function persistEditableDirectoryHandle(handle: EditableDirectoryHandle) {
+  const key = makeEditableDirectoryHandleKey(handle.name);
+  try {
+    const db = await openEditableHandleDb();
+    await putEditableDirectoryHandle(db, key, handle);
+    db.close();
+    return key;
+  } catch (error) {
+    editorStatusEl.textContent =
+      "Opened editable folder; live-reload restore is unavailable in this browser.";
+    return null;
+  }
+}
+
+async function getPersistedEditableFileHandle(key: string) {
+  try {
+    const db = await openEditableHandleDb();
+    const handle = await readEditableFileHandle(db, key);
+    db.close();
+    return handle;
+  } catch (error) {
+    return null;
+  }
+}
+
+async function getPersistedEditableDirectoryHandle(key: string) {
+  try {
+    const db = await openEditableHandleDb();
+    const handle = await readEditableDirectoryHandle(db, key);
+    db.close();
+    return handle;
+  } catch (error) {
+    return null;
+  }
+}
+
+function openEditableHandleDb() {
+  return new Promise<IDBDatabase>((resolve, reject) => {
+    const request = indexedDB.open(
+      EDITABLE_HANDLE_DB_NAME,
+      EDITABLE_HANDLE_DB_VERSION
+    );
+    request.addEventListener("upgradeneeded", () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains(EDITABLE_HANDLE_STORE_NAME)) {
+        db.createObjectStore(EDITABLE_HANDLE_STORE_NAME);
+      }
+    });
+    request.addEventListener("success", () => resolve(request.result));
+    request.addEventListener("error", () => reject(request.error));
+  });
+}
+
+function putEditableFileHandle(
+  db: IDBDatabase,
+  key: string,
+  handle: EditableFileHandle
+) {
+  return new Promise<void>((resolve, reject) => {
+    const transaction = db.transaction(EDITABLE_HANDLE_STORE_NAME, "readwrite");
+    const store = transaction.objectStore(EDITABLE_HANDLE_STORE_NAME);
+    store.put(
+      {
+        handle,
+        name: handle.name,
+        updatedAt: Date.now()
+      },
+      key
+    );
+    transaction.addEventListener("complete", () => resolve());
+    transaction.addEventListener("error", () => reject(transaction.error));
+    transaction.addEventListener("abort", () => reject(transaction.error));
+  });
+}
+
+function putEditableDirectoryHandle(
+  db: IDBDatabase,
+  key: string,
+  handle: EditableDirectoryHandle
+) {
+  return new Promise<void>((resolve, reject) => {
+    const transaction = db.transaction(EDITABLE_HANDLE_STORE_NAME, "readwrite");
+    const store = transaction.objectStore(EDITABLE_HANDLE_STORE_NAME);
+    store.put(
+      {
+        handle,
+        name: handle.name,
+        updatedAt: Date.now()
+      },
+      key
+    );
+    transaction.addEventListener("complete", () => resolve());
+    transaction.addEventListener("error", () => reject(transaction.error));
+    transaction.addEventListener("abort", () => reject(transaction.error));
+  });
+}
+
+function readEditableFileHandle(db: IDBDatabase, key: string) {
+  return new Promise<EditableFileHandle | null>((resolve, reject) => {
+    const transaction = db.transaction(EDITABLE_HANDLE_STORE_NAME, "readonly");
+    const store = transaction.objectStore(EDITABLE_HANDLE_STORE_NAME);
+    const request = store.get(key);
+    request.addEventListener("success", () => {
+      const value = request.result as
+        | { handle?: EditableFileHandle }
+        | undefined;
+      resolve(value?.handle ?? null);
+    });
+    request.addEventListener("error", () => reject(request.error));
+  });
+}
+
+function readEditableDirectoryHandle(db: IDBDatabase, key: string) {
+  return new Promise<EditableDirectoryHandle | null>((resolve, reject) => {
+    const transaction = db.transaction(EDITABLE_HANDLE_STORE_NAME, "readonly");
+    const store = transaction.objectStore(EDITABLE_HANDLE_STORE_NAME);
+    const request = store.get(key);
+    request.addEventListener("success", () => {
+      const value = request.result as
+        | { handle?: EditableDirectoryHandle }
+        | undefined;
+      resolve(value?.handle ?? null);
+    });
+    request.addEventListener("error", () => reject(request.error));
+  });
+}
+
+function makeEditableFileHandleKey(name: string) {
+  const safeName = name.replace(/[^a-z0-9._-]+/giu, "-").replace(/^-|-$/gu, "");
+  return `file-${Date.now().toString(36)}-${safeName || "letter"}`;
+}
+
+function makeEditableDirectoryHandleKey(name: string) {
+  const safeName = name.replace(/[^a-z0-9._-]+/giu, "-").replace(/^-|-$/gu, "");
+  return `folder-${Date.now().toString(36)}-${safeName || "letters"}`;
+}
+
+async function restoreEditorFromUrl() {
+  const params = new URLSearchParams(window.location.search);
+  const source = params.get("source");
+  const letter = params.get("letter");
+
+  if (source === "folder") {
+    const folderKey = params.get("folder");
+    if (folderKey) {
+      const handle = await getPersistedEditableDirectoryHandle(folderKey);
+      if (handle) {
+        const readPermission = await queryEditableDirectoryPermission(
+          handle,
+          "read"
+        );
+        if (readPermission === "granted") {
+          await loadEditableFolderHandle(handle, {
+            handleKey: folderKey,
+            selectedPath: letter,
+            updateUrl: false,
+            restored: true
+          });
+          return;
+        }
+      }
+    }
+    editorStatusEl.textContent = "Reopen the folder to restore editable access.";
+  }
+
+  if (source === "file") {
+    const handleKey = params.get("handle");
+    if (handleKey) {
+      const handle = await getPersistedEditableFileHandle(handleKey);
+      if (handle) {
+        const readPermission = await queryEditableFilePermission(handle, "read");
+        if (readPermission === "granted") {
+          builtInLetterSelectEl.value = "";
+          await loadEditableFileHandle(handle, {
+            handleKey,
+            updateUrl: false,
+            restored: true
+          });
+          return;
+        }
+      }
+    }
+    if (letter) {
+      editorStatusEl.textContent = `Reopen ${letter} to restore editable access.`;
+    }
+  }
+
+  const variant = normalizeBuiltInVariant(params.get("variant") ?? "");
+  if ((source === "builtin" || letter) && variant) {
+    state.builtInVariant = variant;
+    populateBuiltInLetterSelectForVariant(letter ?? undefined);
+    if (letter && getBuiltInLetterOptionByPath(variant, letter)) {
+      builtInLetterSelectEl.value = letter;
+      loadSelectedBuiltInLetter();
+      return;
+    }
+  }
+
+  updateEditorUI();
+}
+
+function updateUrlForEditableFile(fileName: string, handleKey: string | null) {
+  const url = new URL(window.location.href);
+  url.searchParams.set("source", "file");
+  url.searchParams.set("letter", fileName);
+  url.searchParams.delete("variant");
+  url.searchParams.delete("folder");
+  url.searchParams.delete("folderName");
+  if (handleKey) {
+    url.searchParams.set("handle", handleKey);
+  } else {
+    url.searchParams.delete("handle");
+  }
+  window.history.replaceState(null, "", url);
+}
+
+function updateUrlForBuiltInLetter(
+  variant: BuiltInLetterVariant,
+  path: string
+) {
+  const url = new URL(window.location.href);
+  url.searchParams.set("source", "builtin");
+  url.searchParams.set("variant", variant);
+  url.searchParams.set("letter", path);
+  url.searchParams.delete("handle");
+  url.searchParams.delete("folder");
+  url.searchParams.delete("folderName");
+  window.history.replaceState(null, "", url);
+}
+
+function updateUrlForEditableFolder(path: string | null) {
+  const url = new URL(window.location.href);
+  url.searchParams.set("source", "folder");
+  if (editableFolderHandleKey) {
+    url.searchParams.set("folder", editableFolderHandleKey);
+  } else {
+    url.searchParams.delete("folder");
+  }
+  if (editableFolderName) {
+    url.searchParams.set("folderName", editableFolderName);
+  } else {
+    url.searchParams.delete("folderName");
+  }
+  if (path) {
+    url.searchParams.set("letter", path);
+  } else {
+    url.searchParams.delete("letter");
+  }
+  url.searchParams.delete("variant");
+  url.searchParams.delete("handle");
+  window.history.replaceState(null, "", url);
+}
+
+function clearEditorUrl() {
+  const url = new URL(window.location.href);
+  url.searchParams.delete("source");
+  url.searchParams.delete("variant");
+  url.searchParams.delete("letter");
+  url.searchParams.delete("handle");
+  url.searchParams.delete("folder");
+  url.searchParams.delete("folderName");
+  window.history.replaceState(null, "", url);
+}
+
+function isAbortError(error: unknown) {
+  return error instanceof DOMException && error.name === "AbortError";
 }
 
 function setEditorCurves(
@@ -822,6 +1597,7 @@ function updateEditorUI() {
   dotToggleEl.classList.toggle("is-active", state.dotMode);
   dotSizeEl.disabled = !hasCurves;
   dotClearEl.disabled = !hasCurves;
+  curveSaveEl.disabled = !hasCurves || !editableFileHandle;
   curveCopyEl.disabled = !hasCurves;
   curveDownloadEl.disabled = !hasCurves;
 

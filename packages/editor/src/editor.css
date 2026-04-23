@@ -266,6 +266,11 @@ svg {
   background: #f4efe6;
 }
 
+.editor-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
 .editor-button.is-active {
   background: var(--accent);
   border-color: transparent;
