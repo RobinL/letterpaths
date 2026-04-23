@@ -10,7 +10,8 @@ import {
   type HandwritingStyle,
   type LetterGuides,
   type PreparedTracingPath,
-  type WritingPath
+  type WritingPath,
+  type WritingPathSegment
 } from "letterpaths";
 import {
   buildFormationAnnotationMarkup,
@@ -31,6 +32,8 @@ type SingleLetterStyle = Extract<HandwritingStyle, "pre-cursive" | "print">;
 type WorksheetAnnotationSettings = FormationAnnotationMarkupOptions & {
   arrowColor: string;
   strokeColor: string;
+  previousStrokeColor: string;
+  remainingStrokeColor: string;
 };
 
 type WorksheetState = {
@@ -78,6 +81,8 @@ const DEFAULT_NUMBER_PATH_OFFSET = 0;
 const DEFAULT_NUMBER_COLOR = "#3f454b";
 const DEFAULT_ARROW_COLOR = "#ffffff";
 const DEFAULT_TOP_STROKE_COLOR = "#83b0dd";
+const DEFAULT_PREVIOUS_STROKE_COLOR = "#d5dbe2";
+const DEFAULT_REMAINING_STROKE_COLOR = "#ffffff";
 const DEFAULT_PRACTICE_STROKE_COLOR = "#d5dbe2";
 const DEFAULT_PRACTICE_ROW_HEIGHT_MM = 24;
 const DEFAULT_PRACTICE_REPEAT_COUNT = 7;
@@ -152,6 +157,8 @@ const WORKSHEET_URL_PARAM_KEYS = [
   "topOffsetArrowLanes",
   "topAlwaysOffsetArrowLanes",
   "topStrokeColor",
+  "topPreviousStrokeColor",
+  "topRemainingStrokeColor",
   "topNumberColor",
   "topArrowColor",
   "topDirectionalDash",
@@ -191,7 +198,13 @@ const SCOPED_NUMERIC_SETTING_KEYS = [
   "numberPathOffset"
 ] as const;
 const SCOPED_BOOLEAN_SETTING_KEYS = ["offsetArrowLanes", "alwaysOffsetArrowLanes"] as const;
-const SCOPED_COLOR_SETTING_KEYS = ["strokeColor", "numberColor", "arrowColor"] as const;
+const SCOPED_COLOR_SETTING_KEYS = [
+  "strokeColor",
+  "previousStrokeColor",
+  "remainingStrokeColor",
+  "numberColor",
+  "arrowColor"
+] as const;
 const SCOPED_VISIBILITY_PARAM_SUFFIXES: Record<FormationAnnotation["kind"], string> = {
   "directional-dash": "DirectionalDash",
   "turning-point": "TurningPoint",
@@ -221,7 +234,9 @@ const cloneVisibility = (
 
 const createSettings = (
   visibility: FormationAnnotationVisibility,
-  strokeColor: string
+  strokeColor: string,
+  previousStrokeColor = strokeColor,
+  remainingStrokeColor = strokeColor
 ): WorksheetAnnotationSettings => ({
   directionalDashSpacing: DEFAULT_DIRECTIONAL_DASH_SPACING,
   midpointDensity: DEFAULT_MIDPOINT_DENSITY,
@@ -237,7 +252,9 @@ const createSettings = (
   alwaysOffsetArrowLanes: false,
   visibility: cloneVisibility(visibility),
   arrowColor: DEFAULT_ARROW_COLOR,
-  strokeColor
+  strokeColor,
+  previousStrokeColor,
+  remainingStrokeColor
 });
 
 const createDefaultState = (): WorksheetState => ({
@@ -255,7 +272,12 @@ const createDefaultState = (): WorksheetState => ({
   gridlineColor: DEFAULT_GRIDLINE_COLOR,
   keepInitialLeadIn: true,
   keepFinalLeadOut: true,
-  top: createSettings(DEFAULT_FORMATION_ANNOTATION_VISIBILITY, DEFAULT_TOP_STROKE_COLOR),
+  top: createSettings(
+    DEFAULT_FORMATION_ANNOTATION_VISIBILITY,
+    DEFAULT_TOP_STROKE_COLOR,
+    DEFAULT_PREVIOUS_STROKE_COLOR,
+    DEFAULT_REMAINING_STROKE_COLOR
+  ),
   practice: createSettings(EMPTY_FORMATION_ANNOTATION_VISIBILITY, DEFAULT_PRACTICE_STROKE_COLOR)
 });
 
@@ -657,7 +679,11 @@ function renderAnnotationControlSection(
             <span>Always offset lanes</span>
           </label>
         </fieldset>
-        ${renderColorControl(scope, "strokeColor", "Letter stroke colour", settings.strokeColor)}
+        ${scope === "top" ? `
+          ${renderColorControl(scope, "previousStrokeColor", "Previous strokes colour", settings.previousStrokeColor)}
+          ${renderColorControl(scope, "strokeColor", "Active stroke colour", settings.strokeColor)}
+          ${renderColorControl(scope, "remainingStrokeColor", "Remaining strokes colour", settings.remainingStrokeColor)}
+        ` : renderColorControl(scope, "strokeColor", "Letter stroke colour", settings.strokeColor)}
         ${renderColorControl(scope, "numberColor", "Number colour", settings.numberColor)}
         ${renderColorControl(scope, "arrowColor", "Arrow colour", settings.arrowColor)}
       </div>
@@ -667,7 +693,12 @@ function renderAnnotationControlSection(
 
 function renderColorControl(
   scope: AnnotationScope,
-  setting: "arrowColor" | "numberColor" | "strokeColor",
+  setting:
+    | "arrowColor"
+    | "numberColor"
+    | "strokeColor"
+    | "previousStrokeColor"
+    | "remainingStrokeColor",
   label: string,
   value: string
 ): string {
@@ -844,6 +875,10 @@ const syncScopedSettingsControlsFromState = (scope: AnnotationScope) => {
       input.value = settings.numberColor;
     } else if (setting === "strokeColor") {
       input.value = settings.strokeColor;
+    } else if (setting === "previousStrokeColor") {
+      input.value = settings.previousStrokeColor;
+    } else if (setting === "remainingStrokeColor") {
+      input.value = settings.remainingStrokeColor;
     }
   });
 
@@ -1035,6 +1070,12 @@ const applyScopedUrlSettings = (params: URLSearchParams, scope: AnnotationScope)
       settings.numberColor = parseColorSearchParam(params, paramKey) ?? settings.numberColor;
     } else if (setting === "strokeColor") {
       settings.strokeColor = parseColorSearchParam(params, paramKey) ?? settings.strokeColor;
+    } else if (setting === "previousStrokeColor") {
+      settings.previousStrokeColor =
+        parseColorSearchParam(params, paramKey) ?? settings.previousStrokeColor;
+    } else if (setting === "remainingStrokeColor") {
+      settings.remainingStrokeColor =
+        parseColorSearchParam(params, paramKey) ?? settings.remainingStrokeColor;
     }
   });
 
@@ -1279,99 +1320,130 @@ const renderGuideLines = (layout: ShiftedWordLayout, width: number): string => `
   ` : ""}
 `;
 
-const getDrawableStrokeCount = (path: WritingPath): number =>
-  path.strokes.filter((stroke) => stroke.type !== "lift").length;
-
 const lerpPoint = (a: { x: number; y: number }, b: { x: number; y: number }, t: number) => ({
   x: a.x + (b.x - a.x) * t,
   y: a.y + (b.y - a.y) * t
 });
 
-const trimCubicBezier = (curve: CubicBezier, distance: number): CubicBezier => {
-  const t = curve.getTAtLength(distance);
+const splitCubicBezier = (curve: CubicBezier, t: number): [CubicBezier, CubicBezier] => {
   const p01 = lerpPoint(curve.p0, curve.p1, t);
   const p12 = lerpPoint(curve.p1, curve.p2, t);
   const p23 = lerpPoint(curve.p2, curve.p3, t);
   const p012 = lerpPoint(p01, p12, t);
   const p123 = lerpPoint(p12, p23, t);
   const p0123 = lerpPoint(p012, p123, t);
-  return new CubicBezier(curve.p0, p01, p012, p0123);
+  return [
+    new CubicBezier(curve.p0, p01, p012, p0123),
+    new CubicBezier(p0123, p123, p23, curve.p3)
+  ];
 };
 
-const trimCurvesToDistance = (
+const sliceCubicBezier = (
+  curve: CubicBezier,
+  startDistance: number,
+  endDistance: number
+): CubicBezier | null => {
+  const curveLength = curve.length();
+  const safeStartDistance = Math.max(0, Math.min(startDistance, curveLength));
+  const safeEndDistance = Math.max(safeStartDistance, Math.min(endDistance, curveLength));
+  if (safeEndDistance - safeStartDistance <= 0.001) {
+    return null;
+  }
+
+  const startT = curve.getTAtLength(safeStartDistance);
+  const endT = curve.getTAtLength(safeEndDistance);
+  const [, afterStart] = splitCubicBezier(curve, startT);
+  const relativeEndT = startT >= 1 ? 1 : (endT - startT) / (1 - startT);
+  return splitCubicBezier(afterStart, relativeEndT)[0];
+};
+
+const sliceCurvesInDistanceRange = (
   curves: CubicBezier[],
-  distance: number
-): CubicBezier[] => {
-  const trimmedCurves: CubicBezier[] = [];
-  let remainingDistance = Math.max(0, distance);
+  curveSegments: Array<WritingPathSegment | undefined> | undefined,
+  startDistance: number,
+  endDistance: number
+): {
+  curves: CubicBezier[];
+  curveSegments: Array<WritingPathSegment | undefined>;
+} => {
+  const slicedCurves: CubicBezier[] = [];
+  const slicedSegments: Array<WritingPathSegment | undefined> = [];
+  let distanceBeforeCurve = 0;
 
-  for (const curve of curves) {
+  curves.forEach((curve, curveIndex) => {
     const curveLength = curve.length();
-    if (remainingDistance >= curveLength) {
-      trimmedCurves.push(curve);
-      remainingDistance -= curveLength;
-      continue;
-    }
+    const curveStartDistance = distanceBeforeCurve;
+    const curveEndDistance = curveStartDistance + curveLength;
+    distanceBeforeCurve = curveEndDistance;
 
-    if (remainingDistance > 0.001) {
-      trimmedCurves.push(trimCubicBezier(curve, remainingDistance));
-    }
-    break;
-  }
-
-  return trimmedCurves;
-};
-
-const createPartialPathAtDistance = (path: WritingPath, endDistance: number): WritingPath => {
-  const strokes: WritingPath["strokes"] = [];
-  let remainingDistance = Math.max(0, endDistance);
-
-  for (const stroke of path.strokes) {
-    if (stroke.type === "lift") {
-      strokes.push(stroke);
-      continue;
-    }
-
-    const strokeLength = stroke.curves.reduce((sum, curve) => sum + curve.length(), 0);
-    if (remainingDistance >= strokeLength) {
-      strokes.push(stroke);
-      remainingDistance -= strokeLength;
-      continue;
-    }
-
-    const trimmedCurves = trimCurvesToDistance(stroke.curves, remainingDistance);
-    if (trimmedCurves.length > 0) {
-      strokes.push({
-        ...stroke,
-        curves: trimmedCurves,
-        curveSegments: stroke.curveSegments?.slice(0, trimmedCurves.length)
-      });
-    }
-    break;
-  }
-
-  return {
-    ...path,
-    strokes
-  };
-};
-
-const createPartialPathByDrawableCount = (path: WritingPath, drawableCount: number): WritingPath => {
-  const strokes: WritingPath["strokes"] = [];
-  let seenDrawableStrokes = 0;
-
-  path.strokes.forEach((stroke) => {
-    if (stroke.type === "lift") {
-      if (seenDrawableStrokes < drawableCount) {
-        strokes.push(stroke);
-      }
+    const overlapStart = Math.max(startDistance, curveStartDistance);
+    const overlapEnd = Math.min(endDistance, curveEndDistance);
+    if (overlapEnd - overlapStart <= 0.001) {
       return;
     }
 
-    if (seenDrawableStrokes < drawableCount) {
-      strokes.push(stroke);
+    const slicedCurve = sliceCubicBezier(
+      curve,
+      overlapStart - curveStartDistance,
+      overlapEnd - curveStartDistance
+    );
+    if (!slicedCurve) {
+      return;
     }
-    seenDrawableStrokes += 1;
+
+    slicedCurves.push(slicedCurve);
+    slicedSegments.push(curveSegments?.[curveIndex]);
+  });
+
+  return { curves: slicedCurves, curveSegments: slicedSegments };
+};
+
+const createPathInDistanceRange = (
+  path: WritingPath,
+  startDistance: number,
+  endDistance: number
+): WritingPath => {
+  if (endDistance - startDistance <= 0.001) {
+    return {
+      ...path,
+      strokes: []
+    };
+  }
+
+  const strokes: WritingPath["strokes"] = [];
+  let distanceBeforeStroke = 0;
+
+  path.strokes.forEach((stroke) => {
+    if (stroke.type === "lift") {
+      return;
+    }
+
+    const strokeLength = stroke.curves.reduce((sum, curve) => sum + curve.length(), 0);
+    const strokeStartDistance = distanceBeforeStroke;
+    const strokeEndDistance = strokeStartDistance + strokeLength;
+    distanceBeforeStroke = strokeEndDistance;
+
+    const overlapStart = Math.max(startDistance, strokeStartDistance);
+    const overlapEnd = Math.min(endDistance, strokeEndDistance);
+    if (overlapEnd - overlapStart <= 0.001) {
+      return;
+    }
+
+    const sliced = sliceCurvesInDistanceRange(
+      stroke.curves,
+      stroke.curveSegments,
+      overlapStart - strokeStartDistance,
+      overlapEnd - strokeStartDistance
+    );
+    if (sliced.curves.length === 0) {
+      return;
+    }
+
+    strokes.push({
+      ...stroke,
+      curves: sliced.curves,
+      curveSegments: sliced.curveSegments
+    });
   });
 
   return {
@@ -1388,6 +1460,9 @@ const getFormationStepEndDistances = (preparedPath: PreparedTracingPath): number
 
   return distances.length > 0 ? distances : [sectionAnalysis.totalLength];
 };
+
+const getPreparedPathLength = (preparedPath: PreparedTracingPath): number =>
+  preparedPath.strokes.reduce((sum, stroke) => sum + stroke.totalLength, 0);
 
 const renderLetterContent = (
   path: WritingPath,
@@ -1406,24 +1481,70 @@ const renderLetterContent = (
   `;
 };
 
-const renderLetterSvg = (
-  layout: ShiftedWordLayout,
+const renderStrokePaths = (
   path: WritingPath,
-  preparedPath: PreparedTracingPath,
-  settings: WorksheetAnnotationSettings,
-  className: string,
-  ariaLabel: string
+  color: string,
+  layer: "previous" | "active" | "remaining"
 ): string => {
-  const letterContent = renderLetterContent(path, preparedPath, settings);
+  const drawableStrokes = path.strokes.filter((stroke) => stroke.type !== "lift");
+  return drawableStrokes
+    .map(
+      (stroke) =>
+        `<path class="worksheet-word__stroke worksheet-word__stroke--${layer}" d="${buildPathD(stroke.curves)}" style="stroke: ${color};"></path>`
+    )
+    .join("");
+};
+
+const renderFormationStepContent = (
+  fullPath: WritingPath,
+  activeStartDistance: number,
+  activeEndDistance: number,
+  totalLength: number,
+  settings: WorksheetAnnotationSettings
+): string => {
+  const previousPath = createPathInDistanceRange(fullPath, 0, activeStartDistance);
+  const activePath = createPathInDistanceRange(fullPath, activeStartDistance, activeEndDistance);
+  const remainingPath = createPathInDistanceRange(fullPath, activeEndDistance, totalLength);
+  const annotatedPath = createPathInDistanceRange(fullPath, 0, activeEndDistance);
+  const annotatedPreparedPath = compileTracingPath(annotatedPath);
+  const annotationMarkup = buildFormationAnnotationMarkup(
+    annotatedPath,
+    annotatedPreparedPath,
+    settings
+  );
+
+  return `
+    ${renderStrokePaths(remainingPath, settings.remainingStrokeColor, "remaining")}
+    ${renderStrokePaths(previousPath, settings.previousStrokeColor, "previous")}
+    ${renderStrokePaths(activePath, settings.strokeColor, "active")}
+    ${annotationMarkup}
+  `;
+};
+
+const renderFormationStepSvg = (
+  layout: ShiftedWordLayout,
+  activeStartDistance: number,
+  activeEndDistance: number,
+  totalLength: number,
+  stepIndex: number,
+  stepCount: number
+): string => {
+  const letterContent = renderFormationStepContent(
+    layout.path,
+    activeStartDistance,
+    activeEndDistance,
+    totalLength,
+    state.top
+  );
 
   return `
     <svg
-      class="${className}"
+      class="worksheet-word worksheet-word--top worksheet-word--step"
       viewBox="0 0 ${layout.width} ${layout.height}"
       preserveAspectRatio="xMidYMid meet"
       role="img"
-      aria-label="${escapeHtml(ariaLabel)}"
-      style="--formation-arrow-color: ${settings.arrowColor}; --formation-arrow-stroke-width: ${settings.arrowStrokeWidth}; --worksheet-word-stroke: ${settings.strokeColor}; --worksheet-word-stroke-width: ${state.strokeWidth}; --worksheet-guide-color: ${state.gridlineColor}; --worksheet-guide-stroke-width: ${state.gridlineStrokeWidth};"
+      aria-label="${escapeHtml(`${state.letter} formation step ${stepIndex + 1} of ${stepCount}`)}"
+      style="--formation-arrow-color: ${state.top.arrowColor}; --formation-arrow-stroke-width: ${state.top.arrowStrokeWidth}; --worksheet-word-stroke: ${state.top.strokeColor}; --worksheet-word-stroke-width: ${state.strokeWidth}; --worksheet-guide-color: ${state.gridlineColor}; --worksheet-guide-stroke-width: ${state.gridlineStrokeWidth};"
     >
       ${renderGuideLines(layout, layout.width)}
       ${letterContent}
@@ -1502,25 +1623,17 @@ const renderWorksheet = () => {
 
   const fullPreparedPath = compileTracingPath(layout.path);
   const formationStepEndDistances = getFormationStepEndDistances(fullPreparedPath);
-  const topStepPaths =
-    formationStepEndDistances.length > 0
-      ? formationStepEndDistances.map((endDistance) =>
-          createPartialPathAtDistance(layout.path, endDistance)
-        )
-      : Array.from({ length: Math.max(1, getDrawableStrokeCount(layout.path)) }, (_, stepIndex) =>
-          createPartialPathByDrawableCount(layout.path, stepIndex + 1)
-        );
-  const formationStepCount = topStepPaths.length;
-  const topStepSvgs = topStepPaths.map((partialPath, stepIndex) => {
-    const visibleStepCount = stepIndex + 1;
-    const partialPreparedPath = compileTracingPath(partialPath);
-    return renderLetterSvg(
+  const totalPathLength = getPreparedPathLength(fullPreparedPath);
+  const formationStepCount = formationStepEndDistances.length;
+  const topStepSvgs = formationStepEndDistances.map((activeEndDistance, stepIndex) => {
+    const activeStartDistance = stepIndex === 0 ? 0 : formationStepEndDistances[stepIndex - 1] ?? 0;
+    return renderFormationStepSvg(
       layout,
-      partialPath,
-      partialPreparedPath,
-      state.top,
-      "worksheet-word worksheet-word--top worksheet-word--step",
-      `${state.letter} formation step ${visibleStepCount} of ${formationStepCount}`
+      activeStartDistance,
+      activeEndDistance,
+      totalPathLength,
+      stepIndex,
+      formationStepCount
     );
   }).join("");
   const practiceRowCount = getPracticeRowCount();
@@ -1806,7 +1919,13 @@ scopedSettingInputs.forEach((input) => {
       settings.offsetArrowLanes = input.checked;
     } else if (setting === "alwaysOffsetArrowLanes") {
       settings.alwaysOffsetArrowLanes = input.checked;
-    } else if (setting === "arrowColor" || setting === "numberColor" || setting === "strokeColor") {
+    } else if (
+      setting === "arrowColor" ||
+      setting === "numberColor" ||
+      setting === "strokeColor" ||
+      setting === "previousStrokeColor" ||
+      setting === "remainingStrokeColor"
+    ) {
       const nextColor = normalizeColor(input.value);
       if (!nextColor) {
         return;
