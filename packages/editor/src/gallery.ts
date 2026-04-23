@@ -21,7 +21,7 @@ const targetGuides = {
   baseline: 460
 }
 
-const defaultStyle: GalleryStyle = "pre-cursive"
+const defaultStyle: GalleryStyle = "print"
 
 const styleOptions = [
   { value: "pre-cursive", label: "Pre-cursive" },
