@@ -42,6 +42,7 @@ type WorksheetState = {
   practiceRowHeightMm: number;
   practiceRepeatCount: number;
   strokeWidth: number;
+  showStepStartDot: boolean;
   showBaselineGuide: boolean;
   showXHeightGuide: boolean;
   showAscenderGuide: boolean;
@@ -86,6 +87,7 @@ const DEFAULT_PRACTICE_STROKE_COLOR = "#d5dbe2";
 const DEFAULT_PRACTICE_ROW_HEIGHT_MM = 38;
 const DEFAULT_PRACTICE_REPEAT_COUNT = 7;
 const DEFAULT_STROKE_WIDTH = 54;
+const DEFAULT_SHOW_STEP_START_DOT = true;
 const DEFAULT_GRIDLINE_STROKE_WIDTH = 1;
 const DEFAULT_GRIDLINE_COLOR = "#ffb35c";
 const DEFAULT_PREVIEW_ZOOM = 100;
@@ -136,6 +138,7 @@ const WORKSHEET_URL_PARAM_KEYS = [
   "practiceSize",
   "practiceRepeats",
   "strokeWidth",
+  "showStepStartDot",
   "showBaselineGuide",
   "showXHeightGuide",
   "showAscenderGuide",
@@ -293,6 +296,7 @@ const createDefaultState = (): WorksheetState => ({
   practiceRowHeightMm: DEFAULT_PRACTICE_ROW_HEIGHT_MM,
   practiceRepeatCount: DEFAULT_PRACTICE_REPEAT_COUNT,
   strokeWidth: DEFAULT_STROKE_WIDTH,
+  showStepStartDot: DEFAULT_SHOW_STEP_START_DOT,
   showBaselineGuide: true,
   showXHeightGuide: true,
   showAscenderGuide: false,
@@ -547,6 +551,7 @@ function renderGlobalToggle(
     WorksheetState,
     | "keepInitialLeadIn"
     | "keepFinalLeadOut"
+    | "showStepStartDot"
     | "showBaselineGuide"
     | "showXHeightGuide"
     | "showAscenderGuide"
@@ -696,6 +701,14 @@ function renderAnnotationControlSection(
   )}
           ${renderAnnotationToggle(scope, "turning-point", "Turns", settings.visibility["turning-point"])}
           ${renderAnnotationToggle(scope, "start-arrow", "Starts", settings.visibility["start-arrow"])}
+          ${scope === "top"
+            ? renderGlobalToggle(
+                "show-step-start-dot",
+                "showStepStartDot",
+                "Step start dot",
+                state.showStepStartDot
+              )
+            : ""}
           ${renderAnnotationToggle(scope, "draw-order-number", "Numbers", settings.visibility["draw-order-number"])}
           ${renderAnnotationToggle(scope, "midpoint-arrow", "Midpoints", settings.visibility["midpoint-arrow"])}
           <label class="worksheet-app__check">
@@ -950,6 +963,8 @@ const syncSettingsControlsFromState = () => {
       input.checked = state.keepInitialLeadIn;
     } else if (setting === "keepFinalLeadOut") {
       input.checked = state.keepFinalLeadOut;
+    } else if (setting === "showStepStartDot") {
+      input.checked = state.showStepStartDot;
     } else if (setting === "showBaselineGuide") {
       input.checked = state.showBaselineGuide;
     } else if (setting === "showXHeightGuide") {
@@ -1025,6 +1040,9 @@ const syncSettingsUrl = () => {
   }
   if (state.strokeWidth !== DEFAULT_STATE.strokeWidth) {
     url.searchParams.set("strokeWidth", String(state.strokeWidth));
+  }
+  if (state.showStepStartDot !== DEFAULT_STATE.showStepStartDot) {
+    url.searchParams.set("showStepStartDot", state.showStepStartDot ? "1" : "0");
   }
   if (state.showBaselineGuide !== DEFAULT_STATE.showBaselineGuide) {
     url.searchParams.set("showBaselineGuide", state.showBaselineGuide ? "1" : "0");
@@ -1162,6 +1180,9 @@ const applyUrlSettings = () => {
     } else if (setting === "keepFinalLeadOut") {
       state.keepFinalLeadOut =
         parseBooleanSearchParam(params, setting) ?? state.keepFinalLeadOut;
+    } else if (setting === "showStepStartDot") {
+      state.showStepStartDot =
+        parseBooleanSearchParam(params, setting) ?? state.showStepStartDot;
     } else if (setting === "showBaselineGuide") {
       state.showBaselineGuide =
         parseBooleanSearchParam(params, setting) ?? state.showBaselineGuide;
@@ -1516,6 +1537,19 @@ const getFormationStepEndDistances = (preparedPath: PreparedTracingPath): number
 const getPreparedPathLength = (preparedPath: PreparedTracingPath): number =>
   preparedPath.strokes.reduce((sum, stroke) => sum + stroke.totalLength, 0);
 
+const getPreparedPathStartPoint = (
+  preparedPath: PreparedTracingPath
+): { x: number; y: number } | null => {
+  for (const stroke of preparedPath.strokes) {
+    const firstSample = stroke.samples[0];
+    if (firstSample) {
+      return { x: firstSample.x, y: firstSample.y };
+    }
+  }
+
+  return null;
+};
+
 const renderLetterContent = (
   path: WritingPath,
   preparedPath: PreparedTracingPath,
@@ -1558,12 +1592,17 @@ const renderFormationStepContent = (
   const activePath = createPathInDistanceRange(fullPath, activeStartDistance, activeEndDistance);
   const remainingPath = createPathInDistanceRange(fullPath, activeEndDistance, totalLength);
   const activePreparedPath = compileTracingPath(activePath);
+  const stepStartPoint = state.showStepStartDot ? getPreparedPathStartPoint(activePreparedPath) : null;
+  const stepStartDotRadius = Number((state.strokeWidth * 0.33).toFixed(2));
   const annotationMarkup = buildFormationAnnotationMarkup(activePath, activePreparedPath, settings);
 
   return `
     ${renderStrokePaths(remainingPath, settings.remainingStrokeColor, "remaining")}
     ${renderStrokePaths(previousPath, settings.previousStrokeColor, "previous")}
     ${renderStrokePaths(activePath, settings.strokeColor, "active")}
+    ${stepStartPoint && stepStartDotRadius > 0
+      ? `<circle class="worksheet-word__step-start-dot" cx="${stepStartPoint.x}" cy="${stepStartPoint.y}" r="${stepStartDotRadius}" fill="${settings.arrowColor}"></circle>`
+      : ""}
     ${annotationMarkup}
   `;
 };
@@ -1967,6 +2006,8 @@ globalSettingInputs.forEach((input) => {
       state.keepInitialLeadIn = input.checked;
     } else if (setting === "keepFinalLeadOut") {
       state.keepFinalLeadOut = input.checked;
+    } else if (setting === "showStepStartDot") {
+      state.showStepStartDot = input.checked;
     } else if (setting === "showBaselineGuide") {
       state.showBaselineGuide = input.checked;
     } else if (setting === "showXHeightGuide") {
