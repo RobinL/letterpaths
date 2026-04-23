@@ -1271,6 +1271,7 @@ body {
   grid-template-columns: repeat(var(--formation-step-count, 1), minmax(0, 1fr));
   gap: 3mm;
   align-items: stretch;
+  padding-top: 8mm;
   padding-bottom: 3mm;
 }
 
@@ -1280,8 +1281,8 @@ body {
 
 .worksheet-page__formation-step {
   display: grid;
-  grid-template-rows: minmax(0, 1fr) auto;
-  gap: 1.5mm;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 20px;
   min-width: 0;
   min-height: 0;
   margin: 0;
@@ -1289,11 +1290,10 @@ body {
 
 .worksheet-page__formation-step figcaption {
   color: #5b6773;
-  font-size: 9pt;
+  font-size: 13pt;
   font-weight: 800;
   line-height: 1;
   text-align: center;
-  text-transform: lowercase;
 }
 
 .worksheet-page__practice {

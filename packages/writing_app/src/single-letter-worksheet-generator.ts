@@ -1530,6 +1530,7 @@ const renderFormationStepSvg = (
   stepIndex: number,
   stepCount: number
 ): string => {
+  const viewBox = getFormationStepViewBox(layout);
   const letterContent = renderFormationStepContent(
     layout.path,
     activeStartDistance,
@@ -1540,10 +1541,11 @@ const renderFormationStepSvg = (
 
   return `
     <figure class="worksheet-page__formation-step">
+      <figcaption>Step ${stepIndex + 1}</figcaption>
       <svg
         class="worksheet-word worksheet-word--top worksheet-word--step"
-        viewBox="0 0 ${layout.width} ${layout.height}"
-        preserveAspectRatio="xMidYMid meet"
+        viewBox="0 ${viewBox.y} ${layout.width} ${viewBox.height}"
+        preserveAspectRatio="xMidYMin meet"
         role="img"
         aria-label="${escapeHtml(`${state.letter} formation step ${stepIndex + 1} of ${stepCount}`)}"
         style="--formation-arrow-color: ${state.top.arrowColor}; --formation-arrow-stroke-width: ${state.top.arrowStrokeWidth}; --worksheet-word-stroke: ${state.top.strokeColor}; --worksheet-word-stroke-width: ${state.strokeWidth}; --worksheet-guide-color: ${state.gridlineColor}; --worksheet-guide-stroke-width: ${state.gridlineStrokeWidth};"
@@ -1551,9 +1553,37 @@ const renderFormationStepSvg = (
         ${renderGuideLines(layout, layout.width)}
         ${letterContent}
       </svg>
-      <figcaption>step ${stepIndex + 1}</figcaption>
     </figure>
   `;
+};
+
+const getFormationStepViewBox = (
+  layout: ShiftedWordLayout
+): { y: number; height: number } => {
+  const annotationMargin = Math.max(
+    state.strokeWidth,
+    state.top.turnRadius + state.top.arrowHeadSize + 12,
+    state.top.numberSize + Math.abs(state.top.numberPathOffset) + 12
+  );
+  const topMargin = Math.max(
+    state.strokeWidth / 2 + 4,
+    state.top.arrowHeadSize * 0.25
+  );
+  const visibleGuideYs = [
+    state.showBaselineGuide ? getGuideLineY(layout, "baseline") : null,
+    state.showDescenderGuide ? getGuideLineY(layout, "descender") : null,
+    state.showXHeightGuide ? getGuideLineY(layout, "xHeight") : null,
+    state.showAscenderGuide ? getGuideLineY(layout, "ascender") : null
+  ].filter((value): value is number => value !== null);
+  const contentTop = Math.min(layout.path.bounds.minY, ...visibleGuideYs);
+  const contentBottom = Math.max(layout.path.bounds.maxY, ...visibleGuideYs);
+  const y = Math.max(0, Math.floor(contentTop - topMargin));
+  const bottom = Math.min(layout.height, Math.ceil(contentBottom + annotationMargin));
+
+  return {
+    y,
+    height: Math.max(1, bottom - y)
+  };
 };
 
 const getPracticeAdvance = (layout: ShiftedWordLayout): number => {
