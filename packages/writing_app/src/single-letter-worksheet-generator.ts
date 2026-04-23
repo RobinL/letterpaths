@@ -66,7 +66,7 @@ type RangeControlOptions = {
 };
 
 const LETTERS = "abcdefghijklmnopqrstuvwxyz".split("");
-const DEFAULT_LETTER = "a";
+const DEFAULT_LETTER = "j";
 const DEFAULT_STYLE: SingleLetterStyle = "pre-cursive";
 const DEFAULT_DIRECTIONAL_DASH_SPACING = 96;
 const DEFAULT_MIDPOINT_DENSITY = 320;
@@ -83,7 +83,7 @@ const DEFAULT_TOP_STROKE_COLOR = "#83b0dd";
 const DEFAULT_PREVIOUS_STROKE_COLOR = "#d5dbe2";
 const DEFAULT_REMAINING_STROKE_COLOR = "#ffffff";
 const DEFAULT_PRACTICE_STROKE_COLOR = "#d5dbe2";
-const DEFAULT_PRACTICE_ROW_HEIGHT_MM = 24;
+const DEFAULT_PRACTICE_ROW_HEIGHT_MM = 38;
 const DEFAULT_PRACTICE_REPEAT_COUNT = 7;
 const DEFAULT_STROKE_WIDTH = 54;
 const DEFAULT_GRIDLINE_STROKE_WIDTH = 1;
@@ -218,6 +218,29 @@ const DEFAULT_TOP_FORMATION_ANNOTATION_VISIBILITY: FormationAnnotationVisibility
   "draw-order-number": false,
   "midpoint-arrow": false
 };
+const DEFAULT_PRACTICE_FORMATION_ANNOTATION_VISIBILITY: FormationAnnotationVisibility = {
+  "directional-dash": true,
+  "turning-point": false,
+  "start-arrow": false,
+  "draw-order-number": false,
+  "midpoint-arrow": false
+};
+const DEFAULT_TOP_SETTINGS_OVERRIDES = {
+  directionalDashSpacing: 120,
+  midpointDensity: 140,
+  arrowHeadSize: 25,
+  arrowStrokeWidth: 8,
+  offsetArrowLanes: false,
+  previousStrokeColor: "#0044b3",
+  numberColor: "#ffffff"
+} as const;
+const DEFAULT_PRACTICE_SETTINGS_OVERRIDES = {
+  directionalDashSpacing: 156,
+  arrowHeadSize: 44,
+  arrowStrokeWidth: 13.5,
+  offsetArrowLanes: false,
+  strokeColor: "#b3bac2"
+} as const;
 
 const app = document.querySelector<HTMLDivElement>("#app");
 
@@ -278,13 +301,22 @@ const createDefaultState = (): WorksheetState => ({
   gridlineColor: DEFAULT_GRIDLINE_COLOR,
   keepInitialLeadIn: true,
   keepFinalLeadOut: true,
-  top: createSettings(
-    DEFAULT_TOP_FORMATION_ANNOTATION_VISIBILITY,
-    DEFAULT_TOP_STROKE_COLOR,
-    DEFAULT_PREVIOUS_STROKE_COLOR,
-    DEFAULT_REMAINING_STROKE_COLOR
-  ),
-  practice: createSettings(EMPTY_FORMATION_ANNOTATION_VISIBILITY, DEFAULT_PRACTICE_STROKE_COLOR)
+  top: {
+    ...createSettings(
+      DEFAULT_TOP_FORMATION_ANNOTATION_VISIBILITY,
+      DEFAULT_TOP_STROKE_COLOR,
+      DEFAULT_PREVIOUS_STROKE_COLOR,
+      DEFAULT_REMAINING_STROKE_COLOR
+    ),
+    ...DEFAULT_TOP_SETTINGS_OVERRIDES
+  },
+  practice: {
+    ...createSettings(
+      DEFAULT_PRACTICE_FORMATION_ANNOTATION_VISIBILITY,
+      DEFAULT_PRACTICE_STROKE_COLOR
+    ),
+    ...DEFAULT_PRACTICE_SETTINGS_OVERRIDES
+  }
 });
 
 const DEFAULT_STATE = createDefaultState();
@@ -1460,9 +1492,23 @@ const createPathInDistanceRange = (
 
 const getFormationStepEndDistances = (preparedPath: PreparedTracingPath): number[] => {
   const sectionAnalysis = analyzeTracingSections(preparedPath);
-  const distances = sectionAnalysis.sections
+  const sectionDistances = sectionAnalysis.sections
     .map((section) => section.endDistance)
     .filter((distance) => Number.isFinite(distance) && distance > 0);
+  const strokeDistances: number[] = [];
+  let strokeOffset = 0;
+
+  preparedPath.strokes.forEach((stroke) => {
+    strokeOffset += stroke.totalLength;
+    if (strokeOffset > 0) {
+      strokeDistances.push(strokeOffset);
+    }
+  });
+
+  const distances = [...sectionDistances, ...strokeDistances]
+    .map((distance) => Number(distance.toFixed(3)))
+    .filter((distance, index, values) => values.indexOf(distance) === index)
+    .sort((a, b) => a - b);
 
   return distances.length > 0 ? distances : [sectionAnalysis.totalLength];
 };
