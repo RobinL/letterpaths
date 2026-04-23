@@ -15,7 +15,6 @@ import {
 } from "letterpaths";
 import {
   buildFormationAnnotationMarkup,
-  DEFAULT_FORMATION_ANNOTATION_VISIBILITY,
   EMPTY_FORMATION_ANNOTATION_VISIBILITY,
   type FormationAnnotationMarkupOptions,
   type FormationAnnotationVisibility
@@ -212,6 +211,13 @@ const SCOPED_VISIBILITY_PARAM_SUFFIXES: Record<FormationAnnotation["kind"], stri
   "draw-order-number": "DrawOrderNumber",
   "midpoint-arrow": "MidpointArrow"
 };
+const DEFAULT_TOP_FORMATION_ANNOTATION_VISIBILITY: FormationAnnotationVisibility = {
+  "directional-dash": true,
+  "turning-point": false,
+  "start-arrow": false,
+  "draw-order-number": false,
+  "midpoint-arrow": false
+};
 
 const app = document.querySelector<HTMLDivElement>("#app");
 
@@ -273,7 +279,7 @@ const createDefaultState = (): WorksheetState => ({
   keepInitialLeadIn: true,
   keepFinalLeadOut: true,
   top: createSettings(
-    DEFAULT_FORMATION_ANNOTATION_VISIBILITY,
+    DEFAULT_TOP_FORMATION_ANNOTATION_VISIBILITY,
     DEFAULT_TOP_STROKE_COLOR,
     DEFAULT_PREVIOUS_STROKE_COLOR,
     DEFAULT_REMAINING_STROKE_COLOR
@@ -1505,13 +1511,8 @@ const renderFormationStepContent = (
   const previousPath = createPathInDistanceRange(fullPath, 0, activeStartDistance);
   const activePath = createPathInDistanceRange(fullPath, activeStartDistance, activeEndDistance);
   const remainingPath = createPathInDistanceRange(fullPath, activeEndDistance, totalLength);
-  const annotatedPath = createPathInDistanceRange(fullPath, 0, activeEndDistance);
-  const annotatedPreparedPath = compileTracingPath(annotatedPath);
-  const annotationMarkup = buildFormationAnnotationMarkup(
-    annotatedPath,
-    annotatedPreparedPath,
-    settings
-  );
+  const activePreparedPath = compileTracingPath(activePath);
+  const annotationMarkup = buildFormationAnnotationMarkup(activePath, activePreparedPath, settings);
 
   return `
     ${renderStrokePaths(remainingPath, settings.remainingStrokeColor, "remaining")}
@@ -1538,17 +1539,20 @@ const renderFormationStepSvg = (
   );
 
   return `
-    <svg
-      class="worksheet-word worksheet-word--top worksheet-word--step"
-      viewBox="0 0 ${layout.width} ${layout.height}"
-      preserveAspectRatio="xMidYMid meet"
-      role="img"
-      aria-label="${escapeHtml(`${state.letter} formation step ${stepIndex + 1} of ${stepCount}`)}"
-      style="--formation-arrow-color: ${state.top.arrowColor}; --formation-arrow-stroke-width: ${state.top.arrowStrokeWidth}; --worksheet-word-stroke: ${state.top.strokeColor}; --worksheet-word-stroke-width: ${state.strokeWidth}; --worksheet-guide-color: ${state.gridlineColor}; --worksheet-guide-stroke-width: ${state.gridlineStrokeWidth};"
-    >
-      ${renderGuideLines(layout, layout.width)}
-      ${letterContent}
-    </svg>
+    <figure class="worksheet-page__formation-step">
+      <svg
+        class="worksheet-word worksheet-word--top worksheet-word--step"
+        viewBox="0 0 ${layout.width} ${layout.height}"
+        preserveAspectRatio="xMidYMid meet"
+        role="img"
+        aria-label="${escapeHtml(`${state.letter} formation step ${stepIndex + 1} of ${stepCount}`)}"
+        style="--formation-arrow-color: ${state.top.arrowColor}; --formation-arrow-stroke-width: ${state.top.arrowStrokeWidth}; --worksheet-word-stroke: ${state.top.strokeColor}; --worksheet-word-stroke-width: ${state.strokeWidth}; --worksheet-guide-color: ${state.gridlineColor}; --worksheet-guide-stroke-width: ${state.gridlineStrokeWidth};"
+      >
+        ${renderGuideLines(layout, layout.width)}
+        ${letterContent}
+      </svg>
+      <figcaption>step ${stepIndex + 1}</figcaption>
+    </figure>
   `;
 };
 
@@ -1743,6 +1747,24 @@ const drawWorksheetHeader = (
   context.restore();
 };
 
+const drawFormationStepLabels = (
+  context: CanvasRenderingContext2D,
+  containerRect: DOMRect
+) => {
+  context.save();
+  context.fillStyle = "#5b6773";
+  context.font = "800 12px system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+  context.textAlign = "center";
+  context.textBaseline = "alphabetic";
+
+  worksheetPage.querySelectorAll<HTMLElement>(".worksheet-page__formation-step figcaption").forEach((caption) => {
+    const rect = getRelativeRect(caption, containerRect);
+    const label = caption.textContent?.trim() ?? "";
+    context.fillText(label, rect.x + rect.width / 2, rect.y + rect.height - 1);
+  });
+  context.restore();
+};
+
 const createSerializableSvg = (svg: SVGSVGElement): string => {
   const clone = svg.cloneNode(true) as SVGSVGElement;
   clone.setAttribute("xmlns", SVG_NS);
@@ -1793,6 +1815,7 @@ const createWorksheetPngBlob = async (): Promise<Blob> => {
     for (const svg of worksheetPage.querySelectorAll<SVGSVGElement>(".worksheet-word")) {
       await drawSvgElement(context, svg, rect);
     }
+    drawFormationStepLabels(context, rect);
 
     const exampleSection = worksheetPage.querySelector<HTMLElement>(".worksheet-page__example");
     if (exampleSection) {
