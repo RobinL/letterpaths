@@ -1,12 +1,14 @@
 import {
   createLegacyLetterId,
   createLetterId,
+  createPrintLetterId,
   cursiveEntryVariantByExitVariant,
   cursiveExitVariantByLetter,
   defaultCursiveEntryVariant,
   letters as defaultLetters,
   lettersById,
-  lettersByVariantId
+  lettersByVariantId,
+  printLettersById
 } from "../data";
 import { CubicBezier } from "../geometry/bezier";
 import type {
@@ -86,7 +88,8 @@ const bendSearchStep = 1;
 export function buildStandaloneWord(
   text: string,
   options: JoinCursiveOptions,
-  config: StandaloneLayoutConfig
+  config: StandaloneLayoutConfig,
+  style: Extract<HandwritingStyle, "print" | "pre-cursive"> = "pre-cursive"
 ): WritingPath {
   const letterMap = options.letters ?? lettersByVariantId;
   const target = resolveTargetGuides(options);
@@ -106,7 +109,7 @@ export function buildStandaloneWord(
     }
 
     const char = rawChar.toLowerCase();
-    const letter = findCursiveLetter(letterMap, char, defaultCursiveEntryVariant);
+    const letter = findStandaloneLetter(letterMap, char, style);
     if (!letter) {
       cursorX = Math.max(rightSidebearingEdge, visibleRightEdge) + wordSpacing;
       continue;
@@ -1019,6 +1022,34 @@ export function findCursiveLetter(
       letter.glyph.style === "cursive"
   );
   return match ?? null;
+}
+
+export function findStandaloneLetter(
+  letterMap: Record<string, BezierLetter>,
+  char: string,
+  style: Extract<HandwritingStyle, "print" | "pre-cursive">
+): BezierLetter | null {
+  if (style !== "print") {
+    return findCursiveLetter(letterMap, char, defaultCursiveEntryVariant);
+  }
+
+  const printKey = createPrintLetterId(char);
+  const printMatch = letterMap[printKey] ?? printLettersById[printKey];
+  if (printMatch) {
+    return printMatch;
+  }
+
+  const explicitPrintMatch = Object.values(letterMap).find(
+    (letter) =>
+      letter.glyph.char.toLowerCase() === char &&
+      letter.glyph.case === "lower" &&
+      letter.glyph.style === "print"
+  );
+  if (explicitPrintMatch) {
+    return explicitPrintMatch;
+  }
+
+  return findCursiveLetter(letterMap, char, defaultCursiveEntryVariant);
 }
 
 export function getEntryVariantForExitVariant(

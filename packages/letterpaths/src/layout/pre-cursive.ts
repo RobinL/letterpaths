@@ -15,5 +15,5 @@ export function buildPreCursiveWord(
     keepExit: true,
     keepLeadOut: true,
     additionalSpacing: preCursiveLetterSpacing
-  });
+  }, "pre-cursive");
 }

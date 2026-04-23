@@ -44,7 +44,7 @@ type BuiltInLetterOption = {
   payload: unknown;
 };
 
-type BuiltInLetterVariant = "low" | "high";
+type BuiltInLetterVariant = "low" | "high" | "print";
 
 const builtInLetterModulesByVariant: Record<BuiltInLetterVariant, Record<string, unknown>> = {
   low: import.meta.glob("../../letterpaths/src/data/bezier/entry-low/*.json", {
@@ -54,6 +54,10 @@ const builtInLetterModulesByVariant: Record<BuiltInLetterVariant, Record<string,
   high: import.meta.glob("../../letterpaths/src/data/bezier/entry-high/*.json", {
     eager: true,
     import: "default"
+  }) as Record<string, unknown>,
+  print: import.meta.glob("../../letterpaths/src/data/bezier/print/*.json", {
+    eager: true,
+    import: "default"
   }) as Record<string, unknown>
 };
 const builtInLetterOptionsByVariant: Record<
@@ -61,7 +65,8 @@ const builtInLetterOptionsByVariant: Record<
   BuiltInLetterOption[]
 > = {
   low: buildBuiltInLetterOptions(builtInLetterModulesByVariant.low),
-  high: buildBuiltInLetterOptions(builtInLetterModulesByVariant.high)
+  high: buildBuiltInLetterOptions(builtInLetterModulesByVariant.high),
+  print: buildBuiltInLetterOptions(builtInLetterModulesByVariant.print)
 };
 
 const app = document.querySelector<HTMLDivElement>("#app");
@@ -137,10 +142,11 @@ app.innerHTML = `
         </div>
         <div class="bezier-editor__load">
           <label class="control">
-            <span>Entry variant</span>
+            <span>Variant</span>
             <select id="editor-built-in-variant">
               <option value="low">Low</option>
               <option value="high">High</option>
+              <option value="print">Print</option>
             </select>
           </label>
           <label class="control">
@@ -697,11 +703,13 @@ function populateBuiltInLetterSelectForVariant(
   builtInLetterSelectEl.innerHTML = "";
 
   const placeholder = document.createElement("option");
+  const variantLabel = formatBuiltInVariantLabel(state.builtInVariant);
+  const variantArticle = variantLabel.startsWith("entry-") ? "an" : "a";
   placeholder.value = "";
   placeholder.textContent =
     options.length > 0
-      ? `Choose an entry-${state.builtInVariant} letter...`
-      : `No entry-${state.builtInVariant} letters found`;
+      ? `Choose ${variantArticle} ${variantLabel} letter...`
+      : `No ${variantLabel} letters found`;
   builtInLetterSelectEl.append(placeholder);
 
   options.forEach((option) => {
@@ -1538,7 +1546,16 @@ function buildBuiltInLetterOptions(modules: Record<string, unknown>) {
 function normalizeBuiltInVariant(
   value: string
 ): BuiltInLetterVariant | null {
-  return value === "low" || value === "high" ? value : null;
+  return value === "low" || value === "high" || value === "print"
+    ? value
+    : null;
+}
+
+function formatBuiltInVariantLabel(variant: BuiltInLetterVariant) {
+  if (variant === "print") {
+    return "print";
+  }
+  return `entry-${variant}`;
 }
 
 function getBuiltInLetterOptionByPath(
