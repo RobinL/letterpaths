@@ -3,10 +3,106 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Letterpaths Writing App</title>
+    <title>Letterpaths Apps</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        color: #1f2933;
+        background: #f7f4ed;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+      }
+
+      main {
+        width: min(920px, calc(100% - 32px));
+        margin: 0 auto;
+        padding: 48px 0;
+      }
+
+      h1 {
+        margin: 0 0 8px;
+        font-size: clamp(2rem, 5vw, 3.4rem);
+        line-height: 1;
+        letter-spacing: 0;
+      }
+
+      p {
+        margin: 0 0 28px;
+        color: #5c6570;
+        font-size: 1.05rem;
+      }
+
+      nav {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        gap: 12px;
+      }
+
+      a {
+        display: grid;
+        gap: 6px;
+        min-height: 96px;
+        padding: 18px;
+        border: 1px solid rgba(31, 41, 51, 0.12);
+        border-radius: 8px;
+        color: inherit;
+        background: rgba(255, 255, 255, 0.74);
+        text-decoration: none;
+        box-shadow: 0 10px 28px rgba(31, 41, 51, 0.08);
+      }
+
+      a:focus,
+      a:hover {
+        outline: 3px solid rgba(49, 130, 206, 0.22);
+        border-color: rgba(49, 130, 206, 0.45);
+      }
+
+      strong {
+        font-size: 1.08rem;
+      }
+
+      span {
+        color: #66717d;
+      }
+    </style>
   </head>
   <body>
-    <div id="app"></div>
-    <script type="module" src="./src/main.ts"></script>
+    <main>
+      <h1>Letterpaths Apps</h1>
+      <p>Development tools and worksheet generators for the handwriting library.</p>
+      <nav aria-label="Letterpaths app pages">
+        <a href="./guided_tracing/">
+          <strong>Guided tracing</strong>
+          <span>Plain, snake, and rollercoaster tracing skins.</span>
+        </a>
+        <a href="./cursive_worksheet_generator/">
+          <strong>Cursive worksheet generator</strong>
+          <span>Build cursive handwriting worksheets.</span>
+        </a>
+        <a href="./single_letter_worksheet_generator/">
+          <strong>Single-letter worksheet generator</strong>
+          <span>Build print and pre-cursive worksheets.</span>
+        </a>
+        <a href="./editor.html">
+          <strong>Single-letter editor</strong>
+          <span>Edit letter bezier data.</span>
+        </a>
+        <a href="./gallery.html">
+          <strong>Letter gallery</strong>
+          <span>Review generated letter shapes.</span>
+        </a>
+        <a href="./join_stats/">
+          <strong>Join stats</strong>
+          <span>Inspect cursive join spacing.</span>
+        </a>
+      </nav>
+    </main>
   </body>
 </html>

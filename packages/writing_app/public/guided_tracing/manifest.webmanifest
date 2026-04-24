@@ -1,7 +1,7 @@
 {
-  "name": "Letterpaths Snake",
-  "short_name": "Snake",
-  "description": "Trace words by steering the snake around each handwritten letter.",
+  "name": "Letterpaths Guided Tracing",
+  "short_name": "Guided Tracing",
+  "description": "Trace words with plain, snake, and rollercoaster handwriting skins.",
   "id": "./",
   "start_url": "./",
   "scope": "./",

@@ -93,15 +93,15 @@ const registerSnakeServiceWorker = () => {
     return;
   }
 
-  const scope = `${import.meta.env.BASE_URL}snake/`;
+  const scope = `${import.meta.env.BASE_URL}guided_tracing/`;
   void navigator.serviceWorker.register(`${scope}sw.js`, { scope }).catch((error: unknown) => {
-    console.error("Failed to register snake service worker.", error);
+    console.error("Failed to register guided tracing service worker.", error);
   });
 };
 
 const FRUIT_EMOJI = "🍎";
 const DEFAULT_SNAKE_TRACE_TOLERANCE = 150;
-const DEFAULT_SNAKE_SKIN_ID: SnakeSkinId = "classic";
+const DEFAULT_SNAKE_SKIN_ID: SnakeSkinId = "plain";
 const DEFAULT_ANIMATION_SPEED_MULTIPLIER = 0.7;
 const SNAKE_SEGMENT_SPACING = 76;
 const SNAKE_GROWTH_DISTANCE = 115;
@@ -184,6 +184,34 @@ const THEME_PARK_REAR_UPSIDE_DOWN_SIZE = {
   ...THEME_PARK_BACK_SIZE,
   height: 79.9
 } as const;
+const PLAIN_HEAD_SIZE = {
+  width: 76,
+  height: 76,
+  anchorX: 0.5,
+  anchorY: 0.5,
+  rotationOffset: 0
+} as const;
+const PLAIN_BODY_SIZE = {
+  width: 44,
+  height: 44,
+  anchorX: 0.5,
+  anchorY: 0.5,
+  rotationOffset: 0
+} as const;
+const PLAIN_TAIL_SIZE = {
+  width: 1,
+  height: 1,
+  anchorX: 0.5,
+  anchorY: 0.5,
+  rotationOffset: 0
+} as const;
+const PLAIN_DOT_TARGET_SIZE = {
+  width: 64,
+  height: 64,
+  anchorX: 0.5,
+  anchorY: 0.5,
+  rotationOffset: 0
+} as const;
 const EAGLE_FLY_MS = 700;
 const EAGLE_STAND_MS = 260;
 const EAGLE_FLY_AWAY_MS = 800;
@@ -211,6 +239,29 @@ const THEME_PARK_MOVE_SOUND_SOURCES = [
   themeParkTrackOneSound,
   themeParkTrackTwoSound
 ] as const;
+const EMPTY_SOUND_SOURCES = [] as const;
+const svgAssetUrl = (svg: string): string =>
+  `data:image/svg+xml,${encodeURIComponent(svg)}`;
+const transparentPixelAsset = svgAssetUrl(
+  '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"></svg>'
+);
+const plainHeadAsset = svgAssetUrl(`
+  <svg xmlns="http://www.w3.org/2000/svg" width="76" height="76" viewBox="0 0 76 76">
+    <circle cx="38" cy="38" r="29" fill="#4a90e2" stroke="#1f2933" stroke-width="5"/>
+    <circle cx="38" cy="38" r="12" fill="#ffffff"/>
+  </svg>
+`);
+const plainBodyAsset = svgAssetUrl(`
+  <svg xmlns="http://www.w3.org/2000/svg" width="44" height="44" viewBox="0 0 44 44">
+    <circle cx="22" cy="22" r="13" fill="#95ddff" stroke="#4a90e2" stroke-width="4"/>
+  </svg>
+`);
+const plainDotTargetAsset = svgAssetUrl(`
+  <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+    <circle cx="32" cy="32" r="26" fill="#ffffff" stroke="#f26d4f" stroke-width="6"/>
+    <circle cx="32" cy="32" r="9" fill="#f26d4f"/>
+  </svg>
+`);
 const SECTION_ARROWHEAD_LENGTH = 26;
 const SECTION_ARROWHEAD_WIDTH = 22;
 const SECTION_ARROWHEAD_TIP_OVERHANG = 11;
@@ -302,7 +353,7 @@ type BodySprite = SpriteAsset & {
   id: string;
 };
 
-type SnakeSkinId = "classic" | "themePark";
+type SnakeSkinId = "plain" | "classic" | "themePark";
 
 type SnakeSkin = {
   id: SnakeSkinId;
@@ -336,6 +387,45 @@ type SnakeSkin = {
 };
 
 const SNAKE_SKINS = {
+  plain: {
+    id: "plain",
+    boardImage: transparentPixelAsset,
+    boardOverlay:
+      "linear-gradient(180deg, rgba(255, 252, 244, 0.96), rgba(255, 248, 235, 0.98))",
+    instruction: "Trace the letters.",
+    successEyebrow: "Trace complete!",
+    successCopy: "All the checkpoints are complete.",
+    soundEffects: {
+      chompSrc: chompSound,
+      chompVolume: 0,
+      moveSrcs: EMPTY_SOUND_SOURCES,
+      moveVolume: 0,
+      moveChance: 0
+    },
+    segmentSpacing: 64,
+    deferredSegmentSpacing: 44,
+    head: {
+      href: plainHeadAsset,
+      chewHref: plainHeadAsset,
+      metrics: PLAIN_HEAD_SIZE
+    },
+    bodySprites: [
+      {
+        id: "plain-marker",
+        href: plainBodyAsset,
+        metrics: PLAIN_BODY_SIZE
+      }
+    ],
+    tail: {
+      href: transparentPixelAsset,
+      metrics: PLAIN_TAIL_SIZE
+    },
+    dotTarget: {
+      happyHref: plainDotTargetAsset,
+      angryHref: plainDotTargetAsset,
+      metrics: PLAIN_DOT_TARGET_SIZE
+    }
+  },
   classic: {
     id: "classic",
     boardImage: classicSnakeBackgroundImage,
@@ -458,7 +548,7 @@ const getActiveDeferredSnakeSegmentSpacing = (state: Pick<TracingState, "activeS
 const app = document.querySelector<HTMLDivElement>("#app");
 
 if (!app) {
-  throw new Error("Missing #app element for snake app.");
+  throw new Error("Missing #app element for guided tracing app.");
 }
 
 initializeAnalytics();
@@ -548,12 +638,13 @@ app.innerHTML = `
                   />
                   <span>Offset lanes</span>
                 </label>
-                <label class="writing-app__settings-toggle" for="theme-park-toggle">
-                  <input
-                    id="theme-park-toggle"
-                    type="checkbox"
-                  />
-                  <span>Theme park</span>
+                <label class="writing-app__settings-field" for="skin-select">
+                  <span class="writing-app__settings-label">Skin</span>
+                  <select class="writing-app__settings-select" id="skin-select">
+                    <option value="plain">Plain</option>
+                    <option value="classic">Snake</option>
+                    <option value="themePark">Rollercoaster</option>
+                  </select>
                 </label>
                 <label class="writing-app__settings-field" for="target-bend-rate-slider">
                   <span class="writing-app__settings-label">
@@ -670,7 +761,7 @@ app.innerHTML = `
           class="writing-app__svg"
           id="trace-svg"
           viewBox="0 0 1600 900"
-          aria-label="Handwriting snake tracing area"
+          aria-label="Handwriting guided tracing area"
         ></svg>
 
         <div class="writing-app__overlay" id="success-overlay" hidden>
@@ -707,7 +798,7 @@ const turnRadiusValue = document.querySelector<HTMLSpanElement>("#turn-radius-va
 const animationSpeedSlider = document.querySelector<HTMLInputElement>("#animation-speed-slider");
 const animationSpeedValue = document.querySelector<HTMLSpanElement>("#animation-speed-value");
 const offsetArrowLanesInput = document.querySelector<HTMLInputElement>("#offset-arrow-lanes");
-const themeParkToggle = document.querySelector<HTMLInputElement>("#theme-park-toggle");
+const skinSelect = document.querySelector<HTMLSelectElement>("#skin-select");
 const targetBendRateSlider = document.querySelector<HTMLInputElement>("#target-bend-rate-slider");
 const targetBendRateValue = document.querySelector<HTMLSpanElement>("#target-bend-rate-value");
 const minSidebearingGapSlider = document.querySelector<HTMLInputElement>("#min-sidebearing-gap-slider");
@@ -747,7 +838,7 @@ if (
   !animationSpeedSlider ||
   !animationSpeedValue ||
   !offsetArrowLanesInput ||
-  !themeParkToggle ||
+  !skinSelect ||
   !targetBendRateSlider ||
   !targetBendRateValue ||
   !minSidebearingGapSlider ||
@@ -765,7 +856,7 @@ if (
   !successOverlay ||
   !nextWordButton
 ) {
-  throw new Error("Missing elements for snake app.");
+  throw new Error("Missing elements for guided tracing app.");
 }
 
 const getSliderValuePrecision = (input: HTMLInputElement): number => {
@@ -851,10 +942,13 @@ const parseSnakeSkinSearchParam = (params: URLSearchParams): SnakeSkinId | null 
   }
 
   const normalizedValue = rawValue.trim().toLowerCase();
-  if (normalizedValue === "classic") {
+  if (normalizedValue === "plain") {
+    return "plain";
+  }
+  if (["snake", "classic"].includes(normalizedValue)) {
     return "classic";
   }
-  if (["themepark", "theme-park", "theme_park"].includes(normalizedValue)) {
+  if (["rollercoaster", "themepark", "theme-park", "theme_park"].includes(normalizedValue)) {
     return "themePark";
   }
 
@@ -871,7 +965,10 @@ const syncSettingsUrl = () => {
     url.searchParams.set("word", currentWord);
   }
   if (currentSnakeSkinId !== DEFAULT_SNAKE_SKIN_ID) {
-    url.searchParams.set("skin", currentSnakeSkinId === "themePark" ? "theme-park" : "classic");
+    url.searchParams.set(
+      "skin",
+      currentSnakeSkinId === "themePark" ? "rollercoaster" : currentSnakeSkinId
+    );
   }
   if (currentTraceTolerance !== DEFAULT_SNAKE_TRACE_TOLERANCE) {
     url.searchParams.set("tolerance", String(currentTraceTolerance));
@@ -1018,6 +1115,7 @@ const syncJoinSpacingLabels = () => {
 
 const syncSettingsControlsFromState = () => {
   wordInput.value = currentWord;
+  skinSelect.value = currentSnakeSkinId;
   currentTraceTolerance = syncSliderValue(toleranceSlider, currentTraceTolerance);
   currentAnimationSpeedMultiplier = syncSliderValue(
     animationSpeedSlider,
@@ -1117,7 +1215,7 @@ const syncSnakeSkinPresentation = () => {
   app.style.setProperty("--snake-board-overlay", skin.boardOverlay);
   snakeInstruction.textContent = skin.instruction;
   successEyebrow.textContent = skin.successEyebrow;
-  themeParkToggle.checked = skin.id === "themePark";
+  skinSelect.value = skin.id;
 };
 
 const getActiveSnakeSoundEffects = () => getActiveSnakeSkin().soundEffects;
@@ -3317,8 +3415,10 @@ offsetArrowLanesInput.addEventListener("change", () => {
   renderedSectionAnnotationSectionIndex = null;
   syncCurrentSectionAnnotations();
 });
-themeParkToggle.addEventListener("change", () => {
-  currentSnakeSkinId = themeParkToggle.checked ? "themePark" : "classic";
+skinSelect.addEventListener("change", () => {
+  currentSnakeSkinId = parseSnakeSkinSearchParam(
+    new URLSearchParams([["skin", skinSelect.value]])
+  ) ?? DEFAULT_SNAKE_SKIN_ID;
   syncSnakeSkinPresentation();
   syncSettingsUrl();
   rerenderCurrentWord();

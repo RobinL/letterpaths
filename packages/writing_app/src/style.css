@@ -816,6 +816,22 @@ body {
   gap: 8px;
 }
 
+.writing-app__settings-select {
+  width: 100%;
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid rgba(35, 49, 61, 0.16);
+  border-radius: 8px;
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.92);
+  font: inherit;
+}
+
+.writing-app__settings-select:focus {
+  outline: 3px solid var(--sky-soft);
+  border-color: var(--sky);
+}
+
 .writing-app__settings-label {
   display: flex;
   align-items: center;

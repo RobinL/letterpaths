@@ -1,4 +1,4 @@
-const CACHE_NAME = "letterpaths-snake-v1";
+const CACHE_NAME = "letterpaths-guided-tracing-v1";
 const APP_SHELL_PATHS = [
   "./",
   "./manifest.webmanifest",

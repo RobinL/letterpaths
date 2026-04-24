@@ -1,7 +1,7 @@
 import path from "node:path";
 import { defineConfig } from "vite";
 
-const githubPagesBase = "/letterpaths/writing_app/";
+const githubPagesBase = "/letterpaths/";
 
 export default defineConfig(({ command }) => ({
   base: command === "build" ? githubPagesBase : "/",
@@ -17,8 +17,10 @@ export default defineConfig(({ command }) => ({
           __dirname,
           "single_letter_worksheet_generator/index.html"
         ),
-        scorePoints: path.resolve(__dirname, "score_points/index.html"),
-        snake: path.resolve(__dirname, "snake/index.html")
+        guidedTracing: path.resolve(__dirname, "guided_tracing/index.html"),
+        editor: path.resolve(__dirname, "editor.html"),
+        gallery: path.resolve(__dirname, "gallery.html"),
+        joinStats: path.resolve(__dirname, "join_stats/index.html")
       }
     }
   },
