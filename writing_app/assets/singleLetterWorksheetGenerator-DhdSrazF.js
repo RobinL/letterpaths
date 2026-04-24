@@ -1,4 +1,4 @@
-import{l as Pe,c as de,a as he,m as Oe,g as Ie,C as ee}from"./shared-ChlPI0Qo.js";import{b as xe}from"./annotations-DdWEPCRa.js";import{b as ue}from"./formation-annotation-markup-CUyUWuzV.js";const we="abcdefghijklmnopqrstuvwxyz".split(""),V="j",Ge="pre-cursive",Ne=96,Fe=320,pe=13,Me=53,He=53,We=26,ze=5.5,Ue=pe*2,Be=0,Ve="#3f454b",Ye="#ffffff",qe="#83b0dd",Xe="#d5dbe2",Ze="#ffffff",Ke="#d5dbe2",fe=38,me=7,ge=54,je=!0,ke=1,Se="#ffb35c",Y=100,Je=178,Qe=.63,et=.66,G=2,te="http://www.w3.org/2000/svg",tt=`
+import{l as Pe,c as de,a as he,m as Oe,g as Ie,C as ee}from"./shared-DTIWhr9c.js";import{b as xe}from"./annotations-BN2DAmNr.js";import{b as ue}from"./formation-annotation-markup-BCn9e_pS.js";const we="abcdefghijklmnopqrstuvwxyz".split(""),V="j",Ge="pre-cursive",Ne=96,Fe=320,pe=13,Me=53,He=53,We=26,ze=5.5,Ue=pe*2,Be=0,Ve="#3f454b",Ye="#ffffff",qe="#83b0dd",Xe="#d5dbe2",Ze="#ffffff",Ke="#d5dbe2",fe=38,me=7,ge=54,je=!0,ke=1,Se="#ffb35c",Y=100,Je=178,Qe=.63,et=.66,G=2,te="http://www.w3.org/2000/svg",tt=`
   .worksheet-word__stroke {
     fill: none;
     stroke: var(--worksheet-word-stroke, #d5dbe2);

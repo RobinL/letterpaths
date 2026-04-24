@@ -1,4 +1,4 @@
-import{b as Le,c as ye,a as Ae,g as Ge,d as Re,e as Ee,f as Ce}from"./shared-ChlPI0Qo.js";import{E as Ie,D as Te,b as Me}from"./formation-annotation-markup-CUyUWuzV.js";import"./annotations-DdWEPCRa.js";const ne="zephyr",Oe=96,De=320,oe=13,He=53,Pe=53,Ne=26,We=5.6,Fe=oe*2,je=0,ze="#3f454b",Ue="#ffffff",Be="#83b0dd",Ve="#d5dbe2",se=24,de=1,le=54,ce=1,he="#ffb35c",z=100,Xe=178,Ye=.63,Ze=.66,E=2,K="http://www.w3.org/2000/svg",qe=`
+import{b as Le,c as ye,a as Ae,g as Ge,d as Re,e as Ee,f as Ce}from"./shared-DTIWhr9c.js";import{E as Ie,D as Te,b as Me}from"./formation-annotation-markup-BCn9e_pS.js";import"./annotations-BN2DAmNr.js";const ne="zephyr",Oe=96,De=320,oe=13,He=53,Pe=53,Ne=26,We=5.6,Fe=oe*2,je=0,ze="#3f454b",Ue="#ffffff",Be="#83b0dd",Ve="#d5dbe2",se=24,de=1,le=54,ce=1,he="#ffb35c",z=100,Xe=178,Ye=.63,Ze=.66,E=2,K="http://www.w3.org/2000/svg",qe=`
   .worksheet-word__stroke {
     fill: none;
     stroke: var(--worksheet-word-stroke, #d5dbe2);
