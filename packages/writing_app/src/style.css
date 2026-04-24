@@ -107,11 +107,17 @@ body {
 }
 
 .writing-app--snake .writing-app__eyebrow {
-  margin-bottom: 8px;
+  position: fixed;
+  left: 12px;
+  bottom: 12px;
+  z-index: 2;
+  width: min(50vw, 420px);
+  margin: 0;
   color: #000;
   font-size: 1.12rem;
   letter-spacing: 0;
   text-transform: none;
+  pointer-events: none;
 }
 
 .writing-app--snake .writing-app__word {
@@ -144,6 +150,14 @@ body {
   font-weight: 800;
   letter-spacing: 0.05em;
   text-transform: uppercase;
+}
+
+.writing-app--snake .writing-app__word-input-label {
+  grid-template-columns: auto minmax(0, 170px);
+  align-items: center;
+  width: max-content;
+  max-width: calc(100vw - 24px);
+  margin-top: 0;
 }
 
 .writing-app__word-input {
