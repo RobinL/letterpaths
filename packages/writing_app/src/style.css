@@ -481,30 +481,36 @@ body {
   pointer-events: none;
 }
 
-.writing-app__freehand-dot {
+.writing-app__freehand-arrow {
   fill: #ffffff;
-  stroke: rgba(35, 49, 61, 0.28);
-  stroke-width: 3;
+  stroke: rgba(35, 49, 61, 0.3);
+  stroke-width: 2.5;
   pointer-events: none;
+  filter: drop-shadow(0 3px 5px rgba(35, 49, 61, 0.14));
   transition:
     fill 0.12s ease,
     opacity 0.12s ease,
-    r 0.12s ease,
+    transform 0.12s ease,
     stroke 0.12s ease;
 }
 
-.writing-app__freehand-dot--current {
+.writing-app__freehand-arrow--current {
   fill: var(--accent);
   stroke: #ffffff;
 }
 
-.writing-app__freehand-dot--done {
+.writing-app__freehand-arrow--done {
   fill: var(--mint);
   stroke: #ffffff;
-  opacity: 0.72;
+  opacity: 0;
+}
+
+.writing-app__freehand-arrow--hidden {
+  opacity: 0;
 }
 
 .writing-app__freehand-tolerance {
+  display: none;
   fill: rgba(242, 109, 79, 0.08);
   stroke: rgba(242, 109, 79, 0.24);
   stroke-width: 2;

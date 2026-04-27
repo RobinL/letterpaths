@@ -18,9 +18,10 @@ import {
 } from "./shared";
 
 const DEFAULT_WORD = "zephyr";
-const FREEHAND_SAMPLE_RATE = 28;
+const FREEHAND_CHECKPOINT_SAMPLE_RATE = 56;
 const DEFAULT_TOLERANCE = DEFAULT_TRACE_TOLERANCE;
 const TOLERANCE_GATE_DEPTH = 12;
+const VISIBLE_CHECKPOINT_COUNT = 5;
 const URL_PARAM_KEYS = ["word", "tolerance"] as const;
 
 type Checkpoint = Point & {
@@ -170,9 +171,9 @@ let currentTolerance = DEFAULT_TOLERANCE;
 let currentPath: WritingPath | null = null;
 let preparedTracingPath: PreparedTracingPath | null = null;
 let checkpoints: Checkpoint[] = [];
-let checkpointEls: SVGCircleElement[] = [];
-let completedDotLayerEl: SVGGElement | null = null;
-let remainingDotLayerEl: SVGGElement | null = null;
+let checkpointEls: SVGPathElement[] = [];
+let completedArrowLayerEl: SVGGElement | null = null;
+let remainingArrowLayerEl: SVGGElement | null = null;
 let toleranceGateEl: SVGRectElement | null = null;
 let completedPathEl: SVGPathElement | null = null;
 let userInkLayerEl: SVGGElement | null = null;
@@ -394,15 +395,28 @@ const syncProgressDisplay = () => {
     const isCompleted = index < completedCheckpointCount;
     const isCurrent = index === completedCheckpointCount;
 
-    el.classList.toggle("writing-app__freehand-dot--done", isCompleted);
-    el.classList.toggle("writing-app__freehand-dot--current", isCurrent);
-    if (isCompleted && el.parentElement !== completedDotLayerEl) {
-      completedDotLayerEl?.append(el);
-    } else if (!isCompleted && el.parentElement !== remainingDotLayerEl) {
-      remainingDotLayerEl?.append(el);
+    const visibleOffset = index - completedCheckpointCount;
+    const isVisible = visibleOffset >= 0 && visibleOffset < VISIBLE_CHECKPOINT_COUNT;
+    const opacity = isVisible
+      ? Math.max(0, 1 - visibleOffset / (VISIBLE_CHECKPOINT_COUNT - 1))
+      : 0;
+
+    el.classList.toggle("writing-app__freehand-arrow--done", isCompleted);
+    el.classList.toggle("writing-app__freehand-arrow--current", isCurrent);
+    el.classList.toggle("writing-app__freehand-arrow--hidden", !isVisible);
+    el.style.opacity = isCompleted ? "0" : opacity.toFixed(2);
+    if (isCompleted && el.parentElement !== completedArrowLayerEl) {
+      completedArrowLayerEl?.append(el);
+    } else if (!isCompleted && el.parentElement !== remainingArrowLayerEl) {
+      remainingArrowLayerEl?.append(el);
     }
     if (checkpoint) {
-      el.setAttribute("r", isCurrent ? "9" : "5.5");
+      const angle = Math.atan2(checkpoint.tangent.y, checkpoint.tangent.x) * (180 / Math.PI);
+      const scale = isCurrent ? 1.2 : 1;
+      el.setAttribute(
+        "transform",
+        `translate(${checkpoint.x} ${checkpoint.y}) rotate(${angle}) scale(${scale})`
+      );
     }
   });
 
@@ -410,7 +424,7 @@ const syncProgressDisplay = () => {
   if (toleranceGateEl && currentCheckpoint) {
     const angle =
       Math.atan2(currentCheckpoint.tangent.y, currentCheckpoint.tangent.x) * (180 / Math.PI);
-    toleranceGateEl.style.display = "";
+    toleranceGateEl.style.display = "none";
     toleranceGateEl.setAttribute("x", String(-TOLERANCE_GATE_DEPTH));
     toleranceGateEl.setAttribute("y", String(-currentTolerance));
     toleranceGateEl.setAttribute("width", String(TOLERANCE_GATE_DEPTH * 2));
@@ -458,7 +472,7 @@ const createSvgPath = (className: string): SVGPathElement => {
 };
 
 const setupScene = (path: WritingPath, width: number, height: number, offsetY: number) => {
-  preparedTracingPath = compileTracingPath(path, { sampleRate: FREEHAND_SAMPLE_RATE });
+  preparedTracingPath = compileTracingPath(path, { sampleRate: FREEHAND_CHECKPOINT_SAMPLE_RATE });
   checkpoints = createCheckpoints(preparedTracingPath);
   const guidePaths = path.strokes
     .filter((stroke) => stroke.type !== "lift")
@@ -467,19 +481,21 @@ const setupScene = (path: WritingPath, width: number, height: number, offsetY: n
         `<path class="writing-app__freehand-guide" d="${buildPathD(stroke.curves)}"></path>`
     )
     .join("");
-  const dotMarkup = checkpoints
+  const arrowMarkup = checkpoints
     .map(
-      (checkpoint, index) => `
-        <circle
-          class="writing-app__freehand-dot"
+      (checkpoint, index) => {
+        const angle = Math.atan2(checkpoint.tangent.y, checkpoint.tangent.x) * (180 / Math.PI);
+        return `
+        <path
+          class="writing-app__freehand-arrow"
           data-checkpoint-index="${index}"
           data-stroke-index="${checkpoint.strokeIndex}"
           data-sample-index="${checkpoint.sampleIndex}"
-          cx="${checkpoint.x}"
-          cy="${checkpoint.y}"
-          r="5.5"
-        ></circle>
-      `
+          d="M -22.5 -16.5 L 22.5 0 L -22.5 16.5 L -12 0 Z"
+          transform="translate(${checkpoint.x} ${checkpoint.y}) rotate(${angle})"
+        ></path>
+      `;
+      }
     )
     .join("");
 
@@ -502,17 +518,17 @@ const setupScene = (path: WritingPath, width: number, height: number, offsetY: n
     ></line>
     <g class="writing-app__freehand-word">${guidePaths}</g>
     <path class="writing-app__freehand-completed" id="completed-checkpoint-path" d=""></path>
-    <g class="writing-app__freehand-completed-dots" id="completed-dots"></g>
+    <g class="writing-app__freehand-completed-arrows" id="completed-arrows"></g>
     <rect class="writing-app__freehand-tolerance" id="tolerance-gate"></rect>
     <g class="writing-app__freehand-ink" id="user-ink"></g>
-    <g class="writing-app__freehand-remaining-dots" id="remaining-dots">${dotMarkup}</g>
+    <g class="writing-app__freehand-remaining-arrows" id="remaining-arrows">${arrowMarkup}</g>
   `;
 
   checkpointEls = Array.from(
-    freehandSvg.querySelectorAll<SVGCircleElement>(".writing-app__freehand-dot")
+    freehandSvg.querySelectorAll<SVGPathElement>(".writing-app__freehand-arrow")
   );
-  completedDotLayerEl = freehandSvg.querySelector<SVGGElement>("#completed-dots");
-  remainingDotLayerEl = freehandSvg.querySelector<SVGGElement>("#remaining-dots");
+  completedArrowLayerEl = freehandSvg.querySelector<SVGGElement>("#completed-arrows");
+  remainingArrowLayerEl = freehandSvg.querySelector<SVGGElement>("#remaining-arrows");
   toleranceGateEl = freehandSvg.querySelector<SVGRectElement>("#tolerance-gate");
   completedPathEl = freehandSvg.querySelector<SVGPathElement>("#completed-checkpoint-path");
   userInkLayerEl = freehandSvg.querySelector<SVGGElement>("#user-ink");
@@ -531,8 +547,8 @@ const renderWord = (word: string, wordIndex = -1) => {
     preparedTracingPath = null;
     checkpoints = [];
     checkpointEls = [];
-    completedDotLayerEl = null;
-    remainingDotLayerEl = null;
+    completedArrowLayerEl = null;
+    remainingArrowLayerEl = null;
     toleranceGateEl = null;
     completedPathEl = null;
     userInkLayerEl = null;
@@ -551,8 +567,8 @@ const renderWord = (word: string, wordIndex = -1) => {
     preparedTracingPath = null;
     checkpoints = [];
     checkpointEls = [];
-    completedDotLayerEl = null;
-    remainingDotLayerEl = null;
+    completedArrowLayerEl = null;
+    remainingArrowLayerEl = null;
     toleranceGateEl = null;
     completedPathEl = null;
     userInkLayerEl = null;
