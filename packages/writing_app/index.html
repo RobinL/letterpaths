@@ -1,108 +1,230 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Letterpaths Apps</title>
-    <style>
-      :root {
-        color-scheme: light;
-        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-        color: #1f2933;
-        background: #f7f4ed;
-      }
 
-      * {
-        box-sizing: border-box;
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Free Handwriting Worksheet Generator | Printable Cursive and Pre-Cursive Practice</title>
+  <meta name="description"
+    content="Free forever handwriting worksheet generator for printable print, pre-cursive, cursive and joined handwriting practice. No signup, no ads, open source, and shareable by URL." />
+  <link rel="canonical" href="https://robinlinacre.github.io/letterpaths/" />
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://robinlinacre.github.io/letterpaths/" />
+  <meta property="og:title" content="Free handwriting worksheet generator" />
+  <meta property="og:description"
+    content="Create printable pre-cursive, cursive and joined handwriting worksheets. No signup, no ads, free forever, open source, and shareable by URL." />
+  <meta property="og:image" content="https://robinlinacre.github.io/letterpaths/guided_tracing/pwa-512x512.png" />
+  <meta name="twitter:card" content="summary" />
+  <meta name="twitter:title" content="Free handwriting worksheet generator" />
+  <meta name="twitter:description"
+    content="Printable handwriting worksheets for print, pre-cursive, cursive and joined handwriting practice. No signup and no ads." />
+  <meta name="twitter:image" content="https://robinlinacre.github.io/letterpaths/guided_tracing/pwa-512x512.png" />
+  <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Free Handwriting Worksheet Generator",
+        "applicationCategory": "EducationalApplication",
+        "operatingSystem": "Web",
+        "url": "https://robinlinacre.github.io/letterpaths/",
+        "description": "A free, open source handwriting worksheet generator for printable print, pre-cursive, cursive and joined handwriting practice sheets.",
+        "isAccessibleForFree": true,
+        "offers": {
+          "@type": "Offer",
+          "price": "0",
+          "priceCurrency": "GBP"
+        },
+        "featureList": [
+          "Printable handwriting worksheets",
+          "Print, pre-cursive, cursive and joined handwriting practice",
+          "Name tracing, words and spellings",
+          "Letter formation arrows, stroke order and numbered points",
+          "Worksheets can be saved or shared by URL",
+          "No signup and no adverts",
+          "Free and open source"
+        ],
+        "audience": {
+          "@type": "EducationalAudience",
+          "educationalRole": "teacher"
+        }
       }
+    </script>
+  <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "Is the handwriting worksheet generator free?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Yes. It is free forever, open source, and has no signup, adverts, paywall or trial."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Can I make cursive and pre-cursive handwriting worksheets?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Yes. The tools support print, pre-cursive, cursive and joined handwriting practice, including worksheets for names, words and spellings."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Can I save or share a worksheet?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Yes. Worksheet settings are encoded in the URL, so you can save or share a worksheet by copying the page address."
+            }
+          }
+        ]
+      }
+    </script>
+  <style>
+    :root {
+      color-scheme: light;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: #1f2933;
+      background: #f7f4ed;
+    }
 
-      body {
-        margin: 0;
-      }
+    * {
+      box-sizing: border-box;
+    }
 
-      main {
-        width: min(920px, calc(100% - 32px));
-        margin: 0 auto;
-        padding: 48px 0;
-      }
+    body {
+      margin: 0;
+    }
 
-      h1 {
-        margin: 0 0 8px;
-        font-size: clamp(2rem, 5vw, 3.4rem);
-        line-height: 1;
-        letter-spacing: 0;
-      }
+    main {
+      width: min(920px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 48px 0;
+    }
 
-      p {
-        margin: 0 0 28px;
-        color: #5c6570;
-        font-size: 1.05rem;
-      }
+    h1 {
+      margin: 0 0 8px;
+      font-size: clamp(2rem, 5vw, 3.4rem);
+      line-height: 1;
+      letter-spacing: 0;
+    }
 
-      nav {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-        gap: 12px;
-      }
+    p {
+      margin: 0 0 28px;
+      color: #5c6570;
+      font-size: 1.05rem;
+    }
 
-      a {
-        display: grid;
-        gap: 6px;
-        min-height: 96px;
-        padding: 18px;
-        border: 1px solid rgba(31, 41, 51, 0.12);
-        border-radius: 8px;
-        color: inherit;
-        background: rgba(255, 255, 255, 0.74);
-        text-decoration: none;
-        box-shadow: 0 10px 28px rgba(31, 41, 51, 0.08);
-      }
+    .intro {
+      max-width: 760px;
+    }
 
-      a:focus,
-      a:hover {
-        outline: 3px solid rgba(49, 130, 206, 0.22);
-        border-color: rgba(49, 130, 206, 0.45);
-      }
+    .intro p {
+      margin-bottom: 14px;
+    }
 
-      strong {
-        font-size: 1.08rem;
-      }
+    nav {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 12px;
+    }
 
-      span {
-        color: #66717d;
-      }
-    </style>
-  </head>
-  <body>
-    <main>
-      <h1>Letterpaths Apps</h1>
-      <p>Development tools and worksheet generators for the handwriting library.</p>
-      <nav aria-label="Letterpaths app pages">
-        <a href="./guided_tracing/">
-          <strong>Guided tracing</strong>
-          <span>Plain, snake, and rollercoaster tracing skins.</span>
-        </a>
-        <a href="./cursive_worksheet_generator/">
-          <strong>Cursive worksheet generator</strong>
-          <span>Build cursive handwriting worksheets.</span>
-        </a>
-        <a href="./single_letter_worksheet_generator/">
-          <strong>Single-letter worksheet generator</strong>
-          <span>Build print and pre-cursive worksheets.</span>
-        </a>
-        <a href="./editor.html">
-          <strong>Single-letter editor</strong>
-          <span>Edit letter bezier data.</span>
-        </a>
-        <a href="./gallery.html">
-          <strong>Letter gallery</strong>
-          <span>Review generated letter shapes.</span>
-        </a>
-        <a href="./join_stats/">
-          <strong>Join stats</strong>
-          <span>Inspect cursive join spacing.</span>
-        </a>
-      </nav>
-    </main>
-  </body>
+    a {
+      display: grid;
+      gap: 6px;
+      min-height: 96px;
+      padding: 18px;
+      border: 1px solid rgba(31, 41, 51, 0.12);
+      border-radius: 8px;
+      color: inherit;
+      background: rgba(255, 255, 255, 0.74);
+      text-decoration: none;
+      box-shadow: 0 10px 28px rgba(31, 41, 51, 0.08);
+    }
+
+    a:focus,
+    a:hover {
+      outline: 3px solid rgba(49, 130, 206, 0.22);
+      border-color: rgba(49, 130, 206, 0.45);
+    }
+
+    strong {
+      font-size: 1.08rem;
+    }
+
+    span {
+      color: #66717d;
+    }
+
+    section {
+      margin-top: 32px;
+    }
+
+    h2 {
+      margin: 0 0 12px;
+      font-size: 1.35rem;
+    }
+
+    dl {
+      display: grid;
+      gap: 14px;
+      margin: 0;
+    }
+
+    dt {
+      font-weight: 700;
+    }
+
+    dd {
+      margin: 4px 0 0;
+      color: #5c6570;
+    }
+  </style>
+</head>
+
+<body>
+  <main>
+    <h1>Letterpaths</h1>
+    <h2>Free handwriting worksheets generator and handwriting apps</h2>
+    <div class="intro">
+      <p>
+        Lettepaths provides a set of free, high quality resources corresponding to the UK primary school curriculum for
+        handwriting practice and learning letter formation.
+      </p>
+      <p>
+        All resources are free forever. No signup, no adverts.
+      </p>
+
+    </div>
+    <nav aria-label="Handwriting worksheet tools">
+      <a href="./cursive_worksheet_generator/">
+        <strong>Cursive and joined worksheet generator</strong>
+        <span>Create printable cursive and joined handwriting worksheets for words, names and spellings.</span>
+      </a>
+      <a href="./single_letter_worksheet_generator/">
+        <strong>Print and pre-cursive worksheet generator</strong>
+        <span>Create printable letter formation worksheets with arrows, guides and numbered points.</span>
+      </a>
+      <a href="./guided_tracing/">
+        <strong>Guided handwriting tracing</strong>
+        <span>Practise tracing words on screen with plain, snake and rollercoaster skins.</span>
+      </a>
+      <a href="./editor.html">
+        <strong>Single-letter editor</strong>
+        <span>Edit letter bezier data.</span>
+      </a>
+      <a href="./gallery.html">
+        <strong>Letter gallery</strong>
+        <span>Review generated letter shapes.</span>
+      </a>
+      <a href="./join_stats/">
+        <strong>Join stats</strong>
+        <span>Inspect cursive join spacing.</span>
+      </a>
+    </nav>
+
+  </main>
+</body>
+
 </html>
