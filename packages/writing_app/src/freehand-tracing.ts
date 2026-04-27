@@ -18,7 +18,7 @@ import {
 } from "./shared";
 
 const DEFAULT_WORD = "zephyr";
-const FREEHAND_CHECKPOINT_SAMPLE_RATE = 56;
+const FREEHAND_CHECKPOINT_SAMPLE_RATE = 84;
 const DEFAULT_TOLERANCE = DEFAULT_TRACE_TOLERANCE;
 const TOLERANCE_GATE_DEPTH = 12;
 const VISIBLE_CHECKPOINT_COUNT = 5;
@@ -412,7 +412,7 @@ const syncProgressDisplay = () => {
     }
     if (checkpoint) {
       const angle = Math.atan2(checkpoint.tangent.y, checkpoint.tangent.x) * (180 / Math.PI);
-      const scale = isCurrent ? 1.2 : 1;
+      const scale = isCurrent ? 1.25 : 1;
       el.setAttribute(
         "transform",
         `translate(${checkpoint.x} ${checkpoint.y}) rotate(${angle}) scale(${scale})`
