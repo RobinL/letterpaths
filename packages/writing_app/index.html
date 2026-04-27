@@ -203,7 +203,8 @@
 
     nav {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr));
+      align-items: start;
       gap: 12px;
     }
 
@@ -218,6 +219,44 @@
       background: rgba(255, 255, 255, 0.74);
       text-decoration: none;
       box-shadow: 0 10px 28px rgba(31, 41, 51, 0.08);
+    }
+
+    .tool-card {
+      grid-template-rows: auto auto 1fr;
+      overflow: hidden;
+    }
+
+    .tool-card__media {
+      display: grid;
+      width: calc(100% + 36px);
+      margin: -18px -18px 10px;
+      aspect-ratio: 4 / 3;
+      overflow: hidden;
+      border-bottom: 1px solid rgba(31, 41, 51, 0.1);
+      background: #ebe7dc;
+    }
+
+    .tool-card__media--split {
+      grid-template-rows: repeat(2, minmax(0, 1fr));
+      gap: 1px;
+      background: rgba(31, 41, 51, 0.12);
+    }
+
+    .tool-card__media img,
+    .tool-card__media video {
+      width: 100%;
+      height: 100%;
+      display: block;
+      object-fit: cover;
+    }
+
+    .tool-card__media img {
+      object-position: top center;
+    }
+
+    .tool-card__media video {
+      background: #f7f4ed;
+      object-fit: contain;
     }
 
     a:focus,
@@ -282,15 +321,47 @@
 
     </div>
     <nav aria-label="Handwriting worksheet tools">
-      <a href="./cursive_worksheet_generator/">
+      <a class="tool-card" href="./cursive_worksheet_generator/">
+        <span class="tool-card__media" aria-hidden="true">
+          <img
+            src="%BASE_URL%homepage/cursive-worksheet.png"
+            alt=""
+            loading="lazy"
+          />
+        </span>
         <strong>Cursive and joined worksheet generator</strong>
         <span>Create printable cursive and joined handwriting worksheets for words, names and spellings.</span>
       </a>
-      <a href="./single_letter_worksheet_generator/">
+      <a class="tool-card" href="./single_letter_worksheet_generator/">
+        <span class="tool-card__media" aria-hidden="true">
+          <img
+            src="%BASE_URL%homepage/print-worksheet.png"
+            alt=""
+            loading="lazy"
+          />
+        </span>
         <strong>Print and pre-cursive worksheet generator</strong>
         <span>Create printable letter formation worksheets with arrows, guides and numbered points.</span>
       </a>
-      <a href="./guided_tracing/">
+      <a class="tool-card" href="./guided_tracing/">
+        <span class="tool-card__media tool-card__media--split" aria-hidden="true">
+          <video
+            src="%BASE_URL%homepage/guided-tracing-plain.mp4"
+            autoplay
+            loop
+            muted
+            playsinline
+            preload="metadata"
+          ></video>
+          <video
+            src="%BASE_URL%homepage/guided-tracing-snake.mp4"
+            autoplay
+            loop
+            muted
+            playsinline
+            preload="metadata"
+          ></video>
+        </span>
         <strong>Guided handwriting tracing</strong>
         <span>Practise tracing words on screen with plain, snake and rollercoaster skins.</span>
       </a>
