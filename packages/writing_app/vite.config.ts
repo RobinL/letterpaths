@@ -18,6 +18,7 @@ export default defineConfig(({ command }) => ({
           "single_letter_worksheet_generator/index.html"
         ),
         guidedTracing: path.resolve(__dirname, "guided_tracing/index.html"),
+        freehandTracing: path.resolve(__dirname, "freehand_tracing/index.html"),
         editor: path.resolve(__dirname, "editor.html"),
         gallery: path.resolve(__dirname, "gallery.html"),
         joinStats: path.resolve(__dirname, "join_stats/index.html")
