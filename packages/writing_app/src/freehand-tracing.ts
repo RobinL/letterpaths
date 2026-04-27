@@ -408,7 +408,8 @@ const syncProgressDisplay = () => {
 
   const currentCheckpoint = checkpoints[completedCheckpointCount];
   if (toleranceGateEl && currentCheckpoint) {
-    const angle = Math.atan2(currentCheckpoint.tangent.y, currentCheckpoint.tangent.x) * (180 / Math.PI);
+    const angle =
+      Math.atan2(currentCheckpoint.tangent.y, currentCheckpoint.tangent.x) * (180 / Math.PI);
     toleranceGateEl.style.display = "";
     toleranceGateEl.setAttribute("x", String(-TOLERANCE_GATE_DEPTH));
     toleranceGateEl.setAttribute("y", String(-currentTolerance));
