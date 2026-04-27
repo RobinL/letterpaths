@@ -20,9 +20,11 @@ import {
 const DEFAULT_WORD = "zephyr";
 const FREEHAND_SAMPLE_RATE = 28;
 const DEFAULT_TOLERANCE = DEFAULT_TRACE_TOLERANCE;
+const TOLERANCE_GATE_DEPTH = 12;
 const URL_PARAM_KEYS = ["word", "tolerance"] as const;
 
 type Checkpoint = Point & {
+  tangent: Point;
   strokeIndex: number;
   sampleIndex: number;
   completed: boolean;
@@ -169,7 +171,9 @@ let currentPath: WritingPath | null = null;
 let preparedTracingPath: PreparedTracingPath | null = null;
 let checkpoints: Checkpoint[] = [];
 let checkpointEls: SVGCircleElement[] = [];
-let toleranceRingEl: SVGCircleElement | null = null;
+let completedDotLayerEl: SVGGElement | null = null;
+let remainingDotLayerEl: SVGGElement | null = null;
+let toleranceGateEl: SVGRectElement | null = null;
 let completedPathEl: SVGPathElement | null = null;
 let userInkLayerEl: SVGGElement | null = null;
 let activePointerId: number | null = null;
@@ -265,6 +269,7 @@ const createCheckpoints = (preparedPath: PreparedTracingPath): Checkpoint[] =>
     stroke.samples.map((sample, sampleIndex) => ({
       x: sample.x,
       y: sample.y,
+      tangent: sample.tangent,
       strokeIndex,
       sampleIndex,
       completed: false,
@@ -313,31 +318,62 @@ const getScore = (): number | null => {
   return Math.max(0, Math.round((1 - normalizedError) * 100));
 };
 
-const getPointToSegmentHit = (
-  point: Point,
+const getPerpendicularVector = (vector: Point): Point => ({
+  x: -vector.y,
+  y: vector.x
+});
+
+const getDot = (a: Point, b: Point): number => a.x * b.x + a.y * b.y;
+
+const subtractPoints = (a: Point, b: Point): Point => ({
+  x: a.x - b.x,
+  y: a.y - b.y
+});
+
+const interpolatePoints = (a: Point, b: Point, t: number): Point => ({
+  x: a.x + (b.x - a.x) * t,
+  y: a.y + (b.y - a.y) * t
+});
+
+const getCheckpointGateHit = (
+  checkpoint: Checkpoint,
   segmentStart: Point,
   segmentEnd: Point
-): { distance: number; isOnSegment: boolean } => {
-  const dx = segmentEnd.x - segmentStart.x;
-  const dy = segmentEnd.y - segmentStart.y;
-  const lengthSquared = dx * dx + dy * dy;
+): { distance: number; isHit: boolean } => {
+  const normal = getPerpendicularVector(checkpoint.tangent);
+  const startOffset = subtractPoints(segmentStart, checkpoint);
+  const endOffset = subtractPoints(segmentEnd, checkpoint);
+  const startAlong = getDot(startOffset, checkpoint.tangent);
+  const endAlong = getDot(endOffset, checkpoint.tangent);
 
-  if (lengthSquared <= 0.001) {
+  if (Math.hypot(segmentEnd.x - segmentStart.x, segmentEnd.y - segmentStart.y) <= 0.001) {
+    const lateralDistance = Math.abs(getDot(startOffset, normal));
     return {
-      distance: Math.hypot(point.x - segmentStart.x, point.y - segmentStart.y),
-      isOnSegment: true
+      distance: lateralDistance,
+      isHit: Math.abs(startAlong) <= TOLERANCE_GATE_DEPTH && lateralDistance <= currentTolerance
     };
   }
 
-  const rawT = ((point.x - segmentStart.x) * dx + (point.y - segmentStart.y) * dy) / lengthSquared;
-  const t = Math.max(0, Math.min(1, rawT));
-  const projection = {
-    x: segmentStart.x + dx * t,
-    y: segmentStart.y + dy * t
-  };
+  const crossesGate =
+    (startAlong <= TOLERANCE_GATE_DEPTH && endAlong >= -TOLERANCE_GATE_DEPTH) ||
+    (endAlong <= TOLERANCE_GATE_DEPTH && startAlong >= -TOLERANCE_GATE_DEPTH);
+  if (!crossesGate) {
+    return {
+      distance: Number.POSITIVE_INFINITY,
+      isHit: false
+    };
+  }
+
+  const alongDelta = endAlong - startAlong;
+  const crossingT =
+    Math.abs(alongDelta) <= 0.001
+      ? 0
+      : Math.max(0, Math.min(1, (0 - startAlong) / alongDelta));
+  const crossingPoint = interpolatePoints(segmentStart, segmentEnd, crossingT);
+  const lateralDistance = Math.abs(getDot(subtractPoints(crossingPoint, checkpoint), normal));
   return {
-    distance: Math.hypot(point.x - projection.x, point.y - projection.y),
-    isOnSegment: rawT >= -0.001 && rawT <= 1.001
+    distance: lateralDistance,
+    isHit: lateralDistance <= currentTolerance
   };
 };
 
@@ -360,19 +396,30 @@ const syncProgressDisplay = () => {
 
     el.classList.toggle("writing-app__freehand-dot--done", isCompleted);
     el.classList.toggle("writing-app__freehand-dot--current", isCurrent);
+    if (isCompleted && el.parentElement !== completedDotLayerEl) {
+      completedDotLayerEl?.append(el);
+    } else if (!isCompleted && el.parentElement !== remainingDotLayerEl) {
+      remainingDotLayerEl?.append(el);
+    }
     if (checkpoint) {
       el.setAttribute("r", isCurrent ? "9" : "5.5");
     }
   });
 
   const currentCheckpoint = checkpoints[completedCheckpointCount];
-  if (toleranceRingEl && currentCheckpoint) {
-    toleranceRingEl.style.display = "";
-    toleranceRingEl.setAttribute("cx", String(currentCheckpoint.x));
-    toleranceRingEl.setAttribute("cy", String(currentCheckpoint.y));
-    toleranceRingEl.setAttribute("r", String(currentTolerance));
-  } else if (toleranceRingEl) {
-    toleranceRingEl.style.display = "none";
+  if (toleranceGateEl && currentCheckpoint) {
+    const angle = Math.atan2(currentCheckpoint.tangent.y, currentCheckpoint.tangent.x) * (180 / Math.PI);
+    toleranceGateEl.style.display = "";
+    toleranceGateEl.setAttribute("x", String(-TOLERANCE_GATE_DEPTH));
+    toleranceGateEl.setAttribute("y", String(-currentTolerance));
+    toleranceGateEl.setAttribute("width", String(TOLERANCE_GATE_DEPTH * 2));
+    toleranceGateEl.setAttribute("height", String(currentTolerance * 2));
+    toleranceGateEl.setAttribute(
+      "transform",
+      `translate(${currentCheckpoint.x} ${currentCheckpoint.y}) rotate(${angle})`
+    );
+  } else if (toleranceGateEl) {
+    toleranceGateEl.style.display = "none";
   }
 
   if (completedCheckpointCount >= checkpoints.length && checkpoints.length > 0) {
@@ -454,15 +501,18 @@ const setupScene = (path: WritingPath, width: number, height: number, offsetY: n
     ></line>
     <g class="writing-app__freehand-word">${guidePaths}</g>
     <path class="writing-app__freehand-completed" id="completed-checkpoint-path" d=""></path>
-    <g class="writing-app__freehand-dots">${dotMarkup}</g>
-    <circle class="writing-app__freehand-tolerance" id="tolerance-ring" cx="0" cy="0" r="${currentTolerance}"></circle>
+    <g class="writing-app__freehand-completed-dots" id="completed-dots"></g>
+    <rect class="writing-app__freehand-tolerance" id="tolerance-gate"></rect>
     <g class="writing-app__freehand-ink" id="user-ink"></g>
+    <g class="writing-app__freehand-remaining-dots" id="remaining-dots">${dotMarkup}</g>
   `;
 
   checkpointEls = Array.from(
     freehandSvg.querySelectorAll<SVGCircleElement>(".writing-app__freehand-dot")
   );
-  toleranceRingEl = freehandSvg.querySelector<SVGCircleElement>("#tolerance-ring");
+  completedDotLayerEl = freehandSvg.querySelector<SVGGElement>("#completed-dots");
+  remainingDotLayerEl = freehandSvg.querySelector<SVGGElement>("#remaining-dots");
+  toleranceGateEl = freehandSvg.querySelector<SVGRectElement>("#tolerance-gate");
   completedPathEl = freehandSvg.querySelector<SVGPathElement>("#completed-checkpoint-path");
   userInkLayerEl = freehandSvg.querySelector<SVGGElement>("#user-ink");
 
@@ -480,7 +530,9 @@ const renderWord = (word: string, wordIndex = -1) => {
     preparedTracingPath = null;
     checkpoints = [];
     checkpointEls = [];
-    toleranceRingEl = null;
+    completedDotLayerEl = null;
+    remainingDotLayerEl = null;
+    toleranceGateEl = null;
     completedPathEl = null;
     userInkLayerEl = null;
     freehandSvg.innerHTML = "";
@@ -498,6 +550,11 @@ const renderWord = (word: string, wordIndex = -1) => {
     preparedTracingPath = null;
     checkpoints = [];
     checkpointEls = [];
+    completedDotLayerEl = null;
+    remainingDotLayerEl = null;
+    toleranceGateEl = null;
+    completedPathEl = null;
+    userInkLayerEl = null;
     freehandSvg.innerHTML = "";
     syncProgressDisplay();
     updateSuccessVisibility(false);
@@ -509,8 +566,8 @@ const advanceCheckpointsAlongSegment = (segmentStart: Point, segmentEnd: Point) 
   let checkpoint = checkpoints[completedCheckpointCount];
 
   while (checkpoint) {
-    const hit = getPointToSegmentHit(checkpoint, segmentStart, segmentEnd);
-    if (!hit.isOnSegment || hit.distance > currentTolerance) {
+    const hit = getCheckpointGateHit(checkpoint, segmentStart, segmentEnd);
+    if (!hit.isHit) {
       break;
     }
 
