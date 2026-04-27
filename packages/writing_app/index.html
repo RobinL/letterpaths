@@ -110,6 +110,83 @@
       letter-spacing: 0;
     }
 
+    .brand-title {
+      position: relative;
+      width: min(100%, 860px);
+      min-height: clamp(86px, 17vw, 150px);
+      margin-bottom: 12px;
+    }
+
+    .brand-title__fallback {
+      display: inline-block;
+    }
+
+    .brand-title--ready .brand-title__fallback {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip: rect(0 0 0 0);
+      white-space: nowrap;
+    }
+
+    .brand-title__svg {
+      display: none;
+      width: 100%;
+      height: clamp(86px, 17vw, 150px);
+      overflow: visible;
+    }
+
+    .brand-title--ready .brand-title__svg {
+      display: block;
+    }
+
+    .brand-title__guide {
+      stroke-width: 2;
+      vector-effect: non-scaling-stroke;
+    }
+
+    .brand-title__guide--midline {
+      stroke: rgba(242, 109, 79, 0.24);
+    }
+
+    .brand-title__guide--baseline {
+      stroke: rgba(90, 182, 168, 0.58);
+    }
+
+    .brand-title__stroke {
+      fill: none;
+      stroke-width: 54;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .brand-title__stroke--bg {
+      stroke: rgba(31, 41, 51, 0.14);
+    }
+
+    .brand-title__stroke--trace {
+      stroke: #4a90e2;
+      stroke-opacity: 0.96;
+    }
+
+    .brand-title__pen {
+      pointer-events: none;
+      transition: opacity 0.18s ease;
+    }
+
+    .brand-title__pen-bg {
+      fill: #f26d4f;
+      stroke: rgba(31, 41, 51, 0.22);
+      stroke-width: 3;
+    }
+
+    .brand-title__pen-arrow {
+      fill: #ffffff;
+      stroke: rgba(31, 41, 51, 0.1);
+      stroke-width: 1.5;
+    }
+
     p {
       margin: 0 0 28px;
       color: #5c6570;
@@ -185,11 +262,18 @@
 
 <body>
   <main>
-    <h1>Letterpaths</h1>
+    <h1 class="brand-title" data-letterpaths-title>
+      <span class="brand-title__fallback">Letterpaths</span>
+      <svg
+        class="brand-title__svg"
+        data-letterpaths-title-svg
+        aria-hidden="true"
+      ></svg>
+    </h1>
     <h2>Free handwriting worksheets generator and handwriting apps</h2>
     <div class="intro">
       <p>
-        Lettepaths provides a set of free, high quality resources corresponding to the UK primary school curriculum for
+        Letterpaths provides a set of free, high quality resources corresponding to the UK primary school curriculum for
         handwriting practice and learning letter formation.
       </p>
       <p>
@@ -225,6 +309,7 @@
     </nav>
 
   </main>
+  <script type="module" src="./src/homepage-title.ts"></script>
 </body>
 
 </html>
