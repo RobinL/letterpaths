@@ -247,8 +247,10 @@ const transparentPixelAsset = svgAssetUrl(
 );
 const plainHeadAsset = svgAssetUrl(`
   <svg xmlns="http://www.w3.org/2000/svg" width="76" height="76" viewBox="0 0 76 76">
-    <circle cx="38" cy="38" r="29" fill="#4a90e2" stroke="#1f2933" stroke-width="5"/>
-    <circle cx="38" cy="38" r="12" fill="#ffffff"/>
+    <g transform="translate(38 38)">
+      <circle cx="0" cy="0" r="36" fill="#f26d4f" stroke="rgba(35, 49, 61, 0.22)" stroke-width="3"/>
+      <polygon points="18,0 -12,-14 -6,0 -12,14" fill="#ffffff" stroke="rgba(35, 49, 61, 0.08)" stroke-width="1.5"/>
+    </g>
   </svg>
 `);
 const plainBodyAsset = svgAssetUrl(`
@@ -533,6 +535,8 @@ const SNAKE_SKINS = {
 let currentSnakeSkinId: SnakeSkinId = DEFAULT_SNAKE_SKIN_ID;
 
 const getActiveSnakeSkin = (): SnakeSkin => SNAKE_SKINS[currentSnakeSkinId];
+
+const isPlainSkinActive = () => currentSnakeSkinId === "plain";
 
 const getActiveSnakeSegmentSpacing = () => getActiveSnakeSkin().segmentSpacing;
 
@@ -1790,6 +1794,11 @@ const startDotPickupAnimation = () => {
 };
 
 const syncDotTargetToState = (state: TracingState) => {
+  if (isPlainSkinActive()) {
+    hideDotTarget();
+    return;
+  }
+
   const deferredHead = getDeferredHeadState(state);
   if (!deferredHead?.isDot) {
     if (dotTargetPhase !== "hidden" && dotTargetPhase !== "waiting") {
@@ -1810,6 +1819,11 @@ const syncDotTargetToState = (state: TracingState) => {
 };
 
 const renderDotTarget = (now = performance.now()) => {
+  if (isPlainSkinActive()) {
+    hideDotTarget();
+    return;
+  }
+
   if (!dotSnakeEl || !dotSnakeImageEl || !eagleEl || !eagleImageEl) {
     return;
   }
@@ -1874,6 +1888,11 @@ const isPointerOnDeferredTarget = (point: Point, state: TracingState): boolean =
   }
 
   if (deferredHead.isDot) {
+    if (isPlainSkinActive()) {
+      const hitRadius = Math.max(34, getActiveSnakeSkin().head.metrics.width * 0.52);
+      return Math.hypot(point.x - deferredHead.point.x, point.y - deferredHead.point.y) <= hitRadius;
+    }
+
     if (dotTargetPhase !== "waiting") {
       return false;
     }
@@ -2249,6 +2268,10 @@ const resetFruitState = () => {
 };
 
 const getCurrentBodyCount = () => {
+  if (isPlainSkinActive()) {
+    return 0;
+  }
+
   return getBodyCountForGrowth(snakeGrowthDistance);
 };
 
@@ -2413,6 +2436,14 @@ const renderSnakeLayer = (
     headAsset.metrics.rotationOffset
   );
 
+  if (skin.id === "plain") {
+    parts.bodyEls.forEach((el) => {
+      el.style.opacity = "0";
+    });
+    parts.tailEl.style.opacity = "0";
+    return;
+  }
+
   parts.bodyEls.forEach((el, index) => {
     if (index >= bodyCount) {
       el.style.opacity = "0";
@@ -2498,10 +2529,13 @@ const renderSnake = (now = performance.now()) => {
 
   const state = tracingSession?.getState();
   const isDotSnakeOnly =
-    (dotTargetPhase !== "hidden" &&
-      state !== undefined &&
-      dotTargetStrokeIndex === state.activeStrokeIndex) ||
-    (state !== undefined && getActivePreparedStroke(state)?.isDot === true);
+    !isPlainSkinActive() &&
+    (
+      (dotTargetPhase !== "hidden" &&
+        state !== undefined &&
+        dotTargetStrokeIndex === state.activeStrokeIndex) ||
+      (state !== undefined && getActivePreparedStroke(state)?.isDot === true)
+    );
   if (isDotSnakeOnly) {
     hideSnakeSprites();
     return;
@@ -2522,11 +2556,11 @@ const renderSnake = (now = performance.now()) => {
       trail: snakeTrail,
       headDistance: snakeHeadDistance,
       headAngle: snakeHeadAngle,
-      bodyCount: isShortDeferredSnake ? 1 : getCurrentBodyCount(),
+      bodyCount: isPlainSkinActive() ? 0 : isShortDeferredSnake ? 1 : getCurrentBodyCount(),
       segmentSpacing,
       retractionDistance: 0,
       chewUntil: snakeChewUntil,
-      showTail: true
+      showTail: !isPlainSkinActive()
     },
     now
   );
@@ -2555,6 +2589,10 @@ const renderRetiringSnake = (snake: RetiringSnake) => {
 };
 
 const getActiveSnakeRetractionDurationMs = (options: { isShortDeferredSnake?: boolean } = {}) => {
+  if (isPlainSkinActive()) {
+    return 0;
+  }
+
   const bodyCount = options.isShortDeferredSnake ? 1 : getCurrentBodyCount();
   const segmentSpacing = options.isShortDeferredSnake
     ? getActiveDeferredSnakeSegmentSpacing({
@@ -2605,6 +2643,10 @@ const animateRetiringSnake = (snake: RetiringSnake) => {
 };
 
 const retireActiveSnake = () => {
+  if (isPlainSkinActive()) {
+    return;
+  }
+
   const parentEl = snakeLayerEl?.parentElement;
   if (!snakeLayerEl || !parentEl || snakeTrail.length === 0) {
     return;
@@ -2937,6 +2979,12 @@ const renderDemoDeferredFrame = (frame: AnimationFrame, tangent: Point) => {
   const activePreparedStroke = preparedTracingPath?.strokes[frame.activeStrokeIndex];
 
   if (!activeStroke?.deferred || frame.activeStrokeIndex < 0 || !frame.isPenDown) {
+    isDemoShortDeferredSnake = false;
+    hideDotTarget();
+    return false;
+  }
+
+  if (isPlainSkinActive()) {
     isDemoShortDeferredSnake = false;
     hideDotTarget();
     return false;
