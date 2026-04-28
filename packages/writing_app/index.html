@@ -201,6 +201,14 @@
       margin-bottom: 14px;
     }
 
+    .tool-section {
+      margin-top: 32px;
+    }
+
+    .tool-section h2 {
+      margin-bottom: 12px;
+    }
+
     .tool-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr));
@@ -406,66 +414,73 @@
       </p>
 
     </div>
-    <nav class="tool-grid" aria-label="Handwriting worksheet tools">
-      <a class="tool-card" href="./cursive_worksheet_generator/">
-        <span class="tool-card__media" aria-hidden="true">
-          <img src="%BASE_URL%homepage/cursive-worksheet.png" alt="" loading="lazy" />
-        </span>
-        <strong>Cursive and joined worksheet generator</strong>
-        <span>Create printable cursive and joined handwriting worksheets for words, names and spellings.</span>
-      </a>
-      <a class="tool-card" href="./single_letter_worksheet_generator/">
-        <span class="tool-card__media" aria-hidden="true">
-          <img src="%BASE_URL%homepage/print-worksheet.png" alt="" loading="lazy" />
-        </span>
-        <strong>Print and pre-cursive worksheet generator</strong>
-        <span>Create printable letter formation worksheets with arrows, guides and numbered points.</span>
-      </a>
-      <article class="tool-card">
-        <span class="tool-card__media tool-card__media--split">
-          <a class="tool-card__media-link" href="./guided_tracing/?skin=plain"
-            aria-label="Open guided tracing plain app">
-            <video src="%BASE_URL%homepage/guided-tracing-plain.mp4" autoplay loop muted playsinline
-              preload="metadata"></video>
-          </a>
-          <a class="tool-card__media-link" href="./guided_tracing/?skin=classic"
-            aria-label="Open guided tracing snake app">
-            <video src="%BASE_URL%homepage/guided-tracing-snake.mp4" autoplay loop muted playsinline
-              preload="metadata"></video>
-          </a>
-        </span>
-        <strong><a class="tool-card__title-link" href="./guided_tracing/?skin=plain">Guided handwriting
-            tracing</a></strong>
-        <span>Practise tracing words on screen with plain, snake and rollercoaster skins.</span>
-      </article>
-      <a class="tool-card" href="./freehand_tracing/">
-        <span class="tool-card__media" aria-hidden="true">
-          <video src="%BASE_URL%homepage/freehand-tracing.mp4" autoplay loop muted playsinline
-            preload="metadata"></video>
-        </span>
-        <strong>Freehand handwriting tracing</strong>
-        <span>Write over grey word shapes and get a precision score from dot-to-dot checkpoints.</span>
-      </a>
-      <a class="tool-card" href="https://www.robinlinacre.com/letter_constellations/">
-        <span class="tool-card__media" aria-hidden="true">
-          <img src="%BASE_URL%homepage/letter_constellations.png" alt="" loading="lazy" />
-        </span>
-        <strong>Letter constellations</strong>
-        <span>Learn print and cursive letters by joining the stars</span>
-      </a>
-    </nav>
+    <section class="tool-section" aria-labelledby="worksheet-generators-title">
+      <h2 id="worksheet-generators-title">Worksheet generators</h2>
+      <nav class="tool-grid" aria-label="Handwriting worksheet generators">
+        <a class="tool-card" href="./cursive_worksheet_generator/">
+          <span class="tool-card__media" aria-hidden="true">
+            <img src="%BASE_URL%homepage/cursive-worksheet.png" alt="" loading="lazy" />
+          </span>
+          <strong>Cursive and joined worksheet generator</strong>
+          <span>Create printable cursive and joined handwriting worksheets for words, names and spellings.</span>
+        </a>
+        <a class="tool-card" href="./single_letter_worksheet_generator/">
+          <span class="tool-card__media" aria-hidden="true">
+            <img src="%BASE_URL%homepage/print-worksheet.png" alt="" loading="lazy" />
+          </span>
+          <strong>Print and pre-cursive worksheet generator</strong>
+          <span>Create printable letter formation worksheets with arrows, guides and numbered points.</span>
+        </a>
+      </nav>
+    </section>
 
-    <aside class="install-note" aria-label="Install handwriting apps">
-      <p>
-        Guided handwriting tracing, freehand handwriting tracing and Letter constellations can be installed as web apps
-        for a full-screen experience on tablets and phones. To do so, simply click through to the app which will open in
-        your web browser, and then follow the instructions for your device:
+    <section class="tool-section" aria-labelledby="apps-title">
+      <h2 id="apps-title">Apps</h2>
+      <aside class="install-note" aria-label="Install handwriting apps">
+        <p>
+          These apps can be installed for a full-screen experience on tablets and phones. Open the app in your browser,
+          then follow the official instructions for
+          <a href="https://support.google.com/chrome/answer/9658361?co=GENIE.Platform%3DAndroid&amp;hl=en-GB">Android</a>
+          or
+          <a href="https://support.apple.com/guide/iphone/open-as-web-app-iphea86e5236/ios">iPhone and iPad</a>.
+        </p>
+      </aside>
 
-        <a href="https://support.google.com/chrome/answer/9658361?co=GENIE.Platform%3DAndroid&amp;hl=en-GB">Android</a>
-        and
-        <a href="https://support.apple.com/guide/iphone/open-as-web-app-iphea86e5236/ios">iPhone and iPad</a>.
-      </p>
-    </aside>
+      <nav class="tool-grid" aria-label="Handwriting apps">
+        <article class="tool-card">
+          <span class="tool-card__media tool-card__media--split">
+            <a class="tool-card__media-link" href="./guided_tracing/?skin=plain"
+              aria-label="Open guided tracing plain app">
+              <video src="%BASE_URL%homepage/guided-tracing-plain.mp4" autoplay loop muted playsinline
+                preload="metadata"></video>
+            </a>
+            <a class="tool-card__media-link" href="./guided_tracing/?skin=classic"
+              aria-label="Open guided tracing snake app">
+              <video src="%BASE_URL%homepage/guided-tracing-snake.mp4" autoplay loop muted playsinline
+                preload="metadata"></video>
+            </a>
+          </span>
+          <strong><a class="tool-card__title-link" href="./guided_tracing/?skin=plain">Guided handwriting
+              tracing</a></strong>
+          <span>Practise tracing words on screen with plain, snake and rollercoaster skins.</span>
+        </article>
+        <a class="tool-card" href="./freehand_tracing/">
+          <span class="tool-card__media" aria-hidden="true">
+            <video src="%BASE_URL%homepage/freehand-tracing.mp4" autoplay loop muted playsinline
+              preload="metadata"></video>
+          </span>
+          <strong>Freehand handwriting tracing</strong>
+          <span>Write over grey word shapes and get a precision score from dot-to-dot checkpoints.</span>
+        </a>
+        <a class="tool-card" href="https://www.robinlinacre.com/letter_constellations/">
+          <span class="tool-card__media" aria-hidden="true">
+            <img src="%BASE_URL%homepage/letter_constellations.png" alt="" loading="lazy" />
+          </span>
+          <strong>Letter constellations</strong>
+          <span>Learn print and cursive letters by joining the stars</span>
+        </a>
+      </nav>
+    </section>
 
     <section class="development-tools" aria-labelledby="development-tools-title">
       <h2 id="development-tools-title">Development tools</h2>
