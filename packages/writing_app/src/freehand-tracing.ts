@@ -49,7 +49,6 @@ app.innerHTML = `
       <section class="writing-app__board">
         <header class="writing-app__topbar writing-app__topbar--freehand">
           <div class="writing-app__title">
-            <p class="writing-app__eyebrow">Freehand tracing</p>
             <label class="writing-app__word-input-label" for="word-input">
               <span>Enter word</span>
               <input
