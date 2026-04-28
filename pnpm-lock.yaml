@@ -6,7 +6,11 @@ settings:
 
 importers:
 
-  .: {}
+  .:
+    devDependencies:
+      gh-pages:
+        specifier: ^6.3.0
+        version: 6.3.0
 
   packages/letterpaths:
     devDependencies:
@@ -29,9 +33,6 @@ importers:
       '@types/node':
         specifier: ^20.11.0
         version: 20.19.29
-      gh-pages:
-        specifier: ^6.3.0
-        version: 6.3.0
       typescript:
         specifier: ^5.3.0
         version: 5.9.3

@@ -10,6 +10,9 @@
     "build:pages": "pnpm -r build && node ./scripts/build-pages.mjs",
     "check:lib": "pnpm --filter letterpaths build",
     "test:kerning": "pnpm --filter letterpaths test:join-spacing",
-    "deploy": "pnpm run build:pages && pnpm --filter writing_app exec gh-pages -d ../../dist-pages"
+    "deploy": "pnpm run build:pages && pnpm exec gh-pages -d dist-pages"
+  },
+  "devDependencies": {
+    "gh-pages": "^6.3.0"
   }
 }
