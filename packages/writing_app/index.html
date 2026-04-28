@@ -212,7 +212,8 @@
       color: inherit;
     }
 
-    .tool-grid a {
+    .tool-grid > a,
+    .tool-grid > .tool-card {
       display: grid;
       gap: 6px;
       min-height: 96px;
@@ -245,6 +246,14 @@
       background: rgba(31, 41, 51, 0.12);
     }
 
+    .tool-card__media-link {
+      display: block;
+      width: 100%;
+      height: 100%;
+      min-width: 0;
+      min-height: 0;
+    }
+
     .tool-card__media img,
     .tool-card__media video {
       width: 100%;
@@ -262,8 +271,14 @@
       object-fit: contain;
     }
 
-    .tool-grid a:focus,
-    .tool-grid a:hover {
+    .tool-card__title-link {
+      text-decoration: none;
+    }
+
+    .tool-grid > a:focus,
+    .tool-grid > a:hover,
+    .tool-grid > .tool-card:focus-within,
+    .tool-grid > .tool-card:hover {
       outline: 3px solid rgba(49, 130, 206, 0.22);
       border-color: rgba(49, 130, 206, 0.45);
     }
@@ -380,16 +395,20 @@
         <strong>Print and pre-cursive worksheet generator</strong>
         <span>Create printable letter formation worksheets with arrows, guides and numbered points.</span>
       </a>
-      <a class="tool-card" href="./guided_tracing/">
-        <span class="tool-card__media tool-card__media--split" aria-hidden="true">
-          <video src="%BASE_URL%homepage/guided-tracing-plain.mp4" autoplay loop muted playsinline
-            preload="metadata"></video>
-          <video src="%BASE_URL%homepage/guided-tracing-snake.mp4" autoplay loop muted playsinline
-            preload="metadata"></video>
+      <article class="tool-card">
+        <span class="tool-card__media tool-card__media--split">
+          <a class="tool-card__media-link" href="./guided_tracing/?skin=plain" aria-label="Open guided tracing plain app">
+            <video src="%BASE_URL%homepage/guided-tracing-plain.mp4" autoplay loop muted playsinline
+              preload="metadata"></video>
+          </a>
+          <a class="tool-card__media-link" href="./guided_tracing/?skin=classic" aria-label="Open guided tracing snake app">
+            <video src="%BASE_URL%homepage/guided-tracing-snake.mp4" autoplay loop muted playsinline
+              preload="metadata"></video>
+          </a>
         </span>
-        <strong>Guided handwriting tracing</strong>
+        <strong><a class="tool-card__title-link" href="./guided_tracing/?skin=plain">Guided handwriting tracing</a></strong>
         <span>Practise tracing words on screen with plain, snake and rollercoaster skins.</span>
-      </a>
+      </article>
       <a class="tool-card" href="./freehand_tracing/">
         <span class="tool-card__media" aria-hidden="true">
           <video

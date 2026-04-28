@@ -24,6 +24,17 @@ const TOLERANCE_GATE_DEPTH = 12;
 const VISIBLE_CHECKPOINT_COUNT = 5;
 const URL_PARAM_KEYS = ["word", "tolerance"] as const;
 
+const registerFreehandServiceWorker = () => {
+  if (!import.meta.env.PROD || !("serviceWorker" in navigator)) {
+    return;
+  }
+
+  const scope = `${import.meta.env.BASE_URL}freehand_tracing/`;
+  void navigator.serviceWorker.register(`${scope}sw.js`, { scope }).catch((error: unknown) => {
+    console.error("Failed to register freehand tracing service worker.", error);
+  });
+};
+
 type Checkpoint = Point & {
   tangent: Point;
   strokeIndex: number;
@@ -42,6 +53,8 @@ const app = document.querySelector<HTMLDivElement>("#app");
 if (!app) {
   throw new Error("Missing #app element for freehand tracing app.");
 }
+
+registerFreehandServiceWorker();
 
 app.innerHTML = `
   <div class="writing-app writing-app--freehand">

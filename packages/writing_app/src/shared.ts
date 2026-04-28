@@ -22,7 +22,7 @@ export const JOIN_SPACING = {
   entryHandleScale: 0.75
 } as const;
 export const DEMO_PAUSE_MS = 500;
-export const DEFAULT_TRACE_TOLERANCE = 70;
+export const DEFAULT_TRACE_TOLERANCE = 150;
 export const MIN_TRACE_TOLERANCE = 25;
 export const MAX_TRACE_TOLERANCE = 300;
 export const TRACE_TOLERANCE_STEP = 5;
