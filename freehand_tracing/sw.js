@@ -1,4 +1,4 @@
-const CACHE_PREFIX = "letterpaths-guided-tracing-";
+const CACHE_PREFIX = "letterpaths-freehand-tracing-";
 const CACHE_NAME = `${CACHE_PREFIX}v1`;
 const APP_SHELL_PATHS = [
   "./",
