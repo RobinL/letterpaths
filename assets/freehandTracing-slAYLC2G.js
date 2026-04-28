@@ -1,10 +1,9 @@
-import"./modulepreload-polyfill-B5Qt9EMX.js";import{c as ct}from"./style-C8O6UmtF.js";import"./joiner-CVeVmRQl.js";import{M as pt,d as ut,T as dt,f as gt,g as z,c as ht,W as V,a as _t,e as wt}from"./shared-DdEFG-pU.js";const C="zephyr",mt=84,O=gt,m=12,B=5,yt=["word","tolerance"],j=document.querySelector("#app");if(!j)throw new Error("Missing #app element for freehand tracing app.");j.innerHTML=`
+import"./modulepreload-polyfill-B5Qt9EMX.js";import{c as ct}from"./style-DW-mNVlM.js";import"./joiner-CVeVmRQl.js";import{M as pt,d as ut,T as dt,f as gt,g as z,c as ht,W as V,a as _t,e as wt}from"./shared-DdEFG-pU.js";const C="zephyr",mt=84,O=gt,m=12,B=5,yt=["word","tolerance"],j=document.querySelector("#app");if(!j)throw new Error("Missing #app element for freehand tracing app.");j.innerHTML=`
   <div class="writing-app writing-app--freehand">
     <main class="writing-app__stage">
       <section class="writing-app__board">
         <header class="writing-app__topbar writing-app__topbar--freehand">
           <div class="writing-app__title">
-            <p class="writing-app__eyebrow">Freehand tracing</p>
             <label class="writing-app__word-input-label" for="word-input">
               <span>Enter word</span>
               <input
