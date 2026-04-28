@@ -20,9 +20,12 @@ import {
 const DEFAULT_WORD = "zephyr";
 const FREEHAND_CHECKPOINT_SAMPLE_RATE = 84;
 const DEFAULT_TOLERANCE = DEFAULT_TRACE_TOLERANCE;
-const TOLERANCE_GATE_DEPTH = 12;
+const DEFAULT_FRONT_BACK_TOLERANCE = 70;
+const MIN_FRONT_BACK_TOLERANCE = 0;
+const MAX_FRONT_BACK_TOLERANCE = 120;
+const FRONT_BACK_TOLERANCE_STEP = 1;
 const VISIBLE_CHECKPOINT_COUNT = 5;
-const URL_PARAM_KEYS = ["word", "tolerance"] as const;
+const URL_PARAM_KEYS = ["word", "tolerance", "frontBackTolerance"] as const;
 
 const registerFreehandServiceWorker = () => {
   if (!import.meta.env.PROD || !("serviceWorker" in navigator)) {
@@ -97,7 +100,7 @@ app.innerHTML = `
               <div class="writing-app__settings-panel">
                 <label class="writing-app__settings-field" for="tolerance-slider">
                   <span class="writing-app__settings-label">
-                    Tolerance
+                    Side-to-side tolerance
                     <span class="writing-app__tolerance-value" id="tolerance-value"></span>
                   </span>
                   <input
@@ -108,6 +111,21 @@ app.innerHTML = `
                     max="${MAX_TRACE_TOLERANCE}"
                     step="${TRACE_TOLERANCE_STEP}"
                     value="${DEFAULT_TOLERANCE}"
+                  />
+                </label>
+                <label class="writing-app__settings-field" for="front-back-tolerance-slider">
+                  <span class="writing-app__settings-label">
+                    Front/back tolerance
+                    <span class="writing-app__tolerance-value" id="front-back-tolerance-value"></span>
+                  </span>
+                  <input
+                    class="writing-app__tolerance-slider"
+                    id="front-back-tolerance-slider"
+                    type="range"
+                    min="${MIN_FRONT_BACK_TOLERANCE}"
+                    max="${MAX_FRONT_BACK_TOLERANCE}"
+                    step="${FRONT_BACK_TOLERANCE_STEP}"
+                    value="${DEFAULT_FRONT_BACK_TOLERANCE}"
                   />
                 </label>
               </div>
@@ -154,6 +172,12 @@ const scoreValue = document.querySelector<HTMLSpanElement>("#score-value");
 const progressValue = document.querySelector<HTMLSpanElement>("#progress-value");
 const toleranceSlider = document.querySelector<HTMLInputElement>("#tolerance-slider");
 const toleranceValue = document.querySelector<HTMLSpanElement>("#tolerance-value");
+const frontBackToleranceSlider = document.querySelector<HTMLInputElement>(
+  "#front-back-tolerance-slider"
+);
+const frontBackToleranceValue = document.querySelector<HTMLSpanElement>(
+  "#front-back-tolerance-value"
+);
 const resetButton = document.querySelector<HTMLButtonElement>("#reset-button");
 const freehandSvg = document.querySelector<SVGSVGElement>("#freehand-svg");
 const successOverlay = document.querySelector<HTMLDivElement>("#success-overlay");
@@ -167,6 +191,8 @@ if (
   !progressValue ||
   !toleranceSlider ||
   !toleranceValue ||
+  !frontBackToleranceSlider ||
+  !frontBackToleranceValue ||
   !resetButton ||
   !freehandSvg ||
   !successOverlay ||
@@ -180,6 +206,7 @@ if (
 let currentWordIndex = -1;
 let currentWord = DEFAULT_WORD;
 let currentTolerance = DEFAULT_TOLERANCE;
+let currentFrontBackTolerance = DEFAULT_FRONT_BACK_TOLERANCE;
 let currentPath: WritingPath | null = null;
 let preparedTracingPath: PreparedTracingPath | null = null;
 let checkpoints: Checkpoint[] = [];
@@ -234,6 +261,7 @@ const normalizeSliderValue = (input: HTMLInputElement, value: number): number =>
 
 const syncToleranceLabel = () => {
   toleranceValue.textContent = `${currentTolerance}px`;
+  frontBackToleranceValue.textContent = `${currentFrontBackTolerance}px`;
 };
 
 const syncSettingsUrl = () => {
@@ -248,6 +276,9 @@ const syncSettingsUrl = () => {
   if (currentTolerance !== DEFAULT_TOLERANCE) {
     url.searchParams.set("tolerance", String(currentTolerance));
   }
+  if (currentFrontBackTolerance !== DEFAULT_FRONT_BACK_TOLERANCE) {
+    url.searchParams.set("frontBackTolerance", String(currentFrontBackTolerance));
+  }
 
   const nextUrl = `${url.pathname}${url.search}${url.hash}`;
   const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
@@ -260,6 +291,7 @@ const applyUrlSettings = () => {
   const params = new URLSearchParams(window.location.search);
   const wordParam = params.get("word");
   const toleranceParam = params.get("tolerance");
+  const frontBackToleranceParam = params.get("frontBackTolerance");
 
   if (wordParam !== null) {
     currentWord = normalizeWordInput(wordParam);
@@ -270,9 +302,19 @@ const applyUrlSettings = () => {
       currentTolerance = normalizeSliderValue(toleranceSlider, parsedTolerance);
     }
   }
+  if (frontBackToleranceParam !== null) {
+    const parsedFrontBackTolerance = Number(frontBackToleranceParam);
+    if (Number.isFinite(parsedFrontBackTolerance)) {
+      currentFrontBackTolerance = normalizeSliderValue(
+        frontBackToleranceSlider,
+        parsedFrontBackTolerance
+      );
+    }
+  }
 
   wordInput.value = currentWord;
   toleranceSlider.value = String(currentTolerance);
+  frontBackToleranceSlider.value = String(currentFrontBackTolerance);
   syncToleranceLabel();
   syncSettingsUrl();
 };
@@ -363,13 +405,14 @@ const getCheckpointGateHit = (
     const lateralDistance = Math.abs(getDot(startOffset, normal));
     return {
       distance: lateralDistance,
-      isHit: Math.abs(startAlong) <= TOLERANCE_GATE_DEPTH && lateralDistance <= currentTolerance
+      isHit:
+        Math.abs(startAlong) <= currentFrontBackTolerance && lateralDistance <= currentTolerance
     };
   }
 
   const crossesGate =
-    (startAlong <= TOLERANCE_GATE_DEPTH && endAlong >= -TOLERANCE_GATE_DEPTH) ||
-    (endAlong <= TOLERANCE_GATE_DEPTH && startAlong >= -TOLERANCE_GATE_DEPTH);
+    (startAlong <= currentFrontBackTolerance && endAlong >= -currentFrontBackTolerance) ||
+    (endAlong <= currentFrontBackTolerance && startAlong >= -currentFrontBackTolerance);
   if (!crossesGate) {
     return {
       distance: Number.POSITIVE_INFINITY,
@@ -437,9 +480,9 @@ const syncProgressDisplay = () => {
     const angle =
       Math.atan2(currentCheckpoint.tangent.y, currentCheckpoint.tangent.x) * (180 / Math.PI);
     toleranceGateEl.style.display = "none";
-    toleranceGateEl.setAttribute("x", String(-TOLERANCE_GATE_DEPTH));
+    toleranceGateEl.setAttribute("x", String(-currentFrontBackTolerance));
     toleranceGateEl.setAttribute("y", String(-currentTolerance));
-    toleranceGateEl.setAttribute("width", String(TOLERANCE_GATE_DEPTH * 2));
+    toleranceGateEl.setAttribute("width", String(currentFrontBackTolerance * 2));
     toleranceGateEl.setAttribute("height", String(currentTolerance * 2));
     toleranceGateEl.setAttribute(
       "transform",
@@ -702,6 +745,15 @@ wordInput.addEventListener("keydown", (event) => {
 });
 toleranceSlider.addEventListener("input", () => {
   currentTolerance = normalizeSliderValue(toleranceSlider, Number(toleranceSlider.value));
+  syncToleranceLabel();
+  syncSettingsUrl();
+  syncProgressDisplay();
+});
+frontBackToleranceSlider.addEventListener("input", () => {
+  currentFrontBackTolerance = normalizeSliderValue(
+    frontBackToleranceSlider,
+    Number(frontBackToleranceSlider.value)
+  );
   syncToleranceLabel();
   syncSettingsUrl();
   syncProgressDisplay();
