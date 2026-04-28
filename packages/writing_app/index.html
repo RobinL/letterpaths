@@ -201,7 +201,7 @@
       margin-bottom: 14px;
     }
 
-    nav {
+    .tool-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr));
       align-items: start;
@@ -209,13 +209,16 @@
     }
 
     a {
+      color: inherit;
+    }
+
+    .tool-grid a {
       display: grid;
       gap: 6px;
       min-height: 96px;
       padding: 18px;
       border: 1px solid rgba(31, 41, 51, 0.12);
       border-radius: 8px;
-      color: inherit;
       background: rgba(255, 255, 255, 0.74);
       text-decoration: none;
       box-shadow: 0 10px 28px rgba(31, 41, 51, 0.08);
@@ -259,8 +262,8 @@
       object-fit: contain;
     }
 
-    a:focus,
-    a:hover {
+    .tool-grid a:focus,
+    .tool-grid a:hover {
       outline: 3px solid rgba(49, 130, 206, 0.22);
       border-color: rgba(49, 130, 206, 0.45);
     }
@@ -296,6 +299,52 @@
       margin: 4px 0 0;
       color: #5c6570;
     }
+
+    .development-tools {
+      margin-top: 36px;
+    }
+
+    .development-tools h2 {
+      margin-bottom: 10px;
+    }
+
+    .development-tools ul {
+      display: grid;
+      gap: 8px;
+      margin: 0;
+      padding-left: 1.2rem;
+    }
+
+    .development-tools a,
+    footer a {
+      color: #1d5f99;
+      text-underline-offset: 3px;
+    }
+
+    .development-tools a:focus,
+    .development-tools a:hover,
+    footer a:focus,
+    footer a:hover {
+      color: #164d7d;
+    }
+
+    footer {
+      width: min(920px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 0 0 36px;
+      color: #5c6570;
+      font-size: 0.95rem;
+    }
+
+    .footer-links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 16px;
+      margin: 0;
+      padding: 18px 0 0;
+      border-top: 1px solid rgba(31, 41, 51, 0.12);
+      list-style: none;
+    }
   </style>
 </head>
 
@@ -303,11 +352,7 @@
   <main>
     <h1 class="brand-title" data-letterpaths-title>
       <span class="brand-title__fallback">Letterpaths</span>
-      <svg
-        class="brand-title__svg"
-        data-letterpaths-title-svg
-        aria-hidden="true"
-      ></svg>
+      <svg class="brand-title__svg" data-letterpaths-title-svg aria-hidden="true"></svg>
     </h1>
     <h2>Free handwriting worksheets generator and handwriting apps</h2>
     <div class="intro">
@@ -320,41 +365,35 @@
       </p>
 
     </div>
-    <nav aria-label="Handwriting worksheet tools">
+    <nav class="tool-grid" aria-label="Handwriting worksheet tools">
       <a class="tool-card" href="./cursive_worksheet_generator/">
         <span class="tool-card__media" aria-hidden="true">
-          <img
-            src="%BASE_URL%homepage/cursive-worksheet.png"
-            alt=""
-            loading="lazy"
-          />
+          <img src="%BASE_URL%homepage/cursive-worksheet.png" alt="" loading="lazy" />
         </span>
         <strong>Cursive and joined worksheet generator</strong>
         <span>Create printable cursive and joined handwriting worksheets for words, names and spellings.</span>
       </a>
       <a class="tool-card" href="./single_letter_worksheet_generator/">
         <span class="tool-card__media" aria-hidden="true">
-          <img
-            src="%BASE_URL%homepage/print-worksheet.png"
-            alt=""
-            loading="lazy"
-          />
+          <img src="%BASE_URL%homepage/print-worksheet.png" alt="" loading="lazy" />
         </span>
         <strong>Print and pre-cursive worksheet generator</strong>
         <span>Create printable letter formation worksheets with arrows, guides and numbered points.</span>
       </a>
       <a class="tool-card" href="./guided_tracing/">
         <span class="tool-card__media tool-card__media--split" aria-hidden="true">
+          <video src="%BASE_URL%homepage/guided-tracing-plain.mp4" autoplay loop muted playsinline
+            preload="metadata"></video>
+          <video src="%BASE_URL%homepage/guided-tracing-snake.mp4" autoplay loop muted playsinline
+            preload="metadata"></video>
+        </span>
+        <strong>Guided handwriting tracing</strong>
+        <span>Practise tracing words on screen with plain, snake and rollercoaster skins.</span>
+      </a>
+      <a class="tool-card" href="./freehand_tracing/">
+        <span class="tool-card__media" aria-hidden="true">
           <video
-            src="%BASE_URL%homepage/guided-tracing-plain.mp4"
-            autoplay
-            loop
-            muted
-            playsinline
-            preload="metadata"
-          ></video>
-          <video
-            src="%BASE_URL%homepage/guided-tracing-snake.mp4"
+            src="%BASE_URL%homepage/freehand-tracing.mp4"
             autoplay
             loop
             muted
@@ -362,28 +401,27 @@
             preload="metadata"
           ></video>
         </span>
-        <strong>Guided handwriting tracing</strong>
-        <span>Practise tracing words on screen with plain, snake and rollercoaster skins.</span>
-      </a>
-      <a href="./freehand_tracing/">
         <strong>Freehand handwriting tracing</strong>
         <span>Write over grey word shapes and get a precision score from dot-to-dot checkpoints.</span>
       </a>
-      <a href="./editor.html">
-        <strong>Single-letter editor</strong>
-        <span>Edit letter bezier data.</span>
-      </a>
-      <a href="./gallery.html">
-        <strong>Letter gallery</strong>
-        <span>Review generated letter shapes.</span>
-      </a>
-      <a href="./join_stats/">
-        <strong>Join stats</strong>
-        <span>Inspect cursive join spacing.</span>
-      </a>
     </nav>
 
+    <section class="development-tools" aria-labelledby="development-tools-title">
+      <h2 id="development-tools-title">Development tools</h2>
+      <ul>
+        <li><a href="./editor.html">Single-letter editor</a></li>
+        <li><a href="./gallery.html">Letter gallery</a></li>
+        <li><a href="./join_stats/">Join stats</a></li>
+      </ul>
+    </section>
   </main>
+  <footer>
+    <ul class="footer-links">
+      <li><a href="https://robinlinacre.com/letterpaths_blog/">robinlinacre.com</a></li>
+      <li><a href="https://github.com/RobinL/letterpaths">GitHub</a></li>
+      <li><a href="https://github.com/RobinL/letterpaths/blob/main/LICENSE">letterpaths MIT open source license</a></li>
+    </ul>
+  </footer>
   <script type="module" src="./src/homepage-title.ts"></script>
 </body>
 
