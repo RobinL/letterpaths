@@ -48,6 +48,7 @@ type WorksheetState = {
   gridlineColor: string;
   keepInitialLeadIn: boolean;
   keepFinalLeadOut: boolean;
+  includeNameDate: boolean;
   top: WorksheetAnnotationSettings;
   practice: WorksheetAnnotationSettings;
 };
@@ -199,6 +200,7 @@ const WORKSHEET_URL_PARAM_KEYS = [
   "gridlineColor",
   "keepInitialLeadIn",
   "keepFinalLeadOut",
+  "includeNameDate",
   "topDirectionalDashSpacing",
   "topMidpointDensity",
   "topTurnRadius",
@@ -313,25 +315,38 @@ const applyAnnotationSettingsPatch = (
     : settings.visibility
 });
 
+const createTopAnnotationBaseSettings = (): WorksheetAnnotationSettings =>
+  createSettings(DEFAULT_FORMATION_ANNOTATION_VISIBILITY, DEFAULT_TOP_STROKE_COLOR);
+
 const TOP_ANNOTATION_PRESETS = {
   outside: {
+    directionalDashSpacing: DEFAULT_DIRECTIONAL_DASH_SPACING,
+    midpointDensity: DEFAULT_MIDPOINT_DENSITY,
     turnRadius: 48,
     uTurnLength: 52,
     arrowLength: 149,
+    arrowHeadSize: DEFAULT_ARROW_HEAD_SIZE,
     arrowStrokeWidth: 5.5,
     numberSize: 64,
     numberPathOffset: -77,
+    offsetArrowLanes: true,
     alwaysOffsetArrowLanes: true,
     arrowColor: "#ff0000",
     visibility: {
-      "draw-order-number": true
+      "directional-dash": false,
+      "turning-point": true,
+      "start-arrow": true,
+      "draw-order-number": true,
+      "midpoint-arrow": true
     }
   },
   inside: {
     directionalDashSpacing: 152,
+    midpointDensity: DEFAULT_MIDPOINT_DENSITY,
     turnRadius: 48,
     uTurnLength: 52,
     arrowLength: 149,
+    arrowHeadSize: DEFAULT_ARROW_HEAD_SIZE,
     arrowStrokeWidth: 5.5,
     numberSize: 64,
     numberPathOffset: -77,
@@ -361,8 +376,9 @@ const createDefaultState = (): WorksheetState => ({
   gridlineColor: DEFAULT_GRIDLINE_COLOR,
   keepInitialLeadIn: true,
   keepFinalLeadOut: true,
+  includeNameDate: true,
   top: applyAnnotationSettingsPatch(
-    createSettings(DEFAULT_FORMATION_ANNOTATION_VISIBILITY, DEFAULT_TOP_STROKE_COLOR),
+    createTopAnnotationBaseSettings(),
     TOP_ANNOTATION_PRESETS.inside
   ),
   practice: createSettings(EMPTY_FORMATION_ANNOTATION_VISIBILITY, DEFAULT_PRACTICE_STROKE_COLOR)
@@ -379,8 +395,7 @@ app.innerHTML = `
     <aside class="worksheet-app__controls" aria-label="Worksheet controls">
       <div class="worksheet-app__controls-inner">
         <div class="worksheet-app__heading">
-          <p class="worksheet-app__eyebrow">Worksheet generator</p>
-          <h1 class="worksheet-app__title">Cursive worksheet</h1>
+          <h1 class="worksheet-app__title">UK cursive handwriting worksheet generator</h1>
         </div>
 
         <label class="worksheet-app__field" for="worksheet-text-input">
@@ -440,6 +455,7 @@ app.innerHTML = `
           ${renderGlobalToggle("include-initial-lead-in", "keepInitialLeadIn", "Initial lead-in", true)}
           ${renderGlobalToggle("include-final-lead-out", "keepFinalLeadOut", "Final lead-out", true)}
           ${renderAnnotationToggle("top", "draw-order-number", "Show numeric steps", state.top.visibility["draw-order-number"])}
+          ${renderGlobalToggle("include-name-date", "includeNameDate", "Include name/date", true)}
         </fieldset>
 
         <fieldset class="worksheet-app__preset-buttons" aria-label="Top word annotation presets">
@@ -456,12 +472,9 @@ app.innerHTML = `
 
         ${renderAdvancedSettings()}
 
-        <div class="worksheet-app__button-row">
+        <div class="worksheet-app__button-row worksheet-app__button-row--single">
           <button class="worksheet-app__button" id="print-worksheet-button" type="button">
             Print worksheet
-          </button>
-          <button class="worksheet-app__button worksheet-app__button--secondary" id="download-png-button" type="button">
-            Download PNG
           </button>
         </div>
         <p class="worksheet-app__status" id="worksheet-status" role="status" aria-live="polite"></p>
@@ -491,7 +504,6 @@ const topAnnotationPresetButtons = Array.from(
   document.querySelectorAll<HTMLButtonElement>("[data-top-annotation-preset]")
 );
 const printButton = document.querySelector<HTMLButtonElement>("#print-worksheet-button");
-const downloadPngButton = document.querySelector<HTMLButtonElement>("#download-png-button");
 const worksheetPageFrame = document.querySelector<HTMLElement>("#worksheet-page-frame");
 const worksheetPage = document.querySelector<HTMLElement>("#worksheet-page");
 const statusEl = document.querySelector<HTMLParagraphElement>("#worksheet-status");
@@ -504,7 +516,6 @@ if (
   !practiceRepeatSlider ||
   !strokeWidthSlider ||
   !printButton ||
-  !downloadPngButton ||
   !worksheetPageFrame ||
   !worksheetPage ||
   !statusEl
@@ -657,6 +668,7 @@ function renderGlobalToggle(
     WorksheetState,
     | "keepInitialLeadIn"
     | "keepFinalLeadOut"
+    | "includeNameDate"
     | "showBaselineGuide"
     | "showXHeightGuide"
     | "showAscenderGuide"
@@ -1077,6 +1089,8 @@ const syncSettingsControlsFromState = () => {
       input.checked = state.keepInitialLeadIn;
     } else if (setting === "keepFinalLeadOut") {
       input.checked = state.keepFinalLeadOut;
+    } else if (setting === "includeNameDate") {
+      input.checked = state.includeNameDate;
     } else if (setting === "showBaselineGuide") {
       input.checked = state.showBaselineGuide;
     } else if (setting === "showXHeightGuide") {
@@ -1200,6 +1214,9 @@ const syncSettingsUrl = () => {
   }
   if (state.keepFinalLeadOut !== DEFAULT_STATE.keepFinalLeadOut) {
     url.searchParams.set("keepFinalLeadOut", state.keepFinalLeadOut ? "1" : "0");
+  }
+  if (state.includeNameDate !== DEFAULT_STATE.includeNameDate) {
+    url.searchParams.set("includeNameDate", state.includeNameDate ? "1" : "0");
   }
 
   syncScopedSettingsUrl(url, "top", state.top, DEFAULT_STATE.top);
@@ -1327,6 +1344,9 @@ const applyUrlSettings = () => {
     } else if (setting === "keepFinalLeadOut") {
       state.keepFinalLeadOut =
         parseBooleanSearchParam(params, setting) ?? state.keepFinalLeadOut;
+    } else if (setting === "includeNameDate") {
+      state.includeNameDate =
+        parseBooleanSearchParam(params, setting) ?? state.includeNameDate;
     } else if (setting === "showBaselineGuide") {
       state.showBaselineGuide =
         parseBooleanSearchParam(params, setting) ?? state.showBaselineGuide;
@@ -1801,15 +1821,21 @@ const renderWorksheet = () => {
       rowIndex
     )
   ).join("");
-
-  worksheetPage.style.setProperty("--practice-row-height", `${state.practiceRowHeightMm}mm`);
-  worksheetPage.innerHTML = `
+  const nameDateHeader = state.includeNameDate
+    ? `
     <header class="worksheet-page__header">
       <div class="worksheet-page__meta-line">
         <span>Name</span>
         <span>Date</span>
       </div>
     </header>
+  `
+    : "";
+
+  worksheetPage.style.setProperty("--practice-row-height", `${state.practiceRowHeightMm}mm`);
+  worksheetPage.classList.toggle("worksheet-page--without-meta", !state.includeNameDate);
+  worksheetPage.innerHTML = `
+    ${nameDateHeader}
     <section class="worksheet-page__example" aria-label="Top example">
       ${topSvg}
     </section>
@@ -1999,22 +2025,6 @@ printButton.addEventListener("click", () => {
   renderWorksheet();
   window.print();
 });
-downloadPngButton.addEventListener("click", () => {
-  downloadPngButton.disabled = true;
-  statusEl.textContent = "Preparing PNG...";
-  createWorksheetPngBlob()
-    .then((blob) => {
-      const filenameText = normalizeText(state.text).replaceAll(/\s+/g, "-") || "worksheet";
-      downloadBlob(blob, `${filenameText}-cursive-worksheet.png`);
-      statusEl.textContent = "PNG downloaded.";
-    })
-    .catch((error) => {
-      statusEl.textContent = error instanceof Error ? error.message : "Could not download PNG.";
-    })
-    .finally(() => {
-      downloadPngButton.disabled = false;
-    });
-});
 
 globalSettingInputs.forEach((input) => {
   input.addEventListener("input", () => {
@@ -2037,6 +2047,8 @@ globalSettingInputs.forEach((input) => {
       state.keepInitialLeadIn = input.checked;
     } else if (setting === "keepFinalLeadOut") {
       state.keepFinalLeadOut = input.checked;
+    } else if (setting === "includeNameDate") {
+      state.includeNameDate = input.checked;
     } else if (setting === "showBaselineGuide") {
       state.showBaselineGuide = input.checked;
     } else if (setting === "showXHeightGuide") {
@@ -2124,7 +2136,7 @@ topAnnotationPresetButtons.forEach((button) => {
     }
 
     const preset = TOP_ANNOTATION_PRESETS[presetName];
-    state.top = applyAnnotationSettingsPatch(DEFAULT_STATE.top, preset);
+    state.top = applyAnnotationSettingsPatch(createTopAnnotationBaseSettings(), preset);
     syncScopedSettingsControlsFromState("top");
     renderWorksheet();
   });

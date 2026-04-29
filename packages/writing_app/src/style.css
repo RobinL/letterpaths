@@ -1337,6 +1337,10 @@ body {
   gap: 10px;
 }
 
+.worksheet-app__button-row--single {
+  grid-template-columns: 1fr;
+}
+
 .worksheet-app__button:hover {
   background: #266c59;
 }
@@ -1449,6 +1453,10 @@ body {
   transform-origin: top center;
 }
 
+.worksheet-page--without-meta {
+  grid-template-rows: 84mm 1fr;
+}
+
 .worksheet-page__header {
   display: grid;
   gap: 4mm;
@@ -1478,7 +1486,6 @@ body {
 
 .worksheet-page__example {
   min-height: 0;
-  border-bottom: 0.35mm solid #d7dde2;
 }
 
 .worksheet-page__example--steps {
@@ -1531,7 +1538,6 @@ body {
 
 .worksheet-word--practice {
   height: var(--practice-row-height);
-  border-bottom: 0.3mm solid #d7dde2;
 }
 
 .worksheet-word__stroke {
