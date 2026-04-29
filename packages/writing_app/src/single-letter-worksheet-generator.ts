@@ -41,6 +41,7 @@ type WorksheetState = {
   previewZoom: number;
   practiceRowHeightMm: number;
   practiceRepeatCount: number;
+  practiceRepeatSpacing: number;
   strokeWidth: number;
   showStepStartDot: boolean;
   showBaselineGuide: boolean;
@@ -51,6 +52,7 @@ type WorksheetState = {
   gridlineColor: string;
   keepInitialLeadIn: boolean;
   keepFinalLeadOut: boolean;
+  includeNameDate: boolean;
   top: WorksheetAnnotationSettings;
   practice: WorksheetAnnotationSettings;
 };
@@ -86,6 +88,7 @@ const DEFAULT_REMAINING_STROKE_COLOR = "#ffffff";
 const DEFAULT_PRACTICE_STROKE_COLOR = "#d5dbe2";
 const DEFAULT_PRACTICE_ROW_HEIGHT_MM = 38;
 const DEFAULT_PRACTICE_REPEAT_COUNT = 7;
+const DEFAULT_PRACTICE_REPEAT_SPACING = 180;
 const DEFAULT_STROKE_WIDTH = 54;
 const DEFAULT_SHOW_STEP_START_DOT = true;
 const DEFAULT_GRIDLINE_STROKE_WIDTH = 1;
@@ -141,6 +144,7 @@ const WORKSHEET_URL_PARAM_KEYS = [
   "previewZoom",
   "practiceSize",
   "practiceRepeats",
+  "practiceRepeatSpacing",
   "strokeWidth",
   "showStepStartDot",
   "showBaselineGuide",
@@ -151,6 +155,7 @@ const WORKSHEET_URL_PARAM_KEYS = [
   "gridlineColor",
   "keepInitialLeadIn",
   "keepFinalLeadOut",
+  "includeNameDate",
   "topDirectionalDashSpacing",
   "topMidpointDensity",
   "topTurnRadius",
@@ -299,6 +304,7 @@ const createDefaultState = (): WorksheetState => ({
   previewZoom: DEFAULT_PREVIEW_ZOOM,
   practiceRowHeightMm: DEFAULT_PRACTICE_ROW_HEIGHT_MM,
   practiceRepeatCount: DEFAULT_PRACTICE_REPEAT_COUNT,
+  practiceRepeatSpacing: DEFAULT_PRACTICE_REPEAT_SPACING,
   strokeWidth: DEFAULT_STROKE_WIDTH,
   showStepStartDot: DEFAULT_SHOW_STEP_START_DOT,
   showBaselineGuide: true,
@@ -309,6 +315,7 @@ const createDefaultState = (): WorksheetState => ({
   gridlineColor: DEFAULT_GRIDLINE_COLOR,
   keepInitialLeadIn: true,
   keepFinalLeadOut: true,
+  includeNameDate: true,
   top: {
     ...createSettings(
       DEFAULT_TOP_FORMATION_ANNOTATION_VISIBILITY,
@@ -336,8 +343,7 @@ app.innerHTML = `
     <aside class="worksheet-app__controls" aria-label="Worksheet controls">
       <div class="worksheet-app__controls-inner">
         <div class="worksheet-app__heading">
-          <p class="worksheet-app__eyebrow">Worksheet generator</p>
-          <h1 class="worksheet-app__title">Single letter worksheet</h1>
+          <h1 class="worksheet-app__title">UK handwriting letter worksheet generator</h1>
         </div>
 
         ${renderLetterSelect()}
@@ -364,8 +370,18 @@ app.innerHTML = `
 })}
 
         ${renderRangeControl({
+  id: "practice-repeat-spacing-slider",
+  label: "Repeat spacing",
+  value: DEFAULT_PRACTICE_REPEAT_SPACING,
+  min: 0,
+  max: 360,
+  step: 10,
+  valueId: "practice-repeat-spacing-value"
+})}
+
+        ${renderRangeControl({
   id: "stroke-width-slider",
-  label: "Main stroke thickness",
+  label: "Stroke thickness",
   value: DEFAULT_STROKE_WIDTH,
   min: 20,
   max: 90,
@@ -373,18 +389,19 @@ app.innerHTML = `
   valueId: "stroke-width-value"
 })}
 
-        ${renderLetterStrokeSettings()}
+        <fieldset class="worksheet-app__checks" aria-label="Worksheet options">
+          ${renderGlobalToggle("include-initial-lead-in", "keepInitialLeadIn", "Initial lead-in", true)}
+          ${renderGlobalToggle("include-final-lead-out", "keepFinalLeadOut", "Final lead-out", true)}
+          ${renderGlobalToggle("include-name-date", "includeNameDate", "Include name/date", true)}
+        </fieldset>
+
         ${renderGridlineSettings()}
 
-        ${renderAnnotationControlSection("top", "Top formation annotations", state.top)}
-        ${renderAnnotationControlSection("practice", "Practice annotations", state.practice)}
+        ${renderAdvancedSettings()}
 
-        <div class="worksheet-app__button-row">
+        <div class="worksheet-app__button-row worksheet-app__button-row--single">
           <button class="worksheet-app__button" id="print-worksheet-button" type="button">
             Print worksheet
-          </button>
-          <button class="worksheet-app__button worksheet-app__button--secondary" id="download-png-button" type="button">
-            Download PNG
           </button>
         </div>
         <p class="worksheet-app__status" id="worksheet-status" role="status" aria-live="polite"></p>
@@ -410,9 +427,9 @@ const previewZoomInButton = document.querySelector<HTMLButtonElement>("#preview-
 const previewZoomOutButton = document.querySelector<HTMLButtonElement>("#preview-zoom-out-button");
 const practiceSizeSlider = document.querySelector<HTMLInputElement>("#practice-size-slider");
 const practiceRepeatSlider = document.querySelector<HTMLInputElement>("#practice-repeat-slider");
+const practiceRepeatSpacingSlider = document.querySelector<HTMLInputElement>("#practice-repeat-spacing-slider");
 const strokeWidthSlider = document.querySelector<HTMLInputElement>("#stroke-width-slider");
 const printButton = document.querySelector<HTMLButtonElement>("#print-worksheet-button");
-const downloadPngButton = document.querySelector<HTMLButtonElement>("#download-png-button");
 const worksheetPageFrame = document.querySelector<HTMLElement>("#worksheet-page-frame");
 const worksheetPage = document.querySelector<HTMLElement>("#worksheet-page");
 const statusEl = document.querySelector<HTMLParagraphElement>("#worksheet-status");
@@ -424,9 +441,9 @@ if (
   !previewZoomOutButton ||
   !practiceSizeSlider ||
   !practiceRepeatSlider ||
+  !practiceRepeatSpacingSlider ||
   !strokeWidthSlider ||
   !printButton ||
-  !downloadPngButton ||
   !worksheetPageFrame ||
   !worksheetPage ||
   !statusEl
@@ -501,15 +518,13 @@ function renderRangeControl({
   `;
 }
 
-function renderLetterStrokeSettings(): string {
+function renderAdvancedSettings(): string {
   return `
     <details class="worksheet-app__details">
-      <summary>Letter stroke settings</summary>
+      <summary>Advanced settings</summary>
       <div class="worksheet-app__details-body">
-        <fieldset class="worksheet-app__checks" aria-label="Letter stroke toggles">
-          ${renderGlobalToggle("include-initial-lead-in", "keepInitialLeadIn", "Initial lead-in", true)}
-          ${renderGlobalToggle("include-final-lead-out", "keepFinalLeadOut", "Final lead-out", true)}
-        </fieldset>
+        ${renderAnnotationControlSection("top", "Top formation annotations", state.top)}
+        ${renderAnnotationControlSection("practice", "Practice annotations", state.practice)}
       </div>
     </details>
   `;
@@ -553,6 +568,7 @@ function renderGlobalToggle(
     WorksheetState,
     | "keepInitialLeadIn"
     | "keepFinalLeadOut"
+    | "includeNameDate"
     | "showStepStartDot"
     | "showBaselineGuide"
     | "showXHeightGuide"
@@ -601,7 +617,7 @@ function renderAnnotationControlSection(
   settings: WorksheetAnnotationSettings
 ): string {
   return `
-    <details class="worksheet-app__details" open>
+    <details class="worksheet-app__details">
       <summary>${label}</summary>
       <div class="worksheet-app__details-body">
         ${renderRangeControl({
@@ -974,6 +990,10 @@ const syncSettingsControlsFromState = () => {
   state.previewZoom = normalizePreviewZoom(state.previewZoom);
   state.practiceRowHeightMm = syncSliderValue(practiceSizeSlider, state.practiceRowHeightMm);
   state.practiceRepeatCount = syncSliderValue(practiceRepeatSlider, state.practiceRepeatCount);
+  state.practiceRepeatSpacing = syncSliderValue(
+    practiceRepeatSpacingSlider,
+    state.practiceRepeatSpacing
+  );
   state.strokeWidth = syncSliderValue(strokeWidthSlider, state.strokeWidth);
 
   globalSettingInputs.forEach((input) => {
@@ -984,6 +1004,8 @@ const syncSettingsControlsFromState = () => {
       input.checked = state.keepInitialLeadIn;
     } else if (setting === "keepFinalLeadOut") {
       input.checked = state.keepFinalLeadOut;
+    } else if (setting === "includeNameDate") {
+      input.checked = state.includeNameDate;
     } else if (setting === "showStepStartDot") {
       input.checked = state.showStepStartDot;
     } else if (setting === "showBaselineGuide") {
@@ -1056,6 +1078,9 @@ const syncSettingsUrl = () => {
   if (state.practiceRepeatCount !== DEFAULT_STATE.practiceRepeatCount) {
     url.searchParams.set("practiceRepeats", String(state.practiceRepeatCount));
   }
+  if (state.practiceRepeatSpacing !== DEFAULT_STATE.practiceRepeatSpacing) {
+    url.searchParams.set("practiceRepeatSpacing", String(state.practiceRepeatSpacing));
+  }
   if (state.strokeWidth !== DEFAULT_STATE.strokeWidth) {
     url.searchParams.set("strokeWidth", String(state.strokeWidth));
   }
@@ -1085,6 +1110,9 @@ const syncSettingsUrl = () => {
   }
   if (state.keepFinalLeadOut !== DEFAULT_STATE.keepFinalLeadOut) {
     url.searchParams.set("keepFinalLeadOut", state.keepFinalLeadOut ? "1" : "0");
+  }
+  if (state.includeNameDate !== DEFAULT_STATE.includeNameDate) {
+    url.searchParams.set("includeNameDate", state.includeNameDate ? "1" : "0");
   }
 
   syncScopedSettingsUrl(url, "top", state.top, DEFAULT_STATE.top);
@@ -1189,6 +1217,9 @@ const applyUrlSettings = () => {
   state.practiceRepeatCount =
     parseSliderSearchParam(params, "practiceRepeats", practiceRepeatSlider) ??
     state.practiceRepeatCount;
+  state.practiceRepeatSpacing =
+    parseSliderSearchParam(params, "practiceRepeatSpacing", practiceRepeatSpacingSlider) ??
+    state.practiceRepeatSpacing;
   state.strokeWidth =
     parseSliderSearchParam(params, "strokeWidth", strokeWidthSlider) ?? state.strokeWidth;
 
@@ -1203,6 +1234,9 @@ const applyUrlSettings = () => {
     } else if (setting === "keepFinalLeadOut") {
       state.keepFinalLeadOut =
         parseBooleanSearchParam(params, setting) ?? state.keepFinalLeadOut;
+    } else if (setting === "includeNameDate") {
+      state.includeNameDate =
+        parseBooleanSearchParam(params, setting) ?? state.includeNameDate;
     } else if (setting === "showStepStartDot") {
       state.showStepStartDot =
         parseBooleanSearchParam(params, setting) ?? state.showStepStartDot;
@@ -1244,6 +1278,7 @@ const syncLabels = () => {
   setText("preview-zoom-value", `${state.previewZoom}%`);
   setText("practice-size-value", `${state.practiceRowHeightMm} mm`);
   setText("practice-repeat-value", `${state.practiceRepeatCount}`);
+  setText("practice-repeat-spacing-value", `${state.practiceRepeatSpacing}px`);
   setText("stroke-width-value", `${state.strokeWidth}px`);
   setText("gridline-stroke-width-value", `${state.gridlineStrokeWidth.toFixed(1)}px`);
 
@@ -1722,8 +1757,7 @@ const getFormationStepViewBox = (
 
 const getPracticeAdvance = (layout: ShiftedWordLayout): number => {
   const contentWidth = layout.path.bounds.maxX - layout.path.bounds.minX;
-  const leadingPadding = layout.path.bounds.minX;
-  return contentWidth + leadingPadding;
+  return contentWidth + state.practiceRepeatSpacing;
 };
 
 const renderPracticeRowSvg = (
@@ -1769,6 +1803,7 @@ const renderWorksheet = () => {
     style: normalizeStyle(styleSelect.value) ?? state.style,
     practiceRowHeightMm: Number(practiceSizeSlider.value),
     practiceRepeatCount: Number(practiceRepeatSlider.value),
+    practiceRepeatSpacing: Number(practiceRepeatSpacingSlider.value),
     strokeWidth: Number(strokeWidthSlider.value)
   };
   syncLabels();
@@ -1814,16 +1849,22 @@ const renderWorksheet = () => {
       rowIndex
     )
   ).join("");
-
-  worksheetPage.style.setProperty("--practice-row-height", `${state.practiceRowHeightMm}mm`);
-  worksheetPage.style.setProperty("--formation-step-count", String(formationStepCount));
-  worksheetPage.innerHTML = `
+  const nameDateHeader = state.includeNameDate
+    ? `
     <header class="worksheet-page__header">
       <div class="worksheet-page__meta-line">
         <span>Name</span>
         <span>Date</span>
       </div>
     </header>
+  `
+    : "";
+
+  worksheetPage.style.setProperty("--practice-row-height", `${state.practiceRowHeightMm}mm`);
+  worksheetPage.style.setProperty("--formation-step-count", String(formationStepCount));
+  worksheetPage.classList.toggle("worksheet-page--without-meta", !state.includeNameDate);
+  worksheetPage.innerHTML = `
+    ${nameDateHeader}
     <section class="worksheet-page__example worksheet-page__example--steps" aria-label="Formation steps">
       ${topStepSvgs}
     </section>
@@ -2028,25 +2069,11 @@ previewZoomInButton.addEventListener("click", () => {
 });
 practiceSizeSlider.addEventListener("input", renderWorksheet);
 practiceRepeatSlider.addEventListener("input", renderWorksheet);
+practiceRepeatSpacingSlider.addEventListener("input", renderWorksheet);
 strokeWidthSlider.addEventListener("input", renderWorksheet);
 printButton.addEventListener("click", () => {
   renderWorksheet();
   window.print();
-});
-downloadPngButton.addEventListener("click", () => {
-  downloadPngButton.disabled = true;
-  statusEl.textContent = "Preparing PNG...";
-  createWorksheetPngBlob()
-    .then((blob) => {
-      downloadBlob(blob, `${state.letter}-${state.style}-single-letter-worksheet.png`);
-      statusEl.textContent = "PNG downloaded.";
-    })
-    .catch((error) => {
-      statusEl.textContent = error instanceof Error ? error.message : "Could not download PNG.";
-    })
-    .finally(() => {
-      downloadPngButton.disabled = false;
-    });
 });
 
 globalSettingInputs.forEach((input) => {
@@ -2058,6 +2085,8 @@ globalSettingInputs.forEach((input) => {
       state.keepInitialLeadIn = input.checked;
     } else if (setting === "keepFinalLeadOut") {
       state.keepFinalLeadOut = input.checked;
+    } else if (setting === "includeNameDate") {
+      state.includeNameDate = input.checked;
     } else if (setting === "showStepStartDot") {
       state.showStepStartDot = input.checked;
     } else if (setting === "showBaselineGuide") {
