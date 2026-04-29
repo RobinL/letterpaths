@@ -1348,8 +1348,60 @@ body {
 
 .worksheet-app__preview {
   min-width: 0;
-  padding: 22px;
+  padding: 2px 22px 22px;
   overflow: auto;
+}
+
+.worksheet-app__preview-toolbar {
+  position: sticky;
+  top: 14px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: max-content;
+  margin: 10px auto 24px;
+  padding: 6px;
+  border: 1px solid rgba(35, 49, 61, 0.14);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 8px 24px rgba(35, 49, 61, 0.12);
+}
+
+.worksheet-app__zoom-button {
+  appearance: none;
+  display: grid;
+  place-items: center;
+  inline-size: 34px;
+  block-size: 34px;
+  border: 0;
+  border-radius: 6px;
+  color: #ffffff;
+  background: #2f7d68;
+  font: inherit;
+  font-size: 1.25rem;
+  font-weight: 900;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.worksheet-app__zoom-button:hover {
+  background: #266c59;
+}
+
+.worksheet-app__zoom-button:focus {
+  outline: 3px solid rgba(47, 125, 104, 0.25);
+  outline-offset: 2px;
+}
+
+.worksheet-app__zoom-value {
+  min-width: 54px;
+  color: #23313d;
+  font-size: 0.9rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
 }
 
 .worksheet-app__page-frame {
@@ -1509,8 +1561,9 @@ body {
   }
 
   .worksheet-app__preview {
-    padding: 14px;
+    padding: 8px 14px 14px;
   }
+
 
   .worksheet-app__page-frame {
     margin: 0;
@@ -1550,6 +1603,10 @@ body {
     display: block;
     padding: 0;
     overflow: visible;
+  }
+
+  .worksheet-app__preview-toolbar {
+    display: none;
   }
 
   .worksheet-app__page-frame {

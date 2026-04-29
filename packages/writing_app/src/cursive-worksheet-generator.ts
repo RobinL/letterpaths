@@ -115,6 +115,10 @@ const DEFAULT_STROKE_WIDTH = 54;
 const DEFAULT_GRIDLINE_STROKE_WIDTH = 1;
 const DEFAULT_GRIDLINE_COLOR = "#ffb35c";
 const DEFAULT_PREVIEW_ZOOM = 100;
+const MIN_PREVIEW_ZOOM = 35;
+const MAX_PREVIEW_ZOOM = 200;
+const PREVIEW_ZOOM_STEP = 5;
+const PREVIEW_FIT_PADDING_PX = 20;
 const PRACTICE_AREA_HEIGHT_MM = 178;
 const ASCENDER_GUIDE_RATIO = 0.63;
 const DESCENDER_GUIDE_RATIO = 0.66;
@@ -306,6 +310,7 @@ const createDefaultState = (): WorksheetState => ({
 const DEFAULT_STATE = createDefaultState();
 
 let state: WorksheetState = createDefaultState();
+let isPreviewZoomManual = false;
 
 app.innerHTML = `
   <div class="worksheet-app">
@@ -327,16 +332,6 @@ app.innerHTML = `
             spellcheck="false"
           />
         </label>
-
-        ${renderRangeControl({
-  id: "preview-zoom-slider",
-  label: "Preview zoom",
-  value: DEFAULT_PREVIEW_ZOOM,
-  min: 50,
-  max: 200,
-  step: 5,
-  valueId: "preview-zoom-value"
-})}
 
         ${renderRangeControl({
   id: "practice-size-slider",
@@ -388,6 +383,11 @@ app.innerHTML = `
     </aside>
 
     <main class="worksheet-app__preview" aria-label="Worksheet preview">
+      <div class="worksheet-app__preview-toolbar" aria-label="Preview zoom controls">
+        <button class="worksheet-app__zoom-button" id="preview-zoom-out-button" type="button" aria-label="Zoom out">&minus;</button>
+        <output class="worksheet-app__zoom-value" id="preview-zoom-value" aria-live="polite">${DEFAULT_PREVIEW_ZOOM}%</output>
+        <button class="worksheet-app__zoom-button" id="preview-zoom-in-button" type="button" aria-label="Zoom in">+</button>
+      </div>
       <div class="worksheet-app__page-frame" id="worksheet-page-frame">
         <section class="worksheet-page" id="worksheet-page" aria-label="Printable worksheet"></section>
       </div>
@@ -396,7 +396,8 @@ app.innerHTML = `
 `;
 
 const textInput = document.querySelector<HTMLInputElement>("#worksheet-text-input");
-const previewZoomSlider = document.querySelector<HTMLInputElement>("#preview-zoom-slider");
+const previewZoomInButton = document.querySelector<HTMLButtonElement>("#preview-zoom-in-button");
+const previewZoomOutButton = document.querySelector<HTMLButtonElement>("#preview-zoom-out-button");
 const practiceSizeSlider = document.querySelector<HTMLInputElement>("#practice-size-slider");
 const practiceRepeatSlider = document.querySelector<HTMLInputElement>("#practice-repeat-slider");
 const strokeWidthSlider = document.querySelector<HTMLInputElement>("#stroke-width-slider");
@@ -408,7 +409,8 @@ const statusEl = document.querySelector<HTMLParagraphElement>("#worksheet-status
 
 if (
   !textInput ||
-  !previewZoomSlider ||
+  !previewZoomInButton ||
+  !previewZoomOutButton ||
   !practiceSizeSlider ||
   !practiceRepeatSlider ||
   !strokeWidthSlider ||
@@ -838,6 +840,11 @@ const normalizeSliderValue = (input: HTMLInputElement, value: number): number =>
   return Number(nextValue.toFixed(getSliderValuePrecision(input)));
 };
 
+const normalizePreviewZoom = (value: number): number => {
+  const clampedValue = Math.min(MAX_PREVIEW_ZOOM, Math.max(MIN_PREVIEW_ZOOM, value));
+  return Math.round(clampedValue / PREVIEW_ZOOM_STEP) * PREVIEW_ZOOM_STEP;
+};
+
 const syncSliderValue = (input: HTMLInputElement, value: number): number => {
   const normalizedValue = normalizeSliderValue(input, value);
   input.value = normalizedValue.toFixed(getSliderValuePrecision(input));
@@ -877,6 +884,20 @@ const parseSliderSearchParam = (
   }
 
   return normalizeSliderValue(input, parsedValue);
+};
+
+const parsePreviewZoomSearchParam = (params: URLSearchParams): number | null => {
+  const rawValue = params.get("previewZoom");
+  if (rawValue === null) {
+    return null;
+  }
+
+  const parsedValue = Number(rawValue);
+  if (!Number.isFinite(parsedValue)) {
+    return null;
+  }
+
+  return normalizePreviewZoom(parsedValue);
 };
 
 const parseColorSearchParam = (params: URLSearchParams, key: string): string | null =>
@@ -941,7 +962,7 @@ const syncScopedSettingsControlsFromState = (scope: AnnotationScope) => {
 
 const syncSettingsControlsFromState = () => {
   textInput.value = state.text;
-  state.previewZoom = syncSliderValue(previewZoomSlider, state.previewZoom);
+  state.previewZoom = normalizePreviewZoom(state.previewZoom);
   state.practiceRowHeightMm = syncSliderValue(practiceSizeSlider, state.practiceRowHeightMm);
   state.practiceRepeatCount = syncSliderValue(practiceRepeatSlider, state.practiceRepeatCount);
   state.strokeWidth = syncSliderValue(strokeWidthSlider, state.strokeWidth);
@@ -1032,9 +1053,6 @@ const syncSettingsUrl = () => {
 
   if (state.text !== DEFAULT_STATE.text) {
     url.searchParams.set("text", state.text);
-  }
-  if (state.previewZoom !== DEFAULT_STATE.previewZoom) {
-    url.searchParams.set("previewZoom", String(state.previewZoom));
   }
   if (state.practiceRowHeightMm !== DEFAULT_STATE.practiceRowHeightMm) {
     url.searchParams.set("practiceSize", String(state.practiceRowHeightMm));
@@ -1179,8 +1197,13 @@ const applyUrlSettings = () => {
     state.text = normalizeText(textParam);
   }
 
-  state.previewZoom =
-    parseSliderSearchParam(params, "previewZoom", previewZoomSlider) ?? state.previewZoom;
+  const previewZoomParam = parsePreviewZoomSearchParam(params);
+  if (previewZoomParam !== null) {
+    state.previewZoom = previewZoomParam;
+    isPreviewZoomManual = true;
+  } else {
+    isPreviewZoomManual = false;
+  }
   state.practiceRowHeightMm =
     parseSliderSearchParam(params, "practiceSize", practiceSizeSlider) ?? state.practiceRowHeightMm;
   state.practiceRepeatCount =
@@ -1296,11 +1319,37 @@ const applyPreviewZoom = () => {
   worksheetPageFrame.style.setProperty("--worksheet-preview-scale", `${state.previewZoom / 100}`);
 };
 
-const setPreviewZoom = (value: number) => {
-  state.previewZoom = syncSliderValue(previewZoomSlider, value);
+const setPreviewZoom = (value: number, options: { manual?: boolean; syncUrl?: boolean } = {}) => {
+  state.previewZoom = normalizePreviewZoom(value);
+  if (options.manual) {
+    isPreviewZoomManual = true;
+  }
   applyPreviewZoom();
   syncLabels();
-  syncSettingsUrl();
+  if (options.syncUrl ?? true) {
+    syncSettingsUrl();
+  }
+};
+
+const fitPreviewZoomToWidth = () => {
+  if (isPreviewZoomManual) {
+    return;
+  }
+
+  const previewStyles = window.getComputedStyle(worksheetPageFrame.parentElement ?? worksheetPageFrame);
+  const horizontalPadding =
+    Number.parseFloat(previewStyles.paddingLeft) + Number.parseFloat(previewStyles.paddingRight);
+  const availableWidth =
+    worksheetPageFrame.parentElement?.clientWidth ?? worksheetPageFrame.clientWidth;
+  const previewWidth = Math.max(0, availableWidth - horizontalPadding - PREVIEW_FIT_PADDING_PX);
+  const pageWidth = worksheetPage.offsetWidth;
+  if (pageWidth <= 0 || previewWidth <= 0) {
+    return;
+  }
+
+  const fittedZoom =
+    Math.floor(((previewWidth / pageWidth) * 100) / PREVIEW_ZOOM_STEP) * PREVIEW_ZOOM_STEP;
+  setPreviewZoom(fittedZoom, { syncUrl: false });
 };
 
 const nextFrame = () =>
@@ -1833,8 +1882,11 @@ const createWorksheetPngBlob = async (): Promise<Blob> => {
 };
 
 textInput.addEventListener("input", renderWorksheet);
-previewZoomSlider.addEventListener("input", () => {
-  setPreviewZoom(Number(previewZoomSlider.value));
+previewZoomOutButton.addEventListener("click", () => {
+  setPreviewZoom(state.previewZoom - PREVIEW_ZOOM_STEP, { manual: true });
+});
+previewZoomInButton.addEventListener("click", () => {
+  setPreviewZoom(state.previewZoom + PREVIEW_ZOOM_STEP, { manual: true });
 });
 practiceSizeSlider.addEventListener("input", renderWorksheet);
 practiceRepeatSlider.addEventListener("input", renderWorksheet);
@@ -1962,6 +2014,11 @@ annotationKindInputs.forEach((input) => {
 
 applyUrlSettings();
 renderWorksheet();
+fitPreviewZoomToWidth();
+
+new ResizeObserver(() => {
+  fitPreviewZoomToWidth();
+}).observe(worksheetPageFrame.parentElement ?? worksheetPageFrame);
 
 window.__worksheetProfiler = {
   getState: getWorksheetProfilerState,
