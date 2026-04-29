@@ -1288,6 +1288,23 @@ body {
   overflow-wrap: anywhere;
 }
 
+.worksheet-app__preset-buttons {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.worksheet-app__preset-buttons legend {
+  grid-column: 1 / -1;
+  margin: 0 0 2px;
+  color: #5b6773;
+  font-size: 0.88rem;
+  font-weight: 800;
+}
+
 .worksheet-app__color {
   inline-size: 44px;
   block-size: 30px;

@@ -160,10 +160,10 @@ const WORKSHEET_SVG_EXPORT_STYLES = `
   }
 `;
 const DEFAULT_WORKSHEET_JOIN_SPACING = {
-  targetBendRate: 16,
-  minSidebearingGap: 80,
-  bendSearchMinSidebearingGap: -30,
-  bendSearchMaxSidebearingGap: 240,
+  targetBendRate: 4.7,
+  minSidebearingGap: 130,
+  bendSearchMinSidebearingGap: -50,
+  bendSearchMaxSidebearingGap: 75,
   exitHandleScale: 0.75,
   entryHandleScale: 0.75
 } as const satisfies Required<JoinSpacingOptions>;
@@ -288,6 +288,39 @@ const createSettings = (
   strokeColor
 });
 
+const TOP_ANNOTATION_PRESETS = {
+  outside: {
+    turnRadius: 48,
+    uTurnLength: 52,
+    arrowLength: 149,
+    arrowStrokeWidth: 5.5,
+    numberSize: 64,
+    numberPathOffset: -77,
+    alwaysOffsetArrowLanes: true,
+    arrowColor: "#ff0000",
+    visibility: {
+      "draw-order-number": true
+    }
+  },
+  inside: {
+    directionalDashSpacing: 152,
+    turnRadius: 48,
+    uTurnLength: 52,
+    arrowLength: 149,
+    arrowStrokeWidth: 5.5,
+    numberSize: 64,
+    numberPathOffset: -77,
+    offsetArrowLanes: false,
+    visibility: {
+      "directional-dash": true,
+      "turning-point": false,
+      "start-arrow": false,
+      "draw-order-number": true,
+      "midpoint-arrow": false
+    }
+  }
+} as const;
+
 const createDefaultState = (): WorksheetState => ({
   text: DEFAULT_TEXT,
   previewZoom: DEFAULT_PREVIEW_ZOOM,
@@ -354,8 +387,19 @@ app.innerHTML = `
 })}
 
         ${renderRangeControl({
+  id: "min-sidebearing-gap-slider",
+  label: "Letter spacing",
+  value: DEFAULT_WORKSHEET_JOIN_SPACING.minSidebearingGap,
+  min: -300,
+  max: 300,
+  step: 5,
+  valueId: "min-sidebearing-gap-value",
+  attrs: 'data-global-setting="minSidebearingGap"'
+})}
+
+        ${renderRangeControl({
   id: "stroke-width-slider",
-  label: "Main stroke thickness",
+  label: "Stroke thickness",
   value: DEFAULT_STROKE_WIDTH,
   min: 20,
   max: 90,
@@ -363,12 +407,25 @@ app.innerHTML = `
   valueId: "stroke-width-value"
 })}
 
+        <fieldset class="worksheet-app__checks" aria-label="Lead strokes">
+          ${renderGlobalToggle("include-initial-lead-in", "keepInitialLeadIn", "Initial lead-in", true)}
+          ${renderGlobalToggle("include-final-lead-out", "keepFinalLeadOut", "Final lead-out", true)}
+          ${renderAnnotationToggle("top", "draw-order-number", "Show numeric steps", state.top.visibility["draw-order-number"])}
+        </fieldset>
+
+        <fieldset class="worksheet-app__preset-buttons" aria-label="Top word annotation presets">
+          <legend>Top word annotation presets</legend>
+          <button class="worksheet-app__button worksheet-app__button--secondary" type="button" data-top-annotation-preset="outside">
+            Outside letters
+          </button>
+          <button class="worksheet-app__button worksheet-app__button--secondary" type="button" data-top-annotation-preset="inside">
+            Inside letters
+          </button>
+        </fieldset>
+
         ${renderGridlineSettings()}
 
         ${renderAdvancedSettings()}
-
-        ${renderAnnotationControlSection("top", "Top word annotations", state.top)}
-        ${renderAnnotationControlSection("practice", "Practice annotations", state.practice)}
 
         <div class="worksheet-app__button-row">
           <button class="worksheet-app__button" id="print-worksheet-button" type="button">
@@ -401,6 +458,9 @@ const previewZoomOutButton = document.querySelector<HTMLButtonElement>("#preview
 const practiceSizeSlider = document.querySelector<HTMLInputElement>("#practice-size-slider");
 const practiceRepeatSlider = document.querySelector<HTMLInputElement>("#practice-repeat-slider");
 const strokeWidthSlider = document.querySelector<HTMLInputElement>("#stroke-width-slider");
+const topAnnotationPresetButtons = Array.from(
+  document.querySelectorAll<HTMLButtonElement>("[data-top-annotation-preset]")
+);
 const printButton = document.querySelector<HTMLButtonElement>("#print-worksheet-button");
 const downloadPngButton = document.querySelector<HTMLButtonElement>("#download-png-button");
 const worksheetPageFrame = document.querySelector<HTMLElement>("#worksheet-page-frame");
@@ -468,27 +528,20 @@ function renderAdvancedSettings(): string {
     <details class="worksheet-app__details">
       <summary>Advanced settings</summary>
       <div class="worksheet-app__details-body">
-        ${renderRangeControl({
+        <details class="worksheet-app__details">
+          <summary>Bezier curve settings</summary>
+          <div class="worksheet-app__details-body">
+            ${renderRangeControl({
     id: "target-bend-rate-slider",
     label: "Target maximum bend rate",
     value: DEFAULT_WORKSHEET_JOIN_SPACING.targetBendRate,
     min: 0,
-    max: 60,
-    step: 1,
+    max: 20,
+    step: 0.1,
     valueId: "target-bend-rate-value",
     attrs: 'data-global-setting="targetBendRate"'
   })}
-        ${renderRangeControl({
-    id: "min-sidebearing-gap-slider",
-    label: "Minimum sidebearing gap",
-    value: DEFAULT_WORKSHEET_JOIN_SPACING.minSidebearingGap,
-    min: -300,
-    max: 200,
-    step: 5,
-    valueId: "min-sidebearing-gap-value",
-    attrs: 'data-global-setting="minSidebearingGap"'
-  })}
-        ${renderRangeControl({
+            ${renderRangeControl({
     id: "bend-search-min-sidebearing-gap-slider",
     label: "Search minimum sidebearing gap",
     value: DEFAULT_WORKSHEET_JOIN_SPACING.bendSearchMinSidebearingGap,
@@ -498,7 +551,7 @@ function renderAdvancedSettings(): string {
     valueId: "bend-search-min-sidebearing-gap-value",
     attrs: 'data-global-setting="bendSearchMinSidebearingGap"'
   })}
-        ${renderRangeControl({
+            ${renderRangeControl({
     id: "bend-search-max-sidebearing-gap-slider",
     label: "Search maximum sidebearing gap",
     value: DEFAULT_WORKSHEET_JOIN_SPACING.bendSearchMaxSidebearingGap,
@@ -508,7 +561,7 @@ function renderAdvancedSettings(): string {
     valueId: "bend-search-max-sidebearing-gap-value",
     attrs: 'data-global-setting="bendSearchMaxSidebearingGap"'
   })}
-        ${renderRangeControl({
+            ${renderRangeControl({
     id: "exit-handle-scale-slider",
     label: "p0-p1 handle scale",
     value: DEFAULT_WORKSHEET_JOIN_SPACING.exitHandleScale,
@@ -518,7 +571,7 @@ function renderAdvancedSettings(): string {
     valueId: "exit-handle-scale-value",
     attrs: 'data-global-setting="exitHandleScale"'
   })}
-        ${renderRangeControl({
+            ${renderRangeControl({
     id: "entry-handle-scale-slider",
     label: "p2-p3 handle scale",
     value: DEFAULT_WORKSHEET_JOIN_SPACING.entryHandleScale,
@@ -528,10 +581,10 @@ function renderAdvancedSettings(): string {
     valueId: "entry-handle-scale-value",
     attrs: 'data-global-setting="entryHandleScale"'
   })}
-        <fieldset class="worksheet-app__checks" aria-label="Advanced worksheet toggles">
-          ${renderGlobalToggle("include-initial-lead-in", "keepInitialLeadIn", "Initial lead-in", true)}
-          ${renderGlobalToggle("include-final-lead-out", "keepFinalLeadOut", "Final lead-out", true)}
-        </fieldset>
+          </div>
+        </details>
+        ${renderAnnotationControlSection("top", "Top word annotations", state.top)}
+        ${renderAnnotationControlSection("practice", "Practice annotations", state.practice)}
       </div>
     </details>
   `;
@@ -622,7 +675,7 @@ function renderAnnotationControlSection(
   settings: WorksheetAnnotationSettings
 ): string {
   return `
-    <details class="worksheet-app__details" open>
+    <details class="worksheet-app__details">
       <summary>${label}</summary>
       <div class="worksheet-app__details-body">
         ${renderRangeControl({
@@ -724,7 +777,9 @@ function renderAnnotationControlSection(
   )}
           ${renderAnnotationToggle(scope, "turning-point", "Turns", settings.visibility["turning-point"])}
           ${renderAnnotationToggle(scope, "start-arrow", "Starts", settings.visibility["start-arrow"])}
-          ${renderAnnotationToggle(scope, "draw-order-number", "Numbers", settings.visibility["draw-order-number"])}
+          ${scope === "practice"
+    ? renderAnnotationToggle(scope, "draw-order-number", "Numbers", settings.visibility["draw-order-number"])
+    : ""}
           ${renderAnnotationToggle(scope, "midpoint-arrow", "Midpoints", settings.visibility["midpoint-arrow"])}
           <label class="worksheet-app__check">
             <input
@@ -2008,6 +2063,29 @@ annotationKindInputs.forEach((input) => {
       ...getScopeSettings(scope).visibility,
       [kind]: input.checked
     };
+    renderWorksheet();
+  });
+});
+
+topAnnotationPresetButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    const presetName = button.dataset.topAnnotationPreset;
+    if (presetName !== "outside" && presetName !== "inside") {
+      return;
+    }
+
+    const preset = TOP_ANNOTATION_PRESETS[presetName];
+    state.top = {
+      ...DEFAULT_STATE.top,
+      ...preset,
+      visibility: "visibility" in preset
+        ? {
+            ...DEFAULT_STATE.top.visibility,
+            ...preset.visibility
+          }
+        : { ...DEFAULT_STATE.top.visibility }
+    };
+    syncScopedSettingsControlsFromState("top");
     renderWorksheet();
   });
 });
