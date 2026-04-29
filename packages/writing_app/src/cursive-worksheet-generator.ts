@@ -157,6 +157,10 @@ const WORKSHEET_SVG_EXPORT_STYLES = `
   }
   .writing-app__annotation-number {
     font-weight: 800;
+    paint-order: stroke fill;
+    stroke: #ffffff;
+    stroke-linejoin: round;
+    stroke-width: 8px;
   }
 `;
 const DEFAULT_WORKSHEET_JOIN_SPACING = {
@@ -778,8 +782,8 @@ function renderAnnotationControlSection(
           ${renderAnnotationToggle(scope, "turning-point", "Turns", settings.visibility["turning-point"])}
           ${renderAnnotationToggle(scope, "start-arrow", "Starts", settings.visibility["start-arrow"])}
           ${scope === "practice"
-    ? renderAnnotationToggle(scope, "draw-order-number", "Numbers", settings.visibility["draw-order-number"])
-    : ""}
+      ? renderAnnotationToggle(scope, "draw-order-number", "Numbers", settings.visibility["draw-order-number"])
+      : ""}
           ${renderAnnotationToggle(scope, "midpoint-arrow", "Midpoints", settings.visibility["midpoint-arrow"])}
           <label class="worksheet-app__check">
             <input
@@ -2080,9 +2084,9 @@ topAnnotationPresetButtons.forEach((button) => {
       ...preset,
       visibility: "visibility" in preset
         ? {
-            ...DEFAULT_STATE.top.visibility,
-            ...preset.visibility
-          }
+          ...DEFAULT_STATE.top.visibility,
+          ...preset.visibility
+        }
         : { ...DEFAULT_STATE.top.visibility }
     };
     syncScopedSettingsControlsFromState("top");

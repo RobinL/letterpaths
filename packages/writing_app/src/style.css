@@ -563,7 +563,11 @@ body {
 .writing-app__annotation-number {
   fill: #3f454b;
   font-weight: 800;
+  paint-order: stroke fill;
   pointer-events: none;
+  stroke: #ffffff;
+  stroke-linejoin: round;
+  stroke-width: 10px;
   user-select: none;
 }
 
