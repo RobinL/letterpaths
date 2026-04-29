@@ -26,6 +26,13 @@ type WorksheetAnnotationSettings = FormationAnnotationMarkupOptions & {
   strokeColor: string;
 };
 
+type WorksheetAnnotationSettingsPatch = Omit<
+  Partial<WorksheetAnnotationSettings>,
+  "visibility"
+> & {
+  visibility?: Partial<FormationAnnotationVisibility>;
+};
+
 type WorksheetState = {
   text: string;
   previewZoom: number;
@@ -292,6 +299,20 @@ const createSettings = (
   strokeColor
 });
 
+const applyAnnotationSettingsPatch = (
+  settings: WorksheetAnnotationSettings,
+  patch: WorksheetAnnotationSettingsPatch
+): WorksheetAnnotationSettings => ({
+  ...settings,
+  ...patch,
+  visibility: patch.visibility
+    ? {
+        ...settings.visibility,
+        ...patch.visibility
+      }
+    : settings.visibility
+});
+
 const TOP_ANNOTATION_PRESETS = {
   outside: {
     turnRadius: 48,
@@ -340,7 +361,10 @@ const createDefaultState = (): WorksheetState => ({
   gridlineColor: DEFAULT_GRIDLINE_COLOR,
   keepInitialLeadIn: true,
   keepFinalLeadOut: true,
-  top: createSettings(DEFAULT_FORMATION_ANNOTATION_VISIBILITY, DEFAULT_TOP_STROKE_COLOR),
+  top: applyAnnotationSettingsPatch(
+    createSettings(DEFAULT_FORMATION_ANNOTATION_VISIBILITY, DEFAULT_TOP_STROKE_COLOR),
+    TOP_ANNOTATION_PRESETS.inside
+  ),
   practice: createSettings(EMPTY_FORMATION_ANNOTATION_VISIBILITY, DEFAULT_PRACTICE_STROKE_COLOR)
 });
 
@@ -348,6 +372,7 @@ const DEFAULT_STATE = createDefaultState();
 
 let state: WorksheetState = createDefaultState();
 let isPreviewZoomManual = false;
+let previewScaleRefreshId = 0;
 
 app.innerHTML = `
   <div class="worksheet-app">
@@ -1378,7 +1403,24 @@ const applyPreviewZoom = () => {
   worksheetPageFrame.style.setProperty("--worksheet-preview-scale", `${state.previewZoom / 100}`);
 };
 
-const setPreviewZoom = (value: number, options: { manual?: boolean; syncUrl?: boolean } = {}) => {
+const refreshWorksheetAfterPreviewScale = () => {
+  const refreshId = ++previewScaleRefreshId;
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      if (refreshId !== previewScaleRefreshId) {
+        return;
+      }
+
+      renderWorksheet();
+    });
+  });
+};
+
+const setPreviewZoom = (
+  value: number,
+  options: { manual?: boolean; syncUrl?: boolean; refreshAfterScale?: boolean } = {}
+) => {
+  const previousZoom = state.previewZoom;
   state.previewZoom = normalizePreviewZoom(value);
   if (options.manual) {
     isPreviewZoomManual = true;
@@ -1387,6 +1429,9 @@ const setPreviewZoom = (value: number, options: { manual?: boolean; syncUrl?: bo
   syncLabels();
   if (options.syncUrl ?? true) {
     syncSettingsUrl();
+  }
+  if ((options.refreshAfterScale ?? true) && state.previewZoom !== previousZoom) {
+    refreshWorksheetAfterPreviewScale();
   }
 };
 
@@ -1478,7 +1523,7 @@ const profileWorksheetRender = async (
 const withPreviewZoom = async <T>(zoom: number, action: () => Promise<T>): Promise<T> => {
   const previousZoom = state.previewZoom;
   if (previousZoom !== zoom) {
-    setPreviewZoom(zoom);
+    setPreviewZoom(zoom, { refreshAfterScale: false });
     await nextFrame();
   }
 
@@ -1486,7 +1531,7 @@ const withPreviewZoom = async <T>(zoom: number, action: () => Promise<T>): Promi
     return await action();
   } finally {
     if (previousZoom !== zoom) {
-      setPreviewZoom(previousZoom);
+      setPreviewZoom(previousZoom, { refreshAfterScale: false });
       await nextFrame();
     }
   }
@@ -2079,16 +2124,7 @@ topAnnotationPresetButtons.forEach((button) => {
     }
 
     const preset = TOP_ANNOTATION_PRESETS[presetName];
-    state.top = {
-      ...DEFAULT_STATE.top,
-      ...preset,
-      visibility: "visibility" in preset
-        ? {
-          ...DEFAULT_STATE.top.visibility,
-          ...preset.visibility
-        }
-        : { ...DEFAULT_STATE.top.visibility }
-    };
+    state.top = applyAnnotationSettingsPatch(DEFAULT_STATE.top, preset);
     syncScopedSettingsControlsFromState("top");
     renderWorksheet();
   });
