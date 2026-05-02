@@ -209,3 +209,13 @@ test("lead-in and lead-out options apply to every word", () => {
   assert.equal(countSegments(multi, "lead-in"), countSegments(single, "lead-in") * 2);
   assert.equal(countSegments(multi, "lead-out"), countSegments(single, "lead-out") * 2);
 });
+
+test("capital letters in cursive text render as standalone print letters", () => {
+  const capitalOnly = buildHandwritingPath("A", { style: "cursive" });
+  const mixed = buildHandwritingPath("Apple", { style: "cursive" });
+
+  assert.ok(capitalOnly.strokes.length > 0);
+  assert.equal(countSegments(capitalOnly, "join"), 0);
+  assert.equal(mixed.joinMetrics?.length, 3);
+  assert.equal(countSegments(mixed, "join"), 3);
+});

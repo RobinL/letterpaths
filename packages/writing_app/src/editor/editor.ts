@@ -2575,9 +2575,24 @@ function renderEditor() {
   editorSvg.classList.toggle("is-dot-mode", state.dotMode);
   editorSvg.classList.toggle("is-draw-mode", state.drawMode);
   if (editorCurves.length === 0) {
-    resetEditorViewBox();
-    editorSvg.innerHTML =
-      '<text class="empty-label" x="50" y="60">Load a bezier letter to begin.</text>';
+    const guideMarkup =
+      showGuidesEl.checked && editorContext.guides
+        ? renderGuides(editorContext.guides)
+        : "";
+    const guideHandles =
+      showGuidesEl.checked && editorContext.guides
+        ? renderGuideHandles(editorContext.guides)
+        : "";
+    const emptyLabel = editorContext.glyph
+      ? "No strokes. Guides remain editable."
+      : "Load a bezier letter to begin.";
+    editorSvg.innerHTML = `
+      ${guideMarkup}
+      <g class="editor-guide-handles">${guideHandles}</g>
+      <text class="empty-label" x="${round(
+        editorViewBox.x + scaled(50)
+      )}" y="${round(editorViewBox.y + scaled(60))}">${emptyLabel}</text>
+    `;
     editorStatusEl.textContent = state.drawMode
       ? "Draw stroke enabled: drag on the canvas to create a disconnected bezier."
       : "";
