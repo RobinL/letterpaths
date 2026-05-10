@@ -1,4 +1,4 @@
-import"./modulepreload-polyfill-B5Qt9EMX.js";/* empty css             */import{f as x,e as c,C as b,l as h}from"./joiner-CVeVmRQl.js";const y=document.querySelector("#app");if(!y)throw new Error("Missing #app element for letter gallery.");const o={xHeight:220,baseline:460},p="print",u=[{value:"pre-cursive",label:"Pre-cursive"},{value:"print",label:"Print"}],g=Array.from(new Set(x().map(e=>e.glyph.char.toLowerCase()).filter(e=>e.length===1))).sort(),n={x:52,y:44};y.innerHTML=`
+import"./modulepreload-polyfill-B5Qt9EMX.js";/* empty css             */import{f as x,e as c,C as b,l as h}from"./joiner-CtOGZvQI.js";const y=document.querySelector("#app");if(!y)throw new Error("Missing #app element for letter gallery.");const o={xHeight:220,baseline:460},p="print",u=[{value:"pre-cursive",label:"Pre-cursive"},{value:"print",label:"Print"}],g=Array.from(new Set(x().map(e=>e.glyph.char.toLowerCase()).filter(e=>e.length===1))).sort(),n={x:52,y:44};y.innerHTML=`
   <div class="demo-page demo-page--gallery">
     <header class="demo-header">
       <div class="demo-header__title">
