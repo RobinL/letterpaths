@@ -162,6 +162,27 @@ test("maximum sidebearing cap still applies after bend search and minimum sidebe
   assert.equal(metric.actualNextLeftSidebearingX, metric.cappedNextLeftSidebearingX);
 });
 
+test("explicit pair kerning overrides the join spacing algorithm", () => {
+  const metric = metricFor("cu", {
+    joinSpacing: {
+      minSidebearingGap: -500,
+      maxSidebearingGap: 500,
+      targetBendRate: 0
+    },
+    joinKerning: {
+      cu: { sidebearingGap: 12.5 }
+    }
+  });
+
+  assert.equal(metric.kerningSource, "override");
+  assert.equal(metric.kerningOverrideSidebearingGap, 12.5);
+  assert.equal(metric.renderedSidebearingGap, 12.5);
+  assert.equal(
+    metric.actualNextLeftSidebearingX,
+    metric.kerningOverrideNextLeftSidebearingX
+  );
+});
+
 test("no-backwards clamp still applies after bend search and minimum sidebearing", () => {
   const options = {
     joinSpacing: {

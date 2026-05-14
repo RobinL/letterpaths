@@ -748,6 +748,7 @@ const renderMetricsPanel = (state: RenderState) => {
   }
 
   const spacing = readJoinSpacing()
+  const usesKerningOverride = metric.kerningSource === "override"
   const clampedByMinimum =
     metric.actualNextLeftSidebearingX === metric.clampedNextLeftSidebearingX &&
     metric.targetNextLeftSidebearingX < metric.clampedNextLeftSidebearingX
@@ -769,6 +770,14 @@ const renderMetricsPanel = (state: RenderState) => {
   const noBackwardsGap = formatNumber(metric.noBackwardsSidebearingGap)
   const actualSidebearingGap = formatNumber(metric.renderedSidebearingGap)
   const maximumGap = formatNumber(metric.maxSidebearingGap)
+  const overrideGap =
+    metric.kerningOverrideSidebearingGap === undefined
+      ? ""
+      : formatNumber(metric.kerningOverrideSidebearingGap)
+  const overrideLeft =
+    metric.kerningOverrideNextLeftSidebearingX === undefined
+      ? ""
+      : formatNumber(metric.kerningOverrideNextLeftSidebearingX)
   const searchGap = formatNumber(metric.searchedSidebearingGap)
   const searchBend = formatNumber(metric.searchedBendRate)
   const targetBendRate = formatNumber(metric.targetBendRate)
@@ -786,6 +795,8 @@ const renderMetricsPanel = (state: RenderState) => {
   const uncappedGapTerm = formulaTerm("uncapped gap", "join-stats__formula-token--uncapped", "sidebearing gap after search, minimum, and no-backwards constraints")
   const maximumGapTerm = formulaTerm("maximum sidebearing gap", "join-stats__formula-token--maximum", "user configured maximum sidebearing gap")
   const maximumTerm = formulaTerm("maximum sidebearing line", "join-stats__formula-token--maximum", "maximum allowed left sidebearing line")
+  const overrideGapTerm = formulaTerm("override sidebearing gap", "join-stats__formula-token--actual", "hard-coded pair kerning sidebearing gap")
+  const overrideLeftTerm = formulaTerm("override left", "join-stats__formula-token--actual", "left sidebearing x from the hard-coded pair kerning")
 
   pairLabel.textContent = `${metric.pair} pair ${selectedPairIndex + 1} of ${state.metrics.length}`
   metricsEl.innerHTML = `
@@ -797,17 +808,27 @@ const renderMetricsPanel = (state: RenderState) => {
       )}
       ${formulaLine(
         "actual left",
-        `min(max(${searchTargetTerm}, ${minimumTerm}, ${noBackwardsTerm}), ${maximumTerm})`,
-        `min(max(${formulaNumber(searchTargetLeft, "join-stats__formula-token--raw-target", "search target left sidebearing x")}, ${formulaNumber(minimumLeft, "join-stats__formula-token--minimum", "minimum sidebearing line")}, ${formulaNumber(noBackwardsLeft, "join-stats__formula-token--no-backwards", "no-backwards line")}), ${formulaNumber(formatNumber(metric.cappedNextLeftSidebearingX), "join-stats__formula-token--maximum", "maximum sidebearing line")}) = ${formulaNumber(actualLeft, "join-stats__formula-token--actual", "actual left sidebearing x")}`
+        usesKerningOverride
+          ? `${overrideLeftTerm}`
+          : `min(max(${searchTargetTerm}, ${minimumTerm}, ${noBackwardsTerm}), ${maximumTerm})`,
+        usesKerningOverride
+          ? `${formulaNumber(overrideLeft, "join-stats__formula-token--actual", "override left sidebearing x")} = ${formulaNumber(actualLeft, "join-stats__formula-token--actual", "actual left sidebearing x")}`
+          : `min(max(${formulaNumber(searchTargetLeft, "join-stats__formula-token--raw-target", "search target left sidebearing x")}, ${formulaNumber(minimumLeft, "join-stats__formula-token--minimum", "minimum sidebearing line")}, ${formulaNumber(noBackwardsLeft, "join-stats__formula-token--no-backwards", "no-backwards line")}), ${formulaNumber(formatNumber(metric.cappedNextLeftSidebearingX), "join-stats__formula-token--maximum", "maximum sidebearing line")}) = ${formulaNumber(actualLeft, "join-stats__formula-token--actual", "actual left sidebearing x")}`
       )}
       ${formulaLine(
         "final gap",
-        `min(${uncappedGapTerm}, ${maximumGapTerm}); ${uncappedGapTerm} = max(${computedGapTerm}, ${noBackwardsGapTerm})`,
-        `min(${formulaNumber(uncappedGap, "join-stats__formula-token--uncapped", "uncapped sidebearing gap")}, ${formulaNumber(maximumGap, "join-stats__formula-token--maximum", "maximum sidebearing gap")}) = ${formulaNumber(actualSidebearingGap, "join-stats__formula-token--actual", "actual sidebearing gap")}`
+        usesKerningOverride
+          ? `${overrideGapTerm}`
+          : `min(${uncappedGapTerm}, ${maximumGapTerm}); ${uncappedGapTerm} = max(${computedGapTerm}, ${noBackwardsGapTerm})`,
+        usesKerningOverride
+          ? `${formulaNumber(overrideGap, "join-stats__formula-token--actual", "override sidebearing gap")} = ${formulaNumber(actualSidebearingGap, "join-stats__formula-token--actual", "actual sidebearing gap")}`
+          : `min(${formulaNumber(uncappedGap, "join-stats__formula-token--uncapped", "uncapped sidebearing gap")}, ${formulaNumber(maximumGap, "join-stats__formula-token--maximum", "maximum sidebearing gap")}) = ${formulaNumber(actualSidebearingGap, "join-stats__formula-token--actual", "actual sidebearing gap")}`
       )}
     </div>
     <div class="join-stats__metric-grid">
       ${metricRow("Pair", metric.pair)}
+      ${metricRow("Kerning source", metric.kerningSource)}
+      ${usesKerningOverride ? metricRow("Override sidebearing gap", overrideGap) : ""}
       ${metricRow("Target maximum bend rate", `${formatNumber(spacing.targetBendRate)} deg/0.1t`)}
       ${metricRow("Maximum sidebearing gap", formatNumber(spacing.maxSidebearingGap))}
       ${metricRow("p0-p1 handle scale", formatNumber(spacing.exitHandleScale))}

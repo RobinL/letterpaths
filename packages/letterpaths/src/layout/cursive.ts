@@ -1,5 +1,17 @@
-import type { BezierLetter, BezierStep, Curve, JoinMetric, Point, WritingPath } from "../types";
-import { defaultCursiveEntryVariant, type CursiveExitVariant } from "../data";
+import type {
+  BezierLetter,
+  BezierStep,
+  Curve,
+  CursiveKerningPairs,
+  JoinMetric,
+  Point,
+  WritingPath
+} from "../types";
+import {
+  defaultCursiveEntryVariant,
+  defaultCursiveKerningPairs,
+  type CursiveExitVariant
+} from "../data";
 import {
   buildJoinCurve,
   buildStepsFromDeferredStrokes,
@@ -36,6 +48,7 @@ export function joinCursiveWord(
   const letterMap: Record<string, BezierLetter> = options.letters ?? {};
   const target = resolveTargetGuides(options);
   const joinSpacing = resolveJoinSpacingOptions(options.joinSpacing);
+  const joinKerning = options.joinKerning ?? defaultCursiveKerningPairs;
   const wordSpacing = resolveWordSpacing(target, options);
 
   const outputSteps: BezierStep[] = [];
@@ -129,6 +142,7 @@ export function joinCursiveWord(
 
     let appliedGap = 0;
     if (prevExitCurve && prevChar) {
+      const pair = `${prevChar}${char}`;
       const entryOffsetFromLeftSidebearing = entryCurve.p0.x - normalizedGuides.left;
       const previousExitToRightSidebearing = prevRightSidebearing - prevExitCurve.p3.x;
       const nextEntryFromLeftSidebearing = entryOffsetFromLeftSidebearing;
@@ -144,10 +158,14 @@ export function joinCursiveWord(
       const noBackwardsCursorX =
         prevRightSidebearing + spacing.noBackwardsSidebearingGap;
       const maxCursorX = prevRightSidebearing + joinSpacing.maxSidebearingGap;
-      cursorX = Math.min(
+      const algorithmCursorX = Math.min(
         Math.max(targetCursorX, minCursorX, noBackwardsCursorX),
         maxCursorX
       );
+      const overrideGap = getKerningOverrideSidebearingGap(joinKerning, pair);
+      const overrideCursorX =
+        overrideGap === null ? null : prevRightSidebearing + overrideGap;
+      cursorX = overrideCursorX ?? algorithmCursorX;
       const offsetX = cursorX - normalizedGuides.left;
       const shiftedEntryX = entryCurve.p0.x + offsetX;
       const renderedSidebearingGap = cursorX - prevRightSidebearing;
@@ -155,9 +173,12 @@ export function joinCursiveWord(
       appliedGap = shiftedEntryX - prevExitCurve.p3.x;
       joinMetrics.push({
         pairIndex: joinMetrics.length,
-        pair: `${prevChar}${char}`,
+        pair,
         previousChar: prevChar,
         nextChar: char,
+        kerningSource: overrideGap === null ? "algorithm" : "override",
+        kerningOverrideSidebearingGap: overrideGap ?? undefined,
+        kerningOverrideNextLeftSidebearingX: overrideCursorX ?? undefined,
         verticalDistance: spacing.verticalDistance,
         targetBendRate: spacing.targetBendRate,
         bendSearchMinSidebearingGap: spacing.bendSearchMinSidebearingGap,
@@ -246,4 +267,14 @@ function isLastDrawableCharInWord(
     return true;
   }
   return true;
+}
+
+function getKerningOverrideSidebearingGap(
+  joinKerning: CursiveKerningPairs,
+  pair: string
+): number | null {
+  const sidebearingGap = joinKerning[pair]?.sidebearingGap;
+  return typeof sidebearingGap === "number" && Number.isFinite(sidebearingGap)
+    ? sidebearingGap
+    : null;
 }

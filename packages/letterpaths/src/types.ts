@@ -18,6 +18,9 @@ export type JoinMetric = {
   pair: string;
   previousChar: string;
   nextChar: string;
+  kerningSource: "algorithm" | "override";
+  kerningOverrideSidebearingGap?: number;
+  kerningOverrideNextLeftSidebearingX?: number;
   verticalDistance: number;
   targetBendRate: number;
   bendSearchMinSidebearingGap: number;
@@ -48,6 +51,19 @@ export type JoinMetric = {
 export type Point = {
   x: number;
   y: number;
+};
+
+export type CursiveKerningPair = {
+  sidebearingGap: number;
+};
+
+export type CursiveKerningPairs = Record<string, CursiveKerningPair>;
+
+export type CursiveKerningSettings = {
+  schemaVersion: number;
+  description?: string;
+  units?: string;
+  pairs: CursiveKerningPairs;
 };
 
 export type BezierPoint = Point;

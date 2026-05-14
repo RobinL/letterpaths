@@ -1,5 +1,9 @@
-import type { BezierLetter } from "../types";
+import type {
+  BezierLetter,
+  CursiveKerningSettings
+} from "../types";
 
+import cursiveKerning from "./cursive-kerning.json";
 import aLowerCursiveEntryLow from "./bezier/entry-low/a-lower-cursive-bezier-entry-low.json";
 import aLowerCursiveEntryHigh from "./bezier/entry-high/a-lower-cursive-bezier-entry-high.json";
 import aLowerPrint from "./bezier/print/a-lower-print-bezier.json";
@@ -271,3 +275,7 @@ export const lettersByVariantId = {
   ...cursiveLettersByVariantId,
   ...printLettersById
 } as Record<string, BezierLetter>;
+
+export const defaultCursiveKerningSettings =
+  cursiveKerning as CursiveKerningSettings;
+export const defaultCursiveKerningPairs = defaultCursiveKerningSettings.pairs;

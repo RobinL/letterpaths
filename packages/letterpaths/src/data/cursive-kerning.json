@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "description": "Sparse hard-coded cursive pair kerning overrides. Each lowercase two-letter key stores the sidebearing gap to use before placing the second letter. Missing pairs fall back to the join spacing algorithm.",
+  "units": "letterpath sidebearing gap",
+  "pairs": {}
+}

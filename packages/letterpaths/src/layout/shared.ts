@@ -15,6 +15,7 @@ import type {
   BezierLetter,
   BezierMarkPoint,
   BezierStep,
+  CursiveKerningPairs,
   Curve,
   HandwritingStyle,
   JoinMetric,
@@ -30,6 +31,7 @@ export type JoinCursiveOptions = {
   letters?: Record<string, BezierLetter>;
   targetGuides?: LetterGuides;
   joinSpacing?: JoinSpacingOptions;
+  joinKerning?: CursiveKerningPairs;
   wordSpacing?: number;
   keepInitialLeadIn?: boolean;
   keepFinalLeadOut?: boolean;

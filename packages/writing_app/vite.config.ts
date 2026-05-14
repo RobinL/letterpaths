@@ -21,7 +21,8 @@ export default defineConfig(({ command }) => ({
         freehandTracing: path.resolve(__dirname, "freehand_tracing/index.html"),
         editor: path.resolve(__dirname, "editor.html"),
         gallery: path.resolve(__dirname, "gallery.html"),
-        joinStats: path.resolve(__dirname, "join_stats/index.html")
+        joinStats: path.resolve(__dirname, "join_stats/index.html"),
+        kerningEditor: path.resolve(__dirname, "kerning_editor/index.html")
       }
     }
   },
