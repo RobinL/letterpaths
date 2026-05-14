@@ -20,6 +20,8 @@ export type JoinMetric = {
   nextChar: string;
   kerningSource: "algorithm" | "override";
   kerningOverrideSidebearingGap?: number;
+  kerningOverrideExitHandleScale?: number;
+  kerningOverrideEntryHandleScale?: number;
   kerningOverrideNextLeftSidebearingX?: number;
   verticalDistance: number;
   targetBendRate: number;
@@ -54,7 +56,9 @@ export type Point = {
 };
 
 export type CursiveKerningPair = {
-  sidebearingGap: number;
+  sidebearingGap?: number;
+  exitHandleScale?: number;
+  entryHandleScale?: number;
 };
 
 export type CursiveKerningPairs = Record<string, CursiveKerningPair>;

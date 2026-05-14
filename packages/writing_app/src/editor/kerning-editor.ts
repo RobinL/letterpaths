@@ -52,6 +52,8 @@ type PairSnapshot = {
   path: WritingPath
   metric: JoinMetric | null
   gap: number
+  exitHandleScale: number
+  entryHandleScale: number
   source: "algorithm" | "override"
   viewBox: string
   minX: number
@@ -82,14 +84,20 @@ const targetGuides = {
 const letters = lettersByVariantId
 const kerningGapMin = -500
 const kerningGapMax = 500
+const handleScaleMin = 0
+const handleScaleMax = 2
+const kerningHandleDbName = "letterpaths-kerning-editor-handles"
+const kerningHandleStoreName = "handles"
+const kerningHandleDbVersion = 1
+const kerningFileHandleKey = "cursive-kerning-json"
 
 const defaultEditorJoinSpacing = {
-  targetBendRate: 11.6,
-  minSidebearingGap: -500,
+  targetBendRate: 7,
+  minSidebearingGap: -135,
   maxSidebearingGap: 500,
-  bendSearchMinSidebearingGap: -30,
+  bendSearchMinSidebearingGap: 189,
   bendSearchMaxSidebearingGap: 80,
-  exitHandleScale: 1,
+  exitHandleScale: 0.7,
   entryHandleScale: 1
 } as const satisfies Required<JoinSpacingOptions>
 
@@ -167,6 +175,8 @@ const clamp = (value: number, min: number, max: number): number =>
 
 const roundGap = (value: number): number => Math.round(value * 10) / 10
 
+const roundScale = (value: number): number => Math.round(value * 100) / 100
+
 const formatGap = (value: number): string => value.toFixed(1)
 
 const formatScale = (value: number): string => value.toFixed(2)
@@ -195,18 +205,53 @@ const normalizeKerningPairs = (value: unknown): CursiveKerningPairs => {
     if (!/^[a-z]{2}$/.test(pair)) {
       return
     }
+    const rawObject =
+      rawValue && typeof rawValue === "object"
+        ? (rawValue as {
+            sidebearingGap?: unknown
+            exitHandleScale?: unknown
+            entryHandleScale?: unknown
+          })
+        : null
     const sidebearingGap =
       typeof rawValue === "number"
         ? rawValue
-        : rawValue && typeof rawValue === "object" && "sidebearingGap" in rawValue
-          ? Number((rawValue as { sidebearingGap: unknown }).sidebearingGap)
+        : rawObject && "sidebearingGap" in rawObject
+          ? Number(rawObject.sidebearingGap)
           : Number.NaN
-    if (!Number.isFinite(sidebearingGap)) {
+    const exitHandleScale =
+      rawObject && "exitHandleScale" in rawObject
+        ? Number(rawObject.exitHandleScale)
+        : Number.NaN
+    const entryHandleScale =
+      rawObject && "entryHandleScale" in rawObject
+        ? Number(rawObject.entryHandleScale)
+        : Number.NaN
+    const normalizedPair = {
+      ...(Number.isFinite(sidebearingGap)
+        ? {
+            sidebearingGap: roundGap(clamp(sidebearingGap, kerningGapMin, kerningGapMax))
+          }
+        : {}),
+      ...(Number.isFinite(exitHandleScale)
+        ? {
+            exitHandleScale: roundScale(
+              clamp(exitHandleScale, handleScaleMin, handleScaleMax)
+            )
+          }
+        : {}),
+      ...(Number.isFinite(entryHandleScale)
+        ? {
+            entryHandleScale: roundScale(
+              clamp(entryHandleScale, handleScaleMin, handleScaleMax)
+            )
+          }
+        : {})
+    }
+    if (Object.keys(normalizedPair).length === 0) {
       return
     }
-    normalized[pair] = {
-      sidebearingGap: roundGap(clamp(sidebearingGap, kerningGapMin, kerningGapMax))
-    }
+    normalized[pair] = normalizedPair
   })
   return Object.fromEntries(
     Object.entries(normalized).sort(([first], [second]) => first.localeCompare(second))
@@ -216,8 +261,8 @@ const normalizeKerningPairs = (value: unknown): CursiveKerningPairs => {
 const buildKerningSettings = (): CursiveKerningSettings => ({
   schemaVersion: 1,
   description:
-    "Sparse hard-coded cursive pair kerning overrides. Each lowercase two-letter key stores the sidebearing gap to use before placing the second letter. Missing pairs fall back to the join spacing algorithm.",
-  units: "letterpath sidebearing gap",
+    "Sparse hard-coded cursive pair kerning overrides. Each lowercase two-letter key can store sidebearingGap, exitHandleScale, and entryHandleScale. Missing values fall back to the join spacing algorithm/global controls.",
+  units: "letterpath sidebearing gap and Bezier handle scale",
   pairs: Object.fromEntries(
     Object.entries(kerningPairs).sort(([first], [second]) => first.localeCompare(second))
   )
@@ -368,6 +413,14 @@ function computePairSnapshot(pair: string): PairSnapshot {
   })
   const metric = path.joinMetrics?.[0] ?? null
   const gap = metric?.renderedSidebearingGap ?? override?.sidebearingGap ?? 0
+  const exitHandleScale =
+    metric?.kerningOverrideExitHandleScale ??
+    override?.exitHandleScale ??
+    joinSpacing.exitHandleScale
+  const entryHandleScale =
+    metric?.kerningOverrideEntryHandleScale ??
+    override?.entryHandleScale ??
+    joinSpacing.entryHandleScale
   const paddingX = 120
   const paddingY = 110
   const minX = path.bounds.minX - paddingX
@@ -378,6 +431,8 @@ function computePairSnapshot(pair: string): PairSnapshot {
     path,
     metric,
     gap,
+    exitHandleScale,
+    entryHandleScale,
     source: override ? "override" : "algorithm",
     viewBox: `${minX} ${minY} ${Math.max(420, maxX - minX)} ${Math.max(420, maxY - minY)}`,
     minX,
@@ -426,7 +481,7 @@ function buildCardContent(pair: string): string {
     </svg>
     <div class="kerning-card__footer">
       <span class="kerning-card__value">${formatGap(snapshot.gap)}</span>
-      <span class="kerning-card__value">${snapshot.source === "override" ? "set" : "auto"}</span>
+      <span class="kerning-card__value">${snapshot.source === "override" ? `h ${formatScale(snapshot.exitHandleScale)}/${formatScale(snapshot.entryHandleScale)}` : "auto"}</span>
     </div>
   `
 }
@@ -475,34 +530,111 @@ function renderSelectedPair() {
   const override = kerningPairs[selectedPair]
   selectedEl.innerHTML = `
     <div class="kerning-editor__selected-top">
-      <h2>${selectedPair.toUpperCase()}</h2>
-      <span class="kerning-editor__badge ${snapshot.source === "override" ? "kerning-editor__badge--override" : ""}">
+      <h2 id="kerning-selected-title">${selectedPair.toUpperCase()}</h2>
+      <span
+        class="kerning-editor__badge ${snapshot.source === "override" ? "kerning-editor__badge--override" : ""}"
+        id="kerning-selected-badge"
+      >
         ${snapshot.source === "override" ? "override" : "algorithm"}
       </span>
     </div>
-    ${buildPairSvg(selectedPair, "kerning-editor__preview")}
+    <div id="kerning-selected-preview-wrap">
+      ${buildPairSvg(selectedPair, "kerning-editor__preview")}
+    </div>
     <div class="kerning-editor__selected-actions">
       <label class="kerning-editor__field">
         Sidebearing gap
         <input id="kerning-selected-gap" type="number" min="${kerningGapMin}" max="${kerningGapMax}" step="0.1" value="${formatGap(snapshot.gap)}" />
       </label>
+      <label class="kerning-editor__field">
+        p0-p1 handle scale
+        <input id="kerning-selected-exit-handle" type="number" min="${handleScaleMin}" max="${handleScaleMax}" step="0.05" value="${formatScale(snapshot.exitHandleScale)}" />
+      </label>
+      <label class="kerning-editor__field">
+        p2-p3 handle scale
+        <input id="kerning-selected-entry-handle" type="number" min="${handleScaleMin}" max="${handleScaleMax}" step="0.05" value="${formatScale(snapshot.entryHandleScale)}" />
+      </label>
       <button class="kerning-editor__button" id="kerning-reset-selected" type="button" ${override ? "" : "disabled"}>Reset</button>
     </div>
-    <div class="kerning-editor__metrics">
-      ${metricRow("Rendered gap", formatGap(snapshot.gap))}
-      ${metricRow("Algorithm gap", formatGap(computeAlgorithmGap(selectedPair)))}
-      ${metricRow("Source", snapshot.source)}
-      ${snapshot.metric?.searchedBendRate === undefined ? "" : metricRow("Selected bend", `${snapshot.metric.searchedBendRate.toFixed(2)} deg/0.1t`)}
+    <div class="kerning-editor__metrics" id="kerning-selected-metrics">
+      ${buildSelectedMetrics(snapshot)}
     </div>
   `
 
   selectedEl.querySelector<HTMLInputElement>("#kerning-selected-gap")?.addEventListener("input", (event) => {
     const target = event.currentTarget as HTMLInputElement
-    setPairOverride(selectedPair, Number(target.value), true)
+    setPairSidebearingGap(selectedPair, Number(target.value), true)
+  })
+  selectedEl.querySelector<HTMLInputElement>("#kerning-selected-exit-handle")?.addEventListener("input", (event) => {
+    const target = event.currentTarget as HTMLInputElement
+    setPairHandleScale(selectedPair, "exitHandleScale", Number(target.value), true)
+  })
+  selectedEl.querySelector<HTMLInputElement>("#kerning-selected-entry-handle")?.addEventListener("input", (event) => {
+    const target = event.currentTarget as HTMLInputElement
+    setPairHandleScale(selectedPair, "entryHandleScale", Number(target.value), true)
   })
   selectedEl.querySelector<HTMLButtonElement>("#kerning-reset-selected")?.addEventListener("click", () => {
     clearPairOverride(selectedPair)
   })
+  selectedEl.querySelector<HTMLElement>("#kerning-selected-preview-wrap")?.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0) {
+      return
+    }
+    event.preventDefault()
+    beginDrag(selectedPair, event, event.currentTarget as HTMLElement)
+  })
+}
+
+function buildSelectedMetrics(snapshot: PairSnapshot): string {
+  return `
+    ${metricRow("Rendered gap", formatGap(snapshot.gap))}
+    ${metricRow("Algorithm gap", formatGap(computeAlgorithmGap(selectedPair)))}
+    ${metricRow("p0-p1 handle scale", formatScale(snapshot.exitHandleScale))}
+    ${metricRow("p2-p3 handle scale", formatScale(snapshot.entryHandleScale))}
+    ${metricRow("Source", snapshot.source)}
+    ${snapshot.metric?.searchedBendRate === undefined ? "" : metricRow("Selected bend", `${snapshot.metric.searchedBendRate.toFixed(2)} deg/0.1t`)}
+  `
+}
+
+function updateSelectedPairReadout(syncInputs = false) {
+  const snapshot = computePairSnapshot(selectedPair)
+  const override = kerningPairs[selectedPair]
+  const titleEl = selectedEl.querySelector<HTMLHeadingElement>("#kerning-selected-title")
+  const badgeEl = selectedEl.querySelector<HTMLSpanElement>("#kerning-selected-badge")
+  const previewWrapEl = selectedEl.querySelector<HTMLElement>("#kerning-selected-preview-wrap")
+  const metricsEl = selectedEl.querySelector<HTMLDivElement>("#kerning-selected-metrics")
+  const resetButton = selectedEl.querySelector<HTMLButtonElement>("#kerning-reset-selected")
+
+  if (titleEl) {
+    titleEl.textContent = selectedPair.toUpperCase()
+  }
+  if (badgeEl) {
+    badgeEl.textContent = snapshot.source === "override" ? "override" : "algorithm"
+    badgeEl.classList.toggle("kerning-editor__badge--override", snapshot.source === "override")
+  }
+  if (previewWrapEl) {
+    previewWrapEl.innerHTML = buildPairSvg(selectedPair, "kerning-editor__preview")
+  }
+  if (metricsEl) {
+    metricsEl.innerHTML = buildSelectedMetrics(snapshot)
+  }
+  if (resetButton) {
+    resetButton.disabled = !override
+  }
+  if (syncInputs) {
+    const gapInput = selectedEl.querySelector<HTMLInputElement>("#kerning-selected-gap")
+    const exitHandleInput = selectedEl.querySelector<HTMLInputElement>("#kerning-selected-exit-handle")
+    const entryHandleInput = selectedEl.querySelector<HTMLInputElement>("#kerning-selected-entry-handle")
+    if (gapInput) {
+      gapInput.value = formatGap(snapshot.gap)
+    }
+    if (exitHandleInput) {
+      exitHandleInput.value = formatScale(snapshot.exitHandleScale)
+    }
+    if (entryHandleInput) {
+      entryHandleInput.value = formatScale(snapshot.entryHandleScale)
+    }
+  }
 }
 
 function metricRow(label: string, value: string): string {
@@ -561,22 +693,63 @@ function selectPair(pair: string) {
   renderSelectedPair()
 }
 
-function setPairOverride(pair: string, rawGap: number, fromInput = false) {
+function setPairSidebearingGap(pair: string, rawGap: number, fromInput = false) {
   if (!Number.isFinite(rawGap)) {
     return
   }
   const sidebearingGap = roundGap(clamp(rawGap, kerningGapMin, kerningGapMax))
   kerningPairs = {
     ...kerningPairs,
-    [pair]: { sidebearingGap }
+    [pair]: {
+      ...kerningPairs[pair],
+      sidebearingGap
+    }
   }
   hasUnsavedChanges = true
   renderPairCard(pair)
-  if (!fromInput || pair !== selectedPair) {
+  if (pair === selectedPair) {
+    if (fromInput) {
+      updateSelectedPairReadout(false)
+    } else {
+      updateSelectedPairReadout(true)
+    }
+  } else if (!fromInput) {
     renderSelectedPair()
   }
   syncMeta()
   statusEl.textContent = `${pair.toUpperCase()} set to ${formatGap(sidebearingGap)}.`
+}
+
+function setPairHandleScale(
+  pair: string,
+  key: "exitHandleScale" | "entryHandleScale",
+  rawScale: number,
+  fromInput = false
+) {
+  if (!Number.isFinite(rawScale)) {
+    return
+  }
+  const scale = roundScale(clamp(rawScale, handleScaleMin, handleScaleMax))
+  kerningPairs = {
+    ...kerningPairs,
+    [pair]: {
+      ...kerningPairs[pair],
+      [key]: scale
+    }
+  }
+  hasUnsavedChanges = true
+  renderPairCard(pair)
+  if (pair === selectedPair) {
+    if (fromInput) {
+      updateSelectedPairReadout(false)
+    } else {
+      updateSelectedPairReadout(true)
+    }
+  } else if (!fromInput) {
+    renderSelectedPair()
+  }
+  syncMeta()
+  statusEl.textContent = `${pair.toUpperCase()} ${key} set to ${formatScale(scale)}.`
 }
 
 function clearPairOverride(pair: string) {
@@ -650,6 +823,7 @@ async function openKerningFile() {
     editableFileHandle = handle
     const file = await handle.getFile()
     loadSettingsFromText(await file.text(), handle.name)
+    await persistKerningFileHandle(handle)
   } catch (error) {
     statusEl.textContent = "Open cancelled."
   }
@@ -688,6 +862,7 @@ async function saveKerningFile() {
         ]
       })
       editableFileName = editableFileHandle.name
+      await persistKerningFileHandle(editableFileHandle)
     } catch (error) {
       statusEl.textContent = "Save cancelled."
       return
@@ -714,11 +889,115 @@ async function saveKerningFile() {
     }
     hasUnsavedChanges = false
     editableFileName = editableFileHandle.name
+    await persistKerningFileHandle(editableFileHandle)
     syncMeta()
     statusEl.textContent = `Saved ${editableFileName}.`
   } catch (error) {
     statusEl.textContent = "Failed to save kerning JSON."
   }
+}
+
+async function restorePersistedKerningFileHandle() {
+  const handle = await getPersistedKerningFileHandle()
+  if (!handle) {
+    return
+  }
+
+  const permission = await queryKerningFilePermission(handle, "read")
+  if (permission !== "granted") {
+    statusEl.textContent = `Remembered ${handle.name}; open it once to restore editable access.`
+    return
+  }
+
+  try {
+    const file = await handle.getFile()
+    editableFileHandle = handle
+    loadSettingsFromText(await file.text(), handle.name)
+    statusEl.textContent = `Restored editable ${handle.name}.`
+  } catch (error) {
+    editableFileHandle = null
+    statusEl.textContent = "Remembered kerning file could not be restored."
+  }
+}
+
+async function queryKerningFilePermission(
+  handle: EditableFileHandle,
+  mode: "read" | "readwrite"
+) {
+  try {
+    return (await handle.queryPermission?.({ mode })) ?? "prompt"
+  } catch (error) {
+    return "prompt"
+  }
+}
+
+async function persistKerningFileHandle(handle: EditableFileHandle) {
+  try {
+    const db = await openKerningHandleDb()
+    await putKerningFileHandle(db, handle)
+    db.close()
+    return true
+  } catch (error) {
+    statusEl.textContent =
+      "Opened kerning file; reload restore is unavailable in this browser."
+    return false
+  }
+}
+
+async function getPersistedKerningFileHandle() {
+  try {
+    const db = await openKerningHandleDb()
+    const handle = await readKerningFileHandle(db)
+    db.close()
+    return handle
+  } catch (error) {
+    return null
+  }
+}
+
+function openKerningHandleDb() {
+  return new Promise<IDBDatabase>((resolve, reject) => {
+    const request = indexedDB.open(kerningHandleDbName, kerningHandleDbVersion)
+    request.addEventListener("upgradeneeded", () => {
+      const db = request.result
+      if (!db.objectStoreNames.contains(kerningHandleStoreName)) {
+        db.createObjectStore(kerningHandleStoreName)
+      }
+    })
+    request.addEventListener("success", () => resolve(request.result))
+    request.addEventListener("error", () => reject(request.error))
+  })
+}
+
+function putKerningFileHandle(db: IDBDatabase, handle: EditableFileHandle) {
+  return new Promise<void>((resolve, reject) => {
+    const transaction = db.transaction(kerningHandleStoreName, "readwrite")
+    const store = transaction.objectStore(kerningHandleStoreName)
+    store.put(
+      {
+        handle,
+        name: handle.name,
+        updatedAt: Date.now()
+      },
+      kerningFileHandleKey
+    )
+    transaction.addEventListener("complete", () => resolve())
+    transaction.addEventListener("error", () => reject(transaction.error))
+    transaction.addEventListener("abort", () => reject(transaction.error))
+  })
+}
+
+function readKerningFileHandle(db: IDBDatabase) {
+  return new Promise<EditableFileHandle | null>((resolve, reject) => {
+    const transaction = db.transaction(kerningHandleStoreName, "readonly")
+    const store = transaction.objectStore(kerningHandleStoreName)
+    const request = store.get(kerningFileHandleKey)
+    request.addEventListener("success", () => {
+      const value = request.result as { handle?: EditableFileHandle } | undefined
+      resolve(value?.handle ?? null)
+    })
+    request.addEventListener("error", () => reject(request.error))
+  })
 }
 
 function downloadKerningFile() {
@@ -750,7 +1029,7 @@ window.addEventListener("pointermove", (event) => {
   }
   const nextGap =
     activeDrag.startGap + (event.clientX - activeDrag.startClientX) * activeDrag.unitsPerPx
-  setPairOverride(activeDrag.pair, nextGap)
+  setPairSidebearingGap(activeDrag.pair, nextGap)
 })
 
 window.addEventListener("pointerup", finishDrag)
@@ -773,7 +1052,7 @@ gridEl.addEventListener("keydown", (event) => {
   event.preventDefault()
   const direction = event.key === "ArrowRight" ? 1 : -1
   const step = event.shiftKey ? 5 : 1
-  setPairOverride(pair, computePairSnapshot(pair).gap + direction * step)
+  setPairSidebearingGap(pair, computePairSnapshot(pair).gap + direction * step)
 })
 
 openButton.addEventListener("click", () => {
@@ -816,3 +1095,4 @@ joinControlDefinitions.forEach((control) => {
 
 renderAll()
 statusEl.textContent = "Loaded built-in kerning settings."
+void restorePersistedKerningFileHandle()

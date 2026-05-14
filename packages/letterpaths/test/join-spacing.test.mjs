@@ -183,6 +183,55 @@ test("explicit pair kerning overrides the join spacing algorithm", () => {
   );
 });
 
+test("explicit pair kerning can override join handle scales", () => {
+  const base = firstJoinCurveFor("cu", {
+    joinSpacing: {
+      minSidebearingGap: -500,
+      maxSidebearingGap: 500,
+      exitHandleScale: 1,
+      entryHandleScale: 1
+    },
+    joinKerning: {
+      cu: { sidebearingGap: 30 }
+    }
+  });
+  const scaled = firstJoinCurveFor("cu", {
+    joinSpacing: {
+      minSidebearingGap: -500,
+      maxSidebearingGap: 500,
+      exitHandleScale: 1,
+      entryHandleScale: 1
+    },
+    joinKerning: {
+      cu: {
+        sidebearingGap: 30,
+        exitHandleScale: 0.5,
+        entryHandleScale: 0.25
+      }
+    }
+  });
+  const metric = metricFor("cu", {
+    joinKerning: {
+      cu: {
+        exitHandleScale: 0.5,
+        entryHandleScale: 0.25
+      }
+    }
+  });
+
+  assert.equal(metric.kerningSource, "override");
+  assert.equal(metric.kerningOverrideExitHandleScale, 0.5);
+  assert.equal(metric.kerningOverrideEntryHandleScale, 0.25);
+  assert.ok(
+    Math.abs(distance(scaled.p0, scaled.p1) - distance(base.p0, base.p1) * 0.5) <
+      0.000001
+  );
+  assert.ok(
+    Math.abs(distance(scaled.p2, scaled.p3) - distance(base.p2, base.p3) * 0.25) <
+      0.000001
+  );
+});
+
 test("no-backwards clamp still applies after bend search and minimum sidebearing", () => {
   const options = {
     joinSpacing: {

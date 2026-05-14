@@ -38,7 +38,8 @@ import {
   resolveTargetGuides,
   resolveWordSpacing,
   translateCurve,
-  type JoinCursiveOptions
+  type JoinCursiveOptions,
+  type ResolvedJoinSpacingOptions
 } from "./shared";
 
 export function joinCursiveWord(
@@ -141,8 +142,17 @@ export function joinCursiveWord(
     const deferredStepsForLetter = buildStepsFromDeferredStrokes(deferredStrokes);
 
     let appliedGap = 0;
+    let joinCurveSpacing = joinSpacing;
     if (prevExitCurve && prevChar) {
       const pair = `${prevChar}${char}`;
+      const kerningOverride = getKerningOverride(joinKerning, pair);
+      joinCurveSpacing = {
+        ...joinSpacing,
+        exitHandleScale:
+          kerningOverride?.exitHandleScale ?? joinSpacing.exitHandleScale,
+        entryHandleScale:
+          kerningOverride?.entryHandleScale ?? joinSpacing.entryHandleScale
+      };
       const entryOffsetFromLeftSidebearing = entryCurve.p0.x - normalizedGuides.left;
       const previousExitToRightSidebearing = prevRightSidebearing - prevExitCurve.p3.x;
       const nextEntryFromLeftSidebearing = entryOffsetFromLeftSidebearing;
@@ -151,18 +161,18 @@ export function joinCursiveWord(
         effectiveEntryPhaseCurves,
         previousExitToRightSidebearing,
         nextEntryFromLeftSidebearing,
-        joinSpacing
+        joinCurveSpacing
       );
       const targetCursorX = prevRightSidebearing + spacing.searchedSidebearingGap;
-      const minCursorX = prevRightSidebearing + joinSpacing.minSidebearingGap;
+      const minCursorX = prevRightSidebearing + joinCurveSpacing.minSidebearingGap;
       const noBackwardsCursorX =
         prevRightSidebearing + spacing.noBackwardsSidebearingGap;
-      const maxCursorX = prevRightSidebearing + joinSpacing.maxSidebearingGap;
+      const maxCursorX = prevRightSidebearing + joinCurveSpacing.maxSidebearingGap;
       const algorithmCursorX = Math.min(
         Math.max(targetCursorX, minCursorX, noBackwardsCursorX),
         maxCursorX
       );
-      const overrideGap = getKerningOverrideSidebearingGap(joinKerning, pair);
+      const overrideGap = kerningOverride?.sidebearingGap ?? null;
       const overrideCursorX =
         overrideGap === null ? null : prevRightSidebearing + overrideGap;
       cursorX = overrideCursorX ?? algorithmCursorX;
@@ -176,8 +186,10 @@ export function joinCursiveWord(
         pair,
         previousChar: prevChar,
         nextChar: char,
-        kerningSource: overrideGap === null ? "algorithm" : "override",
+        kerningSource: kerningOverride === null ? "algorithm" : "override",
         kerningOverrideSidebearingGap: overrideGap ?? undefined,
+        kerningOverrideExitHandleScale: kerningOverride?.exitHandleScale,
+        kerningOverrideEntryHandleScale: kerningOverride?.entryHandleScale,
         kerningOverrideNextLeftSidebearingX: overrideCursorX ?? undefined,
         verticalDistance: spacing.verticalDistance,
         targetBendRate: spacing.targetBendRate,
@@ -189,8 +201,8 @@ export function joinCursiveWord(
         searchedBendT: spacing.searchedBendT,
         searchedJoinCurve: spacing.searchedJoinCurve,
         appliedGap,
-        minSidebearingGap: joinSpacing.minSidebearingGap,
-        maxSidebearingGap: joinSpacing.maxSidebearingGap,
+        minSidebearingGap: joinCurveSpacing.minSidebearingGap,
+        maxSidebearingGap: joinCurveSpacing.maxSidebearingGap,
         renderedSidebearingGap,
         renderedExitToEntryGap: appliedGap,
         previousExitToRightSidebearing,
@@ -219,7 +231,7 @@ export function joinCursiveWord(
     }
 
     if (prevExitCurve) {
-      const joinCurve = buildJoinCurve(prevExitCurve, shiftedEntryCurve, joinSpacing);
+      const joinCurve = buildJoinCurve(prevExitCurve, shiftedEntryCurve, joinCurveSpacing);
       joinStepIndices.add(outputSteps.length);
       outputSteps.push(curveToStep(joinCurve, "join"));
       ensureJoinStart(shifted, shiftedEntryPoint);
@@ -269,12 +281,37 @@ function isLastDrawableCharInWord(
   return true;
 }
 
-function getKerningOverrideSidebearingGap(
+function getKerningOverride(
   joinKerning: CursiveKerningPairs,
   pair: string
-): number | null {
-  const sidebearingGap = joinKerning[pair]?.sidebearingGap;
-  return typeof sidebearingGap === "number" && Number.isFinite(sidebearingGap)
-    ? sidebearingGap
-    : null;
+): Partial<
+  Pick<
+    ResolvedJoinSpacingOptions,
+    "exitHandleScale" | "entryHandleScale"
+  > & { sidebearingGap: number }
+> | null {
+  const override = joinKerning[pair];
+  if (!override) {
+    return null;
+  }
+  const sidebearingGap =
+    typeof override.sidebearingGap === "number" &&
+    Number.isFinite(override.sidebearingGap)
+      ? override.sidebearingGap
+      : undefined;
+  const exitHandleScale =
+    typeof override.exitHandleScale === "number" &&
+    Number.isFinite(override.exitHandleScale)
+      ? Math.max(0, override.exitHandleScale)
+      : undefined;
+  const entryHandleScale =
+    typeof override.entryHandleScale === "number" &&
+    Number.isFinite(override.entryHandleScale)
+      ? Math.max(0, override.entryHandleScale)
+      : undefined;
+  return sidebearingGap === undefined &&
+    exitHandleScale === undefined &&
+    entryHandleScale === undefined
+    ? null
+    : { sidebearingGap, exitHandleScale, entryHandleScale };
 }

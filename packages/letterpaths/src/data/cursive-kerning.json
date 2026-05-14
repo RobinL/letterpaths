@@ -1,6 +1,45 @@
 {
   "schemaVersion": 1,
-  "description": "Sparse hard-coded cursive pair kerning overrides. Each lowercase two-letter key stores the sidebearing gap to use before placing the second letter. Missing pairs fall back to the join spacing algorithm.",
-  "units": "letterpath sidebearing gap",
-  "pairs": {}
+  "description": "Sparse hard-coded cursive pair kerning overrides. Each lowercase two-letter key can store sidebearingGap, exitHandleScale, and entryHandleScale. Missing values fall back to the join spacing algorithm/global controls.",
+  "units": "letterpath sidebearing gap and Bezier handle scale",
+  "pairs": {
+    "aa": {
+      "sidebearingGap": 161.6,
+      "exitHandleScale": 0.75
+    },
+    "ab": {
+      "sidebearingGap": 219.7,
+      "exitHandleScale": 0.65
+    },
+    "ac": {
+      "sidebearingGap": 158.2
+    },
+    "ad": {
+      "sidebearingGap": 152.9,
+      "exitHandleScale": 0.65
+    },
+    "ae": {
+      "sidebearingGap": 144.4,
+      "exitHandleScale": 0.95,
+      "entryHandleScale": 0.6
+    },
+    "af": {
+      "sidebearingGap": 17.9,
+      "exitHandleScale": 0.8,
+      "entryHandleScale": 0.7
+    },
+    "ag": {
+      "sidebearingGap": 166.8,
+      "exitHandleScale": 0.8,
+      "entryHandleScale": 1.05
+    },
+    "ah": {
+      "sidebearingGap": 166.1,
+      "exitHandleScale": 0.55,
+      "entryHandleScale": 0.85
+    },
+    "ai": {
+      "sidebearingGap": 148.4
+    }
+  }
 }

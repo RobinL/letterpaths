@@ -222,6 +222,7 @@ body {
   border: 1px solid rgba(31, 39, 36, 0.1);
   border-radius: 8px;
   background: #fbfcfb;
+  cursor: ew-resize;
   touch-action: none;
 }
 
@@ -241,9 +242,13 @@ body {
 
 .kerning-editor__selected-actions {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
   align-items: end;
+}
+
+.kerning-editor__selected-actions .kerning-editor__button {
+  grid-column: 1 / -1;
 }
 
 .kerning-editor__grid-shell {
