@@ -29,6 +29,7 @@ export type JoinMetric = {
   searchedJoinCurve: Curve;
   appliedGap: number;
   minSidebearingGap: number;
+  maxSidebearingGap: number;
   renderedSidebearingGap: number;
   renderedExitToEntryGap: number;
   previousExitToRightSidebearing: number;
@@ -39,6 +40,7 @@ export type JoinMetric = {
   clampedNextLeftSidebearingX: number;
   noBackwardsSidebearingGap: number;
   noBackwardsNextLeftSidebearingX: number;
+  cappedNextLeftSidebearingX: number;
   actualNextLeftSidebearingX: number;
   nextEntryX: number;
 };

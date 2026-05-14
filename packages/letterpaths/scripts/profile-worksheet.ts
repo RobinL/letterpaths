@@ -16,6 +16,7 @@ const TARGET_GUIDES = {
 const JOIN_SPACING = {
   targetBendRate: 16,
   minSidebearingGap: 80,
+  maxSidebearingGap: 240,
   bendSearchMinSidebearingGap: -30,
   bendSearchMaxSidebearingGap: 240,
   exitHandleScale: 0.75,

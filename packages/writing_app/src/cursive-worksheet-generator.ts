@@ -158,6 +158,7 @@ const WORKSHEET_SVG_EXPORT_STYLES = `
 const DEFAULT_WORKSHEET_JOIN_SPACING = {
   targetBendRate: 16,
   minSidebearingGap: 80,
+  maxSidebearingGap: 240,
   bendSearchMinSidebearingGap: -30,
   bendSearchMaxSidebearingGap: 240,
   exitHandleScale: 0.75,

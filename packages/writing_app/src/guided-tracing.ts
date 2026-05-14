@@ -274,6 +274,7 @@ const SNAKE_TURN_LOOKAHEAD_DISTANCE = 2;
 const DEFAULT_SNAKE_JOIN_SPACING = {
   targetBendRate: 16,
   minSidebearingGap: 80,
+  maxSidebearingGap: 240,
   bendSearchMinSidebearingGap: -30,
   bendSearchMaxSidebearingGap: 240,
   exitHandleScale: 0.75,
@@ -1131,6 +1132,7 @@ const syncSettingsControlsFromState = () => {
   currentJoinSpacing = {
     targetBendRate: syncSliderValue(targetBendRateSlider, currentJoinSpacing.targetBendRate),
     minSidebearingGap: syncSliderValue(minSidebearingGapSlider, currentJoinSpacing.minSidebearingGap),
+    maxSidebearingGap: currentJoinSpacing.maxSidebearingGap,
     bendSearchMinSidebearingGap: syncSliderValue(
       bendSearchMinSidebearingGapSlider,
       currentJoinSpacing.bendSearchMinSidebearingGap
@@ -1192,6 +1194,7 @@ const applyUrlSettings = () => {
         "bendSearchMaxSidebearingGap",
         bendSearchMaxSidebearingGapSlider
       ) ?? currentJoinSpacing.bendSearchMaxSidebearingGap,
+    maxSidebearingGap: currentJoinSpacing.maxSidebearingGap,
     exitHandleScale:
       parseSliderSearchParam(params, "exitHandleScale", exitHandleScaleSlider) ??
       currentJoinSpacing.exitHandleScale,

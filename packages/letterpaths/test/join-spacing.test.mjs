@@ -148,6 +148,20 @@ test("minimum sidebearing clamp still applies after bend search", () => {
   assert.equal(metric.actualNextLeftSidebearingX, metric.clampedNextLeftSidebearingX);
 });
 
+test("maximum sidebearing cap still applies after bend search and minimum sidebearing", () => {
+  const metric = metricFor("cu", {
+    joinSpacing: {
+      minSidebearingGap: -500,
+      maxSidebearingGap: 15,
+      targetBendRate: 0
+    }
+  });
+
+  assert.equal(metric.searchedSidebearingGap, metric.bendSearchMaxSidebearingGap);
+  assert.equal(metric.renderedSidebearingGap, metric.maxSidebearingGap);
+  assert.equal(metric.actualNextLeftSidebearingX, metric.cappedNextLeftSidebearingX);
+});
+
 test("no-backwards clamp still applies after bend search and minimum sidebearing", () => {
   const options = {
     joinSpacing: {

@@ -42,6 +42,7 @@ export type BuildHandwritingOptions = JoinCursiveOptions & {
 export type JoinSpacingOptions = {
   targetBendRate?: number;
   minSidebearingGap?: number;
+  maxSidebearingGap?: number;
   bendSearchMinSidebearingGap?: number;
   bendSearchMaxSidebearingGap?: number;
   exitHandleScale?: number;
@@ -51,6 +52,7 @@ export type JoinSpacingOptions = {
 export type ResolvedJoinSpacingOptions = {
   targetBendRate: number;
   minSidebearingGap: number;
+  maxSidebearingGap: number;
   bendSearchMinSidebearingGap: number;
   bendSearchMaxSidebearingGap: number;
   exitHandleScale: number;
@@ -77,6 +79,7 @@ export const preCursiveLetterSpacing = cursiveLetterSpacing;
 export const defaultJoinSpacingOptions: ResolvedJoinSpacingOptions = {
   targetBendRate: 30,
   minSidebearingGap: 50,
+  maxSidebearingGap: 240,
   bendSearchMinSidebearingGap: -30,
   bendSearchMaxSidebearingGap: 80,
   exitHandleScale: 1,
@@ -532,6 +535,8 @@ export function resolveJoinSpacingOptions(
     targetBendRate: options?.targetBendRate ?? defaultJoinSpacingOptions.targetBendRate,
     minSidebearingGap:
       options?.minSidebearingGap ?? defaultJoinSpacingOptions.minSidebearingGap,
+    maxSidebearingGap:
+      options?.maxSidebearingGap ?? defaultJoinSpacingOptions.maxSidebearingGap,
     bendSearchMinSidebearingGap: Math.min(rawSearchMin, rawSearchMax),
     bendSearchMaxSidebearingGap: Math.max(rawSearchMin, rawSearchMax),
     exitHandleScale: resolveJoinHandleScale(

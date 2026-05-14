@@ -326,6 +326,11 @@ body {
   stroke-dasharray: 14 6 4 6;
 }
 
+.join-stats__calc-line--maximum {
+  stroke: #7d5295;
+  stroke-dasharray: 5 5;
+}
+
 .join-stats__calc-line--actual {
   stroke: #188977;
 }
@@ -445,6 +450,14 @@ body {
 
 .join-stats__formula-token--no-backwards {
   background: #c43b68;
+}
+
+.join-stats__formula-token--maximum {
+  background: #7d5295;
+}
+
+.join-stats__formula-token--uncapped {
+  background: #315a9d;
 }
 
 .join-stats__formula-token--actual {
