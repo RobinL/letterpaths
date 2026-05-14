@@ -267,8 +267,46 @@ body {
 .kerning-editor__grid {
   padding: 14px;
   display: grid;
+  gap: 18px;
+}
+
+.kerning-editor__pair-section {
+  display: grid;
+  gap: 10px;
+}
+
+.kerning-editor__pair-section + .kerning-editor__pair-section {
+  padding-top: 16px;
+  border-top: 1px solid rgba(31, 39, 36, 0.08);
+}
+
+.kerning-editor__pair-section-header {
+  min-height: 28px;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.kerning-editor__pair-section-header h3 {
+  margin: 0;
+  font-size: 0.86rem;
+  letter-spacing: 0;
+}
+
+.kerning-editor__pair-grid {
+  display: grid;
   grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
   gap: 10px;
+}
+
+.kerning-editor__empty {
+  margin: 0;
+  padding: 18px;
+  border: 1px dashed rgba(31, 39, 36, 0.18);
+  border-radius: 8px;
+  color: var(--kerning-muted);
+  font-size: 0.88rem;
 }
 
 .kerning-card {

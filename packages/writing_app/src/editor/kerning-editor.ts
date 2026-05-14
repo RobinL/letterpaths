@@ -65,7 +65,9 @@ type PairSnapshot = {
 type DragState = {
   pair: string
   startClientX: number
+  startClientY: number
   startGap: number
+  startExitHandleScale: number
   unitsPerPx: number
 }
 
@@ -86,6 +88,7 @@ const kerningGapMin = -500
 const kerningGapMax = 500
 const handleScaleMin = 0
 const handleScaleMax = 2
+const handleScaleDragStepPerPx = 0.005
 const kerningHandleDbName = "letterpaths-kerning-editor-handles"
 const kerningHandleStoreName = "handles"
 const kerningHandleDbVersion = 1
@@ -497,23 +500,47 @@ function pairMatchesFilter(pair: string): boolean {
   return !searchQuery || pair.includes(searchQuery)
 }
 
+function buildPairCard(pair: string): string {
+  return `
+    <article
+      class="kerning-card ${pair === selectedPair ? "kerning-card--selected" : ""}"
+      data-pair="${pair}"
+      tabindex="0"
+      aria-label="${pair.toUpperCase()} kerning pair"
+    >
+      ${buildCardContent(pair)}
+    </article>
+  `
+}
+
+function buildPairSection(title: string, sectionPairs: string[]): string {
+  return `
+    <section class="kerning-editor__pair-section" aria-label="${title} pairs">
+      <div class="kerning-editor__pair-section-header">
+        <h3>${title}</h3>
+        <span class="kerning-editor__status">${sectionPairs.length}</span>
+      </div>
+      ${
+        sectionPairs.length === 0
+          ? `<p class="kerning-editor__empty">No pairs here.</p>`
+          : `<div class="kerning-editor__pair-grid">${sectionPairs.map(buildPairCard).join("")}</div>`
+      }
+    </section>
+  `
+}
+
 function renderGrid() {
   const visiblePairs = pairs.filter(pairMatchesFilter)
-  gridEl.innerHTML = visiblePairs
-    .map(
-      (pair) => `
-        <article
-          class="kerning-card ${pair === selectedPair ? "kerning-card--selected" : ""}"
-          data-pair="${pair}"
-          tabindex="0"
-          aria-label="${pair.toUpperCase()} kerning pair"
-        >
-          ${buildCardContent(pair)}
-        </article>
-      `
-    )
-    .join("")
-  gridCountEl.textContent = `${visiblePairs.length} shown`
+  const todoPairs = visiblePairs.filter((pair) => !kerningPairs[pair])
+  const donePairs = visiblePairs.filter((pair) => kerningPairs[pair])
+  gridEl.innerHTML = [
+    filterMode === "override" ? "" : buildPairSection("To do", todoPairs),
+    filterMode === "algorithm" ? "" : buildPairSection("Done", donePairs)
+  ].join("")
+  gridCountEl.textContent =
+    filterMode === "all"
+      ? `${todoPairs.length} to do, ${donePairs.length} done`
+      : `${visiblePairs.length} shown`
 }
 
 function renderPairCard(pair: string) {
@@ -697,6 +724,7 @@ function setPairSidebearingGap(pair: string, rawGap: number, fromInput = false) 
   if (!Number.isFinite(rawGap)) {
     return
   }
+  const hadOverride = Boolean(kerningPairs[pair])
   const sidebearingGap = roundGap(clamp(rawGap, kerningGapMin, kerningGapMax))
   kerningPairs = {
     ...kerningPairs,
@@ -706,7 +734,11 @@ function setPairSidebearingGap(pair: string, rawGap: number, fromInput = false) 
     }
   }
   hasUnsavedChanges = true
-  renderPairCard(pair)
+  if (hadOverride) {
+    renderPairCard(pair)
+  } else {
+    renderGrid()
+  }
   if (pair === selectedPair) {
     if (fromInput) {
       updateSelectedPairReadout(false)
@@ -729,6 +761,7 @@ function setPairHandleScale(
   if (!Number.isFinite(rawScale)) {
     return
   }
+  const hadOverride = Boolean(kerningPairs[pair])
   const scale = roundScale(clamp(rawScale, handleScaleMin, handleScaleMax))
   kerningPairs = {
     ...kerningPairs,
@@ -738,7 +771,11 @@ function setPairHandleScale(
     }
   }
   hasUnsavedChanges = true
-  renderPairCard(pair)
+  if (hadOverride) {
+    renderPairCard(pair)
+  } else {
+    renderGrid()
+  }
   if (pair === selectedPair) {
     if (fromInput) {
       updateSelectedPairReadout(false)
@@ -760,7 +797,7 @@ function clearPairOverride(pair: string) {
   delete nextPairs[pair]
   kerningPairs = nextPairs
   hasUnsavedChanges = true
-  renderPairCard(pair)
+  renderGrid()
   renderSelectedPair()
   syncMeta()
   statusEl.textContent = `${pair.toUpperCase()} reset to algorithm fallback.`
@@ -774,7 +811,9 @@ function beginDrag(pair: string, event: PointerEvent, card: HTMLElement) {
   activeDrag = {
     pair,
     startClientX: event.clientX,
+    startClientY: event.clientY,
     startGap: snapshot.gap,
+    startExitHandleScale: snapshot.exitHandleScale,
     unitsPerPx: rect && rect.width > 0 ? viewBoxWidth / rect.width : 3
   }
   document.body.classList.add("kerning-editor--dragging")
@@ -1029,11 +1068,41 @@ window.addEventListener("pointermove", (event) => {
   }
   const nextGap =
     activeDrag.startGap + (event.clientX - activeDrag.startClientX) * activeDrag.unitsPerPx
+  const nextExitHandleScale =
+    activeDrag.startExitHandleScale +
+    (activeDrag.startClientY - event.clientY) * handleScaleDragStepPerPx
   setPairSidebearingGap(activeDrag.pair, nextGap)
+  setPairHandleScale(activeDrag.pair, "exitHandleScale", nextExitHandleScale)
 })
 
 window.addEventListener("pointerup", finishDrag)
 window.addEventListener("pointercancel", finishDrag)
+
+function isEditableKeyboardTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) {
+    return false
+  }
+  return (
+    target.isContentEditable ||
+    target instanceof HTMLInputElement ||
+    target instanceof HTMLTextAreaElement ||
+    target instanceof HTMLSelectElement
+  )
+}
+
+window.addEventListener("keydown", (event) => {
+  if (
+    event.key.toLowerCase() !== "s" ||
+    event.metaKey ||
+    event.ctrlKey ||
+    event.altKey ||
+    isEditableKeyboardTarget(event.target)
+  ) {
+    return
+  }
+  event.preventDefault()
+  void saveKerningFile()
+})
 
 gridEl.addEventListener("keydown", (event) => {
   const card = (event.target as Element | null)?.closest<HTMLElement>("[data-pair]")

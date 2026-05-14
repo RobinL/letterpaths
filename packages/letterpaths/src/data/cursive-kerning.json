@@ -40,6 +40,59 @@
     },
     "ai": {
       "sidebearingGap": 148.4
+    },
+    "aj": {
+      "sidebearingGap": 43.4,
+      "exitHandleScale": 0.86
+    },
+    "ak": {
+      "sidebearingGap": 197.7,
+      "exitHandleScale": 0.58
+    },
+    "ba": {
+      "sidebearingGap": 112.4,
+      "exitHandleScale": 1.22
+    },
+    "bb": {
+      "sidebearingGap": 129.1,
+      "exitHandleScale": 0.95,
+      "entryHandleScale": 0.85
+    },
+    "bc": {
+      "sidebearingGap": 127.7,
+      "exitHandleScale": 1.33
+    },
+    "bd": {
+      "sidebearingGap": 131.3,
+      "exitHandleScale": 1.29
+    },
+    "be": {
+      "sidebearingGap": 93,
+      "exitHandleScale": 0.65
+    },
+    "bf": {
+      "sidebearingGap": -42.9,
+      "exitHandleScale": 0.97,
+      "entryHandleScale": 1.1
+    },
+    "bg": {
+      "sidebearingGap": 109.4,
+      "exitHandleScale": 1.28
+    },
+    "bh": {
+      "sidebearingGap": 123.1,
+      "exitHandleScale": 1.27,
+      "entryHandleScale": 0.5
+    },
+    "bi": {
+      "sidebearingGap": 115.3,
+      "exitHandleScale": 1.32,
+      "entryHandleScale": 0.6
+    },
+    "bj": {
+      "sidebearingGap": -48.9,
+      "exitHandleScale": 0.6,
+      "entryHandleScale": 1.05
     }
   }
 }
