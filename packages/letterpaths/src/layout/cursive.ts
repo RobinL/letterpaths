@@ -5,6 +5,7 @@ import {
   buildStepsFromDeferredStrokes,
   buildStepsFromStrokes,
   buildStrokesFromSteps,
+  cursiveLetterSpacing,
   curveToStep,
   dropLeadingMove,
   ensureJoinStart,
@@ -13,9 +14,11 @@ import {
   findEntryCurve,
   findEntryPhaseCurves,
   findExitCurve,
+  findStandaloneLetter,
   getEntryVariantForExitVariant,
   getExitVariantForLetter,
   getGuides,
+  isUppercaseLetter,
   measureBounds,
   measureCurveBounds,
   measureJoinSpacing,
@@ -56,7 +59,9 @@ export function joinCursiveWord(
   let prevExitCurve: Curve | null = null;
   let prevExitVariant: CursiveExitVariant | null = null;
   let prevRightSidebearing = 0;
+  let prevStandaloneRightSidebearing: number | null = null;
   let prevChar: string | null = null;
+  let hasPlacedLetter = false;
   const keepInitialLeadIn = options.keepInitialLeadIn ?? false;
   const keepFinalLeadOut = options.keepFinalLeadOut ?? false;
 
@@ -67,12 +72,71 @@ export function joinCursiveWord(
       prevExitCurve = null;
       prevExitVariant = null;
       prevRightSidebearing = 0;
+      prevStandaloneRightSidebearing = null;
       prevChar = null;
+      hasPlacedLetter = false;
       cursorX = rightEdge + wordSpacing;
       continue;
     }
 
+    if (isUppercaseLetter(rawChar)) {
+      flushDeferredWordSteps();
+
+      const letter = findStandaloneLetter(letterMap, rawChar, "print");
+      if (!letter) {
+        prevExitCurve = null;
+        prevExitVariant = null;
+        prevRightSidebearing = 0;
+        prevStandaloneRightSidebearing = null;
+        prevChar = null;
+        hasPlacedLetter = false;
+        cursorX = rightEdge + wordSpacing;
+        continue;
+      }
+
+      if (hasPlacedLetter) {
+        cursorX = rightEdge + cursiveLetterSpacing;
+      }
+
+      const guides = getGuides(letter);
+      const normalizedStrokes = normalizeStrokes(letter.strokes, guides, target);
+      const normalizedCurves = normalizedStrokes.flatMap((stroke) => stroke.curves);
+      const normalizedGuides = normalizeGuidesX(letter, target, normalizedCurves);
+      const mainStrokes = normalizedStrokes.filter(
+        (stroke) => stroke.phase === "main" && stroke.kind === "stroke"
+      );
+      const deferredStrokes = normalizedStrokes.filter(
+        (stroke) => stroke.phase === "deferred" || stroke.kind === "mark"
+      );
+      const mainSteps = buildStepsFromStrokes(mainStrokes);
+      const deferredStepsForLetter = buildStepsFromDeferredStrokes(deferredStrokes);
+      const offsetX = cursorX - normalizedGuides.left;
+      const shifted = offsetStepsX(mainSteps, offsetX);
+      const shiftedDeferred = offsetStepsX(deferredStepsForLetter, offsetX);
+
+      outputSteps.push(...shifted, ...shiftedDeferred);
+
+      const visibleBounds = measureCurveBounds(
+        mainStrokes.flatMap((stroke) => stroke.curves)
+      );
+      const advanceWidth = normalizedGuides.right - normalizedGuides.left;
+      const rightSidebearing = cursorX + advanceWidth;
+      const visibleRight = visibleBounds.maxX + offsetX;
+      rightEdge = Math.max(rightEdge, visibleRight, rightSidebearing);
+      prevExitCurve = null;
+      prevExitVariant = null;
+      prevRightSidebearing = 0;
+      prevStandaloneRightSidebearing = rightSidebearing;
+      prevChar = null;
+      hasPlacedLetter = true;
+      continue;
+    }
+
     const char = rawChar.toLowerCase();
+    if (!prevExitCurve && hasPlacedLetter) {
+      cursorX = (prevStandaloneRightSidebearing ?? rightEdge) + cursiveLetterSpacing;
+    }
+
     const isFirstDrawableLetter = prevExitCurve === null;
     const entryVariant =
       keepInitialLeadIn && isFirstDrawableLetter
@@ -84,7 +148,9 @@ export function joinCursiveWord(
       prevExitCurve = null;
       prevExitVariant = null;
       prevRightSidebearing = 0;
+      prevStandaloneRightSidebearing = null;
       prevChar = null;
+      hasPlacedLetter = false;
       cursorX = rightEdge + wordSpacing;
       continue;
     }
@@ -114,6 +180,16 @@ export function joinCursiveWord(
         )
       }))
       .filter((stroke) => stroke.curves.length > 0);
+
+    if (prevStandaloneRightSidebearing !== null) {
+      const visibleBounds = measureCurveBounds(
+        filteredMainStrokes.flatMap((stroke) => stroke.curves)
+      );
+      const visibleMinFromLeftSidebearing = visibleBounds.minX - normalizedGuides.left;
+      const minCursorX =
+        prevStandaloneRightSidebearing + cursiveLetterSpacing - visibleMinFromLeftSidebearing;
+      cursorX = Math.max(cursorX, minCursorX);
+    }
 
     const entryCurve = findEntryCurve(filteredMainStrokes);
     const entryPhaseCurves = findEntryPhaseCurves(filteredMainStrokes);
@@ -207,7 +283,9 @@ export function joinCursiveWord(
     rightEdge = Math.max(rightEdge, letterBounds.maxX, prevRightSidebearing);
     prevExitCurve = shiftedExitCurve;
     prevExitVariant = getExitVariantForLetter(char);
+    prevStandaloneRightSidebearing = null;
     prevChar = char;
+    hasPlacedLetter = true;
   }
 
   flushDeferredWordSteps();
@@ -231,6 +309,9 @@ function isLastDrawableCharInWord(
   for (let i = index + 1; i < text.length; i += 1) {
     const rawChar = text[i] ?? "";
     if (rawChar.trim() === "") {
+      return true;
+    }
+    if (isUppercaseLetter(rawChar)) {
       return true;
     }
     const char = rawChar.toLowerCase();

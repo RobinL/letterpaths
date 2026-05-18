@@ -1153,7 +1153,7 @@ const rerenderCurrentWord = () => {
   renderWord(currentWord, currentWordIndex);
 };
 
-const normalizeWordInput = (word: string): string => word.trim().replace(/\s+/g, " ").toLowerCase();
+const normalizeWordInput = (word: string): string => word.trim().replace(/\s+/g, " ");
 
 const applyUrlSettings = () => {
   const params = new URLSearchParams(window.location.search);

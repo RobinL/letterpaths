@@ -41,6 +41,7 @@ type WorksheetState = {
   previewZoom: number;
   practiceRowHeightMm: number;
   practiceRepeatCount: number;
+  practiceRepeatSpacing: number;
   strokeWidth: number;
   showStepStartDot: boolean;
   showBaselineGuide: boolean;
@@ -51,6 +52,7 @@ type WorksheetState = {
   gridlineColor: string;
   keepInitialLeadIn: boolean;
   keepFinalLeadOut: boolean;
+  includeNameDate: boolean;
   top: WorksheetAnnotationSettings;
   practice: WorksheetAnnotationSettings;
 };
@@ -86,11 +88,16 @@ const DEFAULT_REMAINING_STROKE_COLOR = "#ffffff";
 const DEFAULT_PRACTICE_STROKE_COLOR = "#d5dbe2";
 const DEFAULT_PRACTICE_ROW_HEIGHT_MM = 38;
 const DEFAULT_PRACTICE_REPEAT_COUNT = 7;
+const DEFAULT_PRACTICE_REPEAT_SPACING = 180;
 const DEFAULT_STROKE_WIDTH = 54;
 const DEFAULT_SHOW_STEP_START_DOT = true;
 const DEFAULT_GRIDLINE_STROKE_WIDTH = 1;
 const DEFAULT_GRIDLINE_COLOR = "#ffb35c";
 const DEFAULT_PREVIEW_ZOOM = 100;
+const MIN_PREVIEW_ZOOM = 35;
+const MAX_PREVIEW_ZOOM = 200;
+const PREVIEW_ZOOM_STEP = 5;
+const PREVIEW_FIT_PADDING_PX = 20;
 const PRACTICE_AREA_HEIGHT_MM = 178;
 const ASCENDER_GUIDE_RATIO = 0.63;
 const DESCENDER_GUIDE_RATIO = 0.66;
@@ -137,6 +144,7 @@ const WORKSHEET_URL_PARAM_KEYS = [
   "previewZoom",
   "practiceSize",
   "practiceRepeats",
+  "practiceRepeatSpacing",
   "strokeWidth",
   "showStepStartDot",
   "showBaselineGuide",
@@ -147,6 +155,7 @@ const WORKSHEET_URL_PARAM_KEYS = [
   "gridlineColor",
   "keepInitialLeadIn",
   "keepFinalLeadOut",
+  "includeNameDate",
   "topDirectionalDashSpacing",
   "topMidpointDensity",
   "topTurnRadius",
@@ -295,6 +304,7 @@ const createDefaultState = (): WorksheetState => ({
   previewZoom: DEFAULT_PREVIEW_ZOOM,
   practiceRowHeightMm: DEFAULT_PRACTICE_ROW_HEIGHT_MM,
   practiceRepeatCount: DEFAULT_PRACTICE_REPEAT_COUNT,
+  practiceRepeatSpacing: DEFAULT_PRACTICE_REPEAT_SPACING,
   strokeWidth: DEFAULT_STROKE_WIDTH,
   showStepStartDot: DEFAULT_SHOW_STEP_START_DOT,
   showBaselineGuide: true,
@@ -305,6 +315,7 @@ const createDefaultState = (): WorksheetState => ({
   gridlineColor: DEFAULT_GRIDLINE_COLOR,
   keepInitialLeadIn: true,
   keepFinalLeadOut: true,
+  includeNameDate: true,
   top: {
     ...createSettings(
       DEFAULT_TOP_FORMATION_ANNOTATION_VISIBILITY,
@@ -325,28 +336,18 @@ const createDefaultState = (): WorksheetState => ({
 
 const DEFAULT_STATE = createDefaultState();
 let state: WorksheetState = createDefaultState();
+let isPreviewZoomManual = false;
 
 app.innerHTML = `
   <div class="worksheet-app">
     <aside class="worksheet-app__controls" aria-label="Worksheet controls">
       <div class="worksheet-app__controls-inner">
         <div class="worksheet-app__heading">
-          <p class="worksheet-app__eyebrow">Worksheet generator</p>
-          <h1 class="worksheet-app__title">Single letter worksheet</h1>
+          <h1 class="worksheet-app__title">UK handwriting letter worksheet generator</h1>
         </div>
 
         ${renderLetterSelect()}
         ${renderStyleSelect()}
-
-        ${renderRangeControl({
-  id: "preview-zoom-slider",
-  label: "Preview zoom",
-  value: DEFAULT_PREVIEW_ZOOM,
-  min: 50,
-  max: 200,
-  step: 5,
-  valueId: "preview-zoom-value"
-})}
 
         ${renderRangeControl({
   id: "practice-size-slider",
@@ -369,8 +370,18 @@ app.innerHTML = `
 })}
 
         ${renderRangeControl({
+  id: "practice-repeat-spacing-slider",
+  label: "Repeat spacing",
+  value: DEFAULT_PRACTICE_REPEAT_SPACING,
+  min: 0,
+  max: 360,
+  step: 10,
+  valueId: "practice-repeat-spacing-value"
+})}
+
+        ${renderRangeControl({
   id: "stroke-width-slider",
-  label: "Main stroke thickness",
+  label: "Stroke thickness",
   value: DEFAULT_STROKE_WIDTH,
   min: 20,
   max: 90,
@@ -378,18 +389,19 @@ app.innerHTML = `
   valueId: "stroke-width-value"
 })}
 
-        ${renderLetterStrokeSettings()}
+        <fieldset class="worksheet-app__checks" aria-label="Worksheet options">
+          ${renderGlobalToggle("include-initial-lead-in", "keepInitialLeadIn", "Initial lead-in", true)}
+          ${renderGlobalToggle("include-final-lead-out", "keepFinalLeadOut", "Final lead-out", true)}
+          ${renderGlobalToggle("include-name-date", "includeNameDate", "Include name/date", true)}
+        </fieldset>
+
         ${renderGridlineSettings()}
 
-        ${renderAnnotationControlSection("top", "Top formation annotations", state.top)}
-        ${renderAnnotationControlSection("practice", "Practice annotations", state.practice)}
+        ${renderAdvancedSettings()}
 
-        <div class="worksheet-app__button-row">
+        <div class="worksheet-app__button-row worksheet-app__button-row--single">
           <button class="worksheet-app__button" id="print-worksheet-button" type="button">
             Print worksheet
-          </button>
-          <button class="worksheet-app__button worksheet-app__button--secondary" id="download-png-button" type="button">
-            Download PNG
           </button>
         </div>
         <p class="worksheet-app__status" id="worksheet-status" role="status" aria-live="polite"></p>
@@ -397,6 +409,11 @@ app.innerHTML = `
     </aside>
 
     <main class="worksheet-app__preview" aria-label="Worksheet preview">
+      <div class="worksheet-app__preview-toolbar" aria-label="Preview zoom controls">
+        <button class="worksheet-app__zoom-button" id="preview-zoom-out-button" type="button" aria-label="Zoom out">&minus;</button>
+        <output class="worksheet-app__zoom-value" id="preview-zoom-value" aria-live="polite">${DEFAULT_PREVIEW_ZOOM}%</output>
+        <button class="worksheet-app__zoom-button" id="preview-zoom-in-button" type="button" aria-label="Zoom in">+</button>
+      </div>
       <div class="worksheet-app__page-frame" id="worksheet-page-frame">
         <section class="worksheet-page worksheet-page--single-letter" id="worksheet-page" aria-label="Printable worksheet"></section>
       </div>
@@ -406,12 +423,13 @@ app.innerHTML = `
 
 const letterSelect = document.querySelector<HTMLSelectElement>("#worksheet-letter-select");
 const styleSelect = document.querySelector<HTMLSelectElement>("#worksheet-style-select");
-const previewZoomSlider = document.querySelector<HTMLInputElement>("#preview-zoom-slider");
+const previewZoomInButton = document.querySelector<HTMLButtonElement>("#preview-zoom-in-button");
+const previewZoomOutButton = document.querySelector<HTMLButtonElement>("#preview-zoom-out-button");
 const practiceSizeSlider = document.querySelector<HTMLInputElement>("#practice-size-slider");
 const practiceRepeatSlider = document.querySelector<HTMLInputElement>("#practice-repeat-slider");
+const practiceRepeatSpacingSlider = document.querySelector<HTMLInputElement>("#practice-repeat-spacing-slider");
 const strokeWidthSlider = document.querySelector<HTMLInputElement>("#stroke-width-slider");
 const printButton = document.querySelector<HTMLButtonElement>("#print-worksheet-button");
-const downloadPngButton = document.querySelector<HTMLButtonElement>("#download-png-button");
 const worksheetPageFrame = document.querySelector<HTMLElement>("#worksheet-page-frame");
 const worksheetPage = document.querySelector<HTMLElement>("#worksheet-page");
 const statusEl = document.querySelector<HTMLParagraphElement>("#worksheet-status");
@@ -419,12 +437,13 @@ const statusEl = document.querySelector<HTMLParagraphElement>("#worksheet-status
 if (
   !letterSelect ||
   !styleSelect ||
-  !previewZoomSlider ||
+  !previewZoomInButton ||
+  !previewZoomOutButton ||
   !practiceSizeSlider ||
   !practiceRepeatSlider ||
+  !practiceRepeatSpacingSlider ||
   !strokeWidthSlider ||
   !printButton ||
-  !downloadPngButton ||
   !worksheetPageFrame ||
   !worksheetPage ||
   !statusEl
@@ -499,15 +518,13 @@ function renderRangeControl({
   `;
 }
 
-function renderLetterStrokeSettings(): string {
+function renderAdvancedSettings(): string {
   return `
     <details class="worksheet-app__details">
-      <summary>Letter stroke settings</summary>
+      <summary>Advanced settings</summary>
       <div class="worksheet-app__details-body">
-        <fieldset class="worksheet-app__checks" aria-label="Letter stroke toggles">
-          ${renderGlobalToggle("include-initial-lead-in", "keepInitialLeadIn", "Initial lead-in", true)}
-          ${renderGlobalToggle("include-final-lead-out", "keepFinalLeadOut", "Final lead-out", true)}
-        </fieldset>
+        ${renderAnnotationControlSection("top", "Top formation annotations", state.top)}
+        ${renderAnnotationControlSection("practice", "Practice annotations", state.practice)}
       </div>
     </details>
   `;
@@ -551,6 +568,7 @@ function renderGlobalToggle(
     WorksheetState,
     | "keepInitialLeadIn"
     | "keepFinalLeadOut"
+    | "includeNameDate"
     | "showStepStartDot"
     | "showBaselineGuide"
     | "showXHeightGuide"
@@ -599,7 +617,7 @@ function renderAnnotationControlSection(
   settings: WorksheetAnnotationSettings
 ): string {
   return `
-    <details class="worksheet-app__details" open>
+    <details class="worksheet-app__details">
       <summary>${label}</summary>
       <div class="worksheet-app__details-body">
         ${renderRangeControl({
@@ -840,6 +858,11 @@ const normalizeSliderValue = (input: HTMLInputElement, value: number): number =>
   return Number(nextValue.toFixed(getSliderValuePrecision(input)));
 };
 
+const normalizePreviewZoom = (value: number): number => {
+  const clampedValue = Math.min(MAX_PREVIEW_ZOOM, Math.max(MIN_PREVIEW_ZOOM, value));
+  return Math.round(clampedValue / PREVIEW_ZOOM_STEP) * PREVIEW_ZOOM_STEP;
+};
+
 const syncSliderValue = (input: HTMLInputElement, value: number): number => {
   const normalizedValue = normalizeSliderValue(input, value);
   input.value = normalizedValue.toFixed(getSliderValuePrecision(input));
@@ -879,6 +902,20 @@ const parseSliderSearchParam = (
   }
 
   return normalizeSliderValue(input, parsedValue);
+};
+
+const parsePreviewZoomSearchParam = (params: URLSearchParams): number | null => {
+  const rawValue = params.get("previewZoom");
+  if (rawValue === null) {
+    return null;
+  }
+
+  const parsedValue = Number(rawValue);
+  if (!Number.isFinite(parsedValue)) {
+    return null;
+  }
+
+  return normalizePreviewZoom(parsedValue);
 };
 
 const parseColorSearchParam = (params: URLSearchParams, key: string): string | null =>
@@ -950,9 +987,13 @@ const syncScopedSettingsControlsFromState = (scope: AnnotationScope) => {
 const syncSettingsControlsFromState = () => {
   letterSelect.value = state.letter;
   styleSelect.value = state.style;
-  state.previewZoom = syncSliderValue(previewZoomSlider, state.previewZoom);
+  state.previewZoom = normalizePreviewZoom(state.previewZoom);
   state.practiceRowHeightMm = syncSliderValue(practiceSizeSlider, state.practiceRowHeightMm);
   state.practiceRepeatCount = syncSliderValue(practiceRepeatSlider, state.practiceRepeatCount);
+  state.practiceRepeatSpacing = syncSliderValue(
+    practiceRepeatSpacingSlider,
+    state.practiceRepeatSpacing
+  );
   state.strokeWidth = syncSliderValue(strokeWidthSlider, state.strokeWidth);
 
   globalSettingInputs.forEach((input) => {
@@ -963,6 +1004,8 @@ const syncSettingsControlsFromState = () => {
       input.checked = state.keepInitialLeadIn;
     } else if (setting === "keepFinalLeadOut") {
       input.checked = state.keepFinalLeadOut;
+    } else if (setting === "includeNameDate") {
+      input.checked = state.includeNameDate;
     } else if (setting === "showStepStartDot") {
       input.checked = state.showStepStartDot;
     } else if (setting === "showBaselineGuide") {
@@ -1029,14 +1072,14 @@ const syncSettingsUrl = () => {
   if (state.style !== DEFAULT_STATE.style) {
     url.searchParams.set("style", state.style);
   }
-  if (state.previewZoom !== DEFAULT_STATE.previewZoom) {
-    url.searchParams.set("previewZoom", String(state.previewZoom));
-  }
   if (state.practiceRowHeightMm !== DEFAULT_STATE.practiceRowHeightMm) {
     url.searchParams.set("practiceSize", String(state.practiceRowHeightMm));
   }
   if (state.practiceRepeatCount !== DEFAULT_STATE.practiceRepeatCount) {
     url.searchParams.set("practiceRepeats", String(state.practiceRepeatCount));
+  }
+  if (state.practiceRepeatSpacing !== DEFAULT_STATE.practiceRepeatSpacing) {
+    url.searchParams.set("practiceRepeatSpacing", String(state.practiceRepeatSpacing));
   }
   if (state.strokeWidth !== DEFAULT_STATE.strokeWidth) {
     url.searchParams.set("strokeWidth", String(state.strokeWidth));
@@ -1067,6 +1110,9 @@ const syncSettingsUrl = () => {
   }
   if (state.keepFinalLeadOut !== DEFAULT_STATE.keepFinalLeadOut) {
     url.searchParams.set("keepFinalLeadOut", state.keepFinalLeadOut ? "1" : "0");
+  }
+  if (state.includeNameDate !== DEFAULT_STATE.includeNameDate) {
+    url.searchParams.set("includeNameDate", state.includeNameDate ? "1" : "0");
   }
 
   syncScopedSettingsUrl(url, "top", state.top, DEFAULT_STATE.top);
@@ -1159,13 +1205,21 @@ const applyUrlSettings = () => {
     state.style = normalizeStyle(styleParam) ?? state.style;
   }
 
-  state.previewZoom =
-    parseSliderSearchParam(params, "previewZoom", previewZoomSlider) ?? state.previewZoom;
+  const previewZoomParam = parsePreviewZoomSearchParam(params);
+  if (previewZoomParam !== null) {
+    state.previewZoom = previewZoomParam;
+    isPreviewZoomManual = true;
+  } else {
+    isPreviewZoomManual = false;
+  }
   state.practiceRowHeightMm =
     parseSliderSearchParam(params, "practiceSize", practiceSizeSlider) ?? state.practiceRowHeightMm;
   state.practiceRepeatCount =
     parseSliderSearchParam(params, "practiceRepeats", practiceRepeatSlider) ??
     state.practiceRepeatCount;
+  state.practiceRepeatSpacing =
+    parseSliderSearchParam(params, "practiceRepeatSpacing", practiceRepeatSpacingSlider) ??
+    state.practiceRepeatSpacing;
   state.strokeWidth =
     parseSliderSearchParam(params, "strokeWidth", strokeWidthSlider) ?? state.strokeWidth;
 
@@ -1180,6 +1234,9 @@ const applyUrlSettings = () => {
     } else if (setting === "keepFinalLeadOut") {
       state.keepFinalLeadOut =
         parseBooleanSearchParam(params, setting) ?? state.keepFinalLeadOut;
+    } else if (setting === "includeNameDate") {
+      state.includeNameDate =
+        parseBooleanSearchParam(params, setting) ?? state.includeNameDate;
     } else if (setting === "showStepStartDot") {
       state.showStepStartDot =
         parseBooleanSearchParam(params, setting) ?? state.showStepStartDot;
@@ -1221,6 +1278,7 @@ const syncLabels = () => {
   setText("preview-zoom-value", `${state.previewZoom}%`);
   setText("practice-size-value", `${state.practiceRowHeightMm} mm`);
   setText("practice-repeat-value", `${state.practiceRepeatCount}`);
+  setText("practice-repeat-spacing-value", `${state.practiceRepeatSpacing}px`);
   setText("stroke-width-value", `${state.strokeWidth}px`);
   setText("gridline-stroke-width-value", `${state.gridlineStrokeWidth.toFixed(1)}px`);
 
@@ -1245,11 +1303,37 @@ const applyPreviewZoom = () => {
   worksheetPageFrame.style.setProperty("--worksheet-preview-scale", `${state.previewZoom / 100}`);
 };
 
-const setPreviewZoom = (value: number) => {
-  state.previewZoom = syncSliderValue(previewZoomSlider, value);
+const setPreviewZoom = (value: number, options: { manual?: boolean; syncUrl?: boolean } = {}) => {
+  state.previewZoom = normalizePreviewZoom(value);
+  if (options.manual) {
+    isPreviewZoomManual = true;
+  }
   applyPreviewZoom();
   syncLabels();
-  syncSettingsUrl();
+  if (options.syncUrl ?? true) {
+    syncSettingsUrl();
+  }
+};
+
+const fitPreviewZoomToWidth = () => {
+  if (isPreviewZoomManual) {
+    return;
+  }
+
+  const previewStyles = window.getComputedStyle(worksheetPageFrame.parentElement ?? worksheetPageFrame);
+  const horizontalPadding =
+    Number.parseFloat(previewStyles.paddingLeft) + Number.parseFloat(previewStyles.paddingRight);
+  const availableWidth =
+    worksheetPageFrame.parentElement?.clientWidth ?? worksheetPageFrame.clientWidth;
+  const previewWidth = Math.max(0, availableWidth - horizontalPadding - PREVIEW_FIT_PADDING_PX);
+  const pageWidth = worksheetPage.offsetWidth;
+  if (pageWidth <= 0 || previewWidth <= 0) {
+    return;
+  }
+
+  const fittedZoom =
+    Math.floor(((previewWidth / pageWidth) * 100) / PREVIEW_ZOOM_STEP) * PREVIEW_ZOOM_STEP;
+  setPreviewZoom(fittedZoom, { syncUrl: false });
 };
 
 const nextFrame = () =>
@@ -1673,8 +1757,7 @@ const getFormationStepViewBox = (
 
 const getPracticeAdvance = (layout: ShiftedWordLayout): number => {
   const contentWidth = layout.path.bounds.maxX - layout.path.bounds.minX;
-  const leadingPadding = layout.path.bounds.minX;
-  return contentWidth + leadingPadding;
+  return contentWidth + state.practiceRepeatSpacing;
 };
 
 const renderPracticeRowSvg = (
@@ -1720,6 +1803,7 @@ const renderWorksheet = () => {
     style: normalizeStyle(styleSelect.value) ?? state.style,
     practiceRowHeightMm: Number(practiceSizeSlider.value),
     practiceRepeatCount: Number(practiceRepeatSlider.value),
+    practiceRepeatSpacing: Number(practiceRepeatSpacingSlider.value),
     strokeWidth: Number(strokeWidthSlider.value)
   };
   syncLabels();
@@ -1765,16 +1849,22 @@ const renderWorksheet = () => {
       rowIndex
     )
   ).join("");
-
-  worksheetPage.style.setProperty("--practice-row-height", `${state.practiceRowHeightMm}mm`);
-  worksheetPage.style.setProperty("--formation-step-count", String(formationStepCount));
-  worksheetPage.innerHTML = `
+  const nameDateHeader = state.includeNameDate
+    ? `
     <header class="worksheet-page__header">
       <div class="worksheet-page__meta-line">
         <span>Name</span>
         <span>Date</span>
       </div>
     </header>
+  `
+    : "";
+
+  worksheetPage.style.setProperty("--practice-row-height", `${state.practiceRowHeightMm}mm`);
+  worksheetPage.style.setProperty("--formation-step-count", String(formationStepCount));
+  worksheetPage.classList.toggle("worksheet-page--without-meta", !state.includeNameDate);
+  worksheetPage.innerHTML = `
+    ${nameDateHeader}
     <section class="worksheet-page__example worksheet-page__example--steps" aria-label="Formation steps">
       ${topStepSvgs}
     </section>
@@ -1971,30 +2061,19 @@ const createWorksheetPngBlob = async (): Promise<Blob> => {
 
 letterSelect.addEventListener("change", renderWorksheet);
 styleSelect.addEventListener("change", renderWorksheet);
-previewZoomSlider.addEventListener("input", () => {
-  setPreviewZoom(Number(previewZoomSlider.value));
+previewZoomOutButton.addEventListener("click", () => {
+  setPreviewZoom(state.previewZoom - PREVIEW_ZOOM_STEP, { manual: true });
+});
+previewZoomInButton.addEventListener("click", () => {
+  setPreviewZoom(state.previewZoom + PREVIEW_ZOOM_STEP, { manual: true });
 });
 practiceSizeSlider.addEventListener("input", renderWorksheet);
 practiceRepeatSlider.addEventListener("input", renderWorksheet);
+practiceRepeatSpacingSlider.addEventListener("input", renderWorksheet);
 strokeWidthSlider.addEventListener("input", renderWorksheet);
 printButton.addEventListener("click", () => {
   renderWorksheet();
   window.print();
-});
-downloadPngButton.addEventListener("click", () => {
-  downloadPngButton.disabled = true;
-  statusEl.textContent = "Preparing PNG...";
-  createWorksheetPngBlob()
-    .then((blob) => {
-      downloadBlob(blob, `${state.letter}-${state.style}-single-letter-worksheet.png`);
-      statusEl.textContent = "PNG downloaded.";
-    })
-    .catch((error) => {
-      statusEl.textContent = error instanceof Error ? error.message : "Could not download PNG.";
-    })
-    .finally(() => {
-      downloadPngButton.disabled = false;
-    });
 });
 
 globalSettingInputs.forEach((input) => {
@@ -2006,6 +2085,8 @@ globalSettingInputs.forEach((input) => {
       state.keepInitialLeadIn = input.checked;
     } else if (setting === "keepFinalLeadOut") {
       state.keepFinalLeadOut = input.checked;
+    } else if (setting === "includeNameDate") {
+      state.includeNameDate = input.checked;
     } else if (setting === "showStepStartDot") {
       state.showStepStartDot = input.checked;
     } else if (setting === "showBaselineGuide") {
@@ -2095,3 +2176,8 @@ annotationKindInputs.forEach((input) => {
 
 applyUrlSettings();
 renderWorksheet();
+fitPreviewZoomToWidth();
+
+new ResizeObserver(() => {
+  fitPreviewZoomToWidth();
+}).observe(worksheetPageFrame.parentElement ?? worksheetPageFrame);

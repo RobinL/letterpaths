@@ -75,12 +75,12 @@ const path = buildHandwritingPath("cat dog", {
 - `targetGuides?: LetterGuides` rescales the output onto your guide system
 - `wordSpacing?: number` overrides the spacing used for spaces
 - `joinSpacing?: JoinSpacingOptions` tunes cursive joins
-- `keepInitialLeadIn?: boolean` keeps the first letter's lead-in in cursive output
-- `keepFinalLeadOut?: boolean` keeps the last letter's lead-out in cursive output
+- `keepInitialLeadIn?: boolean` keeps the first letter's lead-in/entry stroke
+- `keepFinalLeadOut?: boolean` keeps the last letter's exit/lead-out stroke
 
 Notes:
 
-- `joinSpacing`, `keepInitialLeadIn`, and `keepFinalLeadOut` only affect cursive joining
+- `joinSpacing` only affects cursive joining
 - `joinMetrics` is only populated for cursive output
 - unknown characters are skipped rather than throwing
 - deferred strokes are preserved in `WritingPath.strokes` and are useful for dots and similar marks

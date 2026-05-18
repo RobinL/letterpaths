@@ -26,6 +26,13 @@ type WorksheetAnnotationSettings = FormationAnnotationMarkupOptions & {
   strokeColor: string;
 };
 
+type WorksheetAnnotationSettingsPatch = Omit<
+  Partial<WorksheetAnnotationSettings>,
+  "visibility"
+> & {
+  visibility?: Partial<FormationAnnotationVisibility>;
+};
+
 type WorksheetState = {
   text: string;
   previewZoom: number;
@@ -41,6 +48,7 @@ type WorksheetState = {
   gridlineColor: string;
   keepInitialLeadIn: boolean;
   keepFinalLeadOut: boolean;
+  includeNameDate: boolean;
   top: WorksheetAnnotationSettings;
   practice: WorksheetAnnotationSettings;
 };
@@ -115,6 +123,10 @@ const DEFAULT_STROKE_WIDTH = 54;
 const DEFAULT_GRIDLINE_STROKE_WIDTH = 1;
 const DEFAULT_GRIDLINE_COLOR = "#ffb35c";
 const DEFAULT_PREVIEW_ZOOM = 100;
+const MIN_PREVIEW_ZOOM = 35;
+const MAX_PREVIEW_ZOOM = 200;
+const PREVIEW_ZOOM_STEP = 5;
+const PREVIEW_FIT_PADDING_PX = 20;
 const PRACTICE_AREA_HEIGHT_MM = 178;
 const ASCENDER_GUIDE_RATIO = 0.63;
 const DESCENDER_GUIDE_RATIO = 0.66;
@@ -153,13 +165,17 @@ const WORKSHEET_SVG_EXPORT_STYLES = `
   }
   .writing-app__annotation-number {
     font-weight: 800;
+    paint-order: stroke fill;
+    stroke: #ffffff;
+    stroke-linejoin: round;
+    stroke-width: 8px;
   }
 `;
 const DEFAULT_WORKSHEET_JOIN_SPACING = {
-  targetBendRate: 16,
-  minSidebearingGap: 80,
-  bendSearchMinSidebearingGap: -30,
-  bendSearchMaxSidebearingGap: 240,
+  targetBendRate: 4.7,
+  minSidebearingGap: 130,
+  bendSearchMinSidebearingGap: -50,
+  bendSearchMaxSidebearingGap: 75,
   exitHandleScale: 0.75,
   entryHandleScale: 0.75
 } as const satisfies Required<JoinSpacingOptions>;
@@ -184,6 +200,7 @@ const WORKSHEET_URL_PARAM_KEYS = [
   "gridlineColor",
   "keepInitialLeadIn",
   "keepFinalLeadOut",
+  "includeNameDate",
   "topDirectionalDashSpacing",
   "topMidpointDensity",
   "topTurnRadius",
@@ -284,6 +301,86 @@ const createSettings = (
   strokeColor
 });
 
+const applyAnnotationSettingsPatch = (
+  settings: WorksheetAnnotationSettings,
+  patch: WorksheetAnnotationSettingsPatch
+): WorksheetAnnotationSettings => ({
+  ...settings,
+  ...patch,
+  visibility: patch.visibility
+    ? {
+        ...settings.visibility,
+        ...patch.visibility
+      }
+    : settings.visibility
+});
+
+const createTopAnnotationBaseSettings = (): WorksheetAnnotationSettings =>
+  createSettings(DEFAULT_FORMATION_ANNOTATION_VISIBILITY, DEFAULT_TOP_STROKE_COLOR);
+
+const TOP_ANNOTATION_PRESETS = {
+  outside: {
+    directionalDashSpacing: DEFAULT_DIRECTIONAL_DASH_SPACING,
+    midpointDensity: DEFAULT_MIDPOINT_DENSITY,
+    turnRadius: 48,
+    uTurnLength: 52,
+    arrowLength: 149,
+    arrowHeadSize: DEFAULT_ARROW_HEAD_SIZE,
+    arrowStrokeWidth: 5.5,
+    numberSize: 64,
+    numberPathOffset: -77,
+    offsetArrowLanes: true,
+    alwaysOffsetArrowLanes: true,
+    arrowColor: "#ff0000",
+    visibility: {
+      "directional-dash": false,
+      "turning-point": true,
+      "start-arrow": true,
+      "draw-order-number": true,
+      "midpoint-arrow": true
+    }
+  },
+  inside: {
+    directionalDashSpacing: 152,
+    midpointDensity: DEFAULT_MIDPOINT_DENSITY,
+    turnRadius: 48,
+    uTurnLength: 52,
+    arrowLength: 149,
+    arrowHeadSize: DEFAULT_ARROW_HEAD_SIZE,
+    arrowStrokeWidth: 5.5,
+    numberSize: 64,
+    numberPathOffset: -77,
+    offsetArrowLanes: false,
+    visibility: {
+      "directional-dash": true,
+      "turning-point": false,
+      "start-arrow": false,
+      "draw-order-number": true,
+      "midpoint-arrow": false
+    }
+  },
+  "inside-two-lanes": {
+    directionalDashSpacing: 124,
+    midpointDensity: 160,
+    turnRadius: 13,
+    uTurnLength: 58,
+    arrowLength: 90,
+    arrowHeadSize: 31,
+    arrowStrokeWidth: 6.5,
+    numberSize: 40,
+    numberPathOffset: -55,
+    offsetArrowLanes: true,
+    alwaysOffsetArrowLanes: false,
+    visibility: {
+      "directional-dash": false,
+      "turning-point": true,
+      "start-arrow": true,
+      "draw-order-number": true,
+      "midpoint-arrow": true
+    }
+  }
+} as const;
+
 const createDefaultState = (): WorksheetState => ({
   text: DEFAULT_TEXT,
   previewZoom: DEFAULT_PREVIEW_ZOOM,
@@ -299,21 +396,26 @@ const createDefaultState = (): WorksheetState => ({
   gridlineColor: DEFAULT_GRIDLINE_COLOR,
   keepInitialLeadIn: true,
   keepFinalLeadOut: true,
-  top: createSettings(DEFAULT_FORMATION_ANNOTATION_VISIBILITY, DEFAULT_TOP_STROKE_COLOR),
+  includeNameDate: true,
+  top: applyAnnotationSettingsPatch(
+    createTopAnnotationBaseSettings(),
+    TOP_ANNOTATION_PRESETS.inside
+  ),
   practice: createSettings(EMPTY_FORMATION_ANNOTATION_VISIBILITY, DEFAULT_PRACTICE_STROKE_COLOR)
 });
 
 const DEFAULT_STATE = createDefaultState();
 
 let state: WorksheetState = createDefaultState();
+let isPreviewZoomManual = false;
+let previewScaleRefreshId = 0;
 
 app.innerHTML = `
   <div class="worksheet-app">
     <aside class="worksheet-app__controls" aria-label="Worksheet controls">
       <div class="worksheet-app__controls-inner">
         <div class="worksheet-app__heading">
-          <p class="worksheet-app__eyebrow">Worksheet generator</p>
-          <h1 class="worksheet-app__title">Cursive worksheet</h1>
+          <h1 class="worksheet-app__title">UK cursive handwriting worksheet generator</h1>
         </div>
 
         <label class="worksheet-app__field" for="worksheet-text-input">
@@ -327,16 +429,6 @@ app.innerHTML = `
             spellcheck="false"
           />
         </label>
-
-        ${renderRangeControl({
-  id: "preview-zoom-slider",
-  label: "Preview zoom",
-  value: DEFAULT_PREVIEW_ZOOM,
-  min: 50,
-  max: 200,
-  step: 5,
-  valueId: "preview-zoom-value"
-})}
 
         ${renderRangeControl({
   id: "practice-size-slider",
@@ -359,8 +451,19 @@ app.innerHTML = `
 })}
 
         ${renderRangeControl({
+  id: "min-sidebearing-gap-slider",
+  label: "Letter spacing",
+  value: DEFAULT_WORKSHEET_JOIN_SPACING.minSidebearingGap,
+  min: -300,
+  max: 300,
+  step: 5,
+  valueId: "min-sidebearing-gap-value",
+  attrs: 'data-global-setting="minSidebearingGap"'
+})}
+
+        ${renderRangeControl({
   id: "stroke-width-slider",
-  label: "Main stroke thickness",
+  label: "Stroke thickness",
   value: DEFAULT_STROKE_WIDTH,
   min: 20,
   max: 90,
@@ -368,19 +471,33 @@ app.innerHTML = `
   valueId: "stroke-width-value"
 })}
 
+        <fieldset class="worksheet-app__checks" aria-label="Lead strokes">
+          ${renderGlobalToggle("include-initial-lead-in", "keepInitialLeadIn", "Initial lead-in", true)}
+          ${renderGlobalToggle("include-final-lead-out", "keepFinalLeadOut", "Final lead-out", true)}
+          ${renderAnnotationToggle("top", "draw-order-number", "Show numeric steps", state.top.visibility["draw-order-number"])}
+          ${renderGlobalToggle("include-name-date", "includeNameDate", "Include name/date", true)}
+        </fieldset>
+
+        <fieldset class="worksheet-app__preset-buttons" aria-label="Top word annotation presets">
+          <legend>Top word annotation presets</legend>
+          <button class="worksheet-app__button worksheet-app__button--secondary" type="button" data-top-annotation-preset="outside">
+            Outside letters
+          </button>
+          <button class="worksheet-app__button worksheet-app__button--secondary" type="button" data-top-annotation-preset="inside">
+            Inside letters, middle
+          </button>
+          <button class="worksheet-app__button worksheet-app__button--secondary" type="button" data-top-annotation-preset="inside-two-lanes">
+            Inside letters, two lanes
+          </button>
+        </fieldset>
+
         ${renderGridlineSettings()}
 
         ${renderAdvancedSettings()}
 
-        ${renderAnnotationControlSection("top", "Top word annotations", state.top)}
-        ${renderAnnotationControlSection("practice", "Practice annotations", state.practice)}
-
-        <div class="worksheet-app__button-row">
+        <div class="worksheet-app__button-row worksheet-app__button-row--single">
           <button class="worksheet-app__button" id="print-worksheet-button" type="button">
             Print worksheet
-          </button>
-          <button class="worksheet-app__button worksheet-app__button--secondary" id="download-png-button" type="button">
-            Download PNG
           </button>
         </div>
         <p class="worksheet-app__status" id="worksheet-status" role="status" aria-live="polite"></p>
@@ -388,6 +505,11 @@ app.innerHTML = `
     </aside>
 
     <main class="worksheet-app__preview" aria-label="Worksheet preview">
+      <div class="worksheet-app__preview-toolbar" aria-label="Preview zoom controls">
+        <button class="worksheet-app__zoom-button" id="preview-zoom-out-button" type="button" aria-label="Zoom out">&minus;</button>
+        <output class="worksheet-app__zoom-value" id="preview-zoom-value" aria-live="polite">${DEFAULT_PREVIEW_ZOOM}%</output>
+        <button class="worksheet-app__zoom-button" id="preview-zoom-in-button" type="button" aria-label="Zoom in">+</button>
+      </div>
       <div class="worksheet-app__page-frame" id="worksheet-page-frame">
         <section class="worksheet-page" id="worksheet-page" aria-label="Printable worksheet"></section>
       </div>
@@ -396,24 +518,27 @@ app.innerHTML = `
 `;
 
 const textInput = document.querySelector<HTMLInputElement>("#worksheet-text-input");
-const previewZoomSlider = document.querySelector<HTMLInputElement>("#preview-zoom-slider");
+const previewZoomInButton = document.querySelector<HTMLButtonElement>("#preview-zoom-in-button");
+const previewZoomOutButton = document.querySelector<HTMLButtonElement>("#preview-zoom-out-button");
 const practiceSizeSlider = document.querySelector<HTMLInputElement>("#practice-size-slider");
 const practiceRepeatSlider = document.querySelector<HTMLInputElement>("#practice-repeat-slider");
 const strokeWidthSlider = document.querySelector<HTMLInputElement>("#stroke-width-slider");
+const topAnnotationPresetButtons = Array.from(
+  document.querySelectorAll<HTMLButtonElement>("[data-top-annotation-preset]")
+);
 const printButton = document.querySelector<HTMLButtonElement>("#print-worksheet-button");
-const downloadPngButton = document.querySelector<HTMLButtonElement>("#download-png-button");
 const worksheetPageFrame = document.querySelector<HTMLElement>("#worksheet-page-frame");
 const worksheetPage = document.querySelector<HTMLElement>("#worksheet-page");
 const statusEl = document.querySelector<HTMLParagraphElement>("#worksheet-status");
 
 if (
   !textInput ||
-  !previewZoomSlider ||
+  !previewZoomInButton ||
+  !previewZoomOutButton ||
   !practiceSizeSlider ||
   !practiceRepeatSlider ||
   !strokeWidthSlider ||
   !printButton ||
-  !downloadPngButton ||
   !worksheetPageFrame ||
   !worksheetPage ||
   !statusEl
@@ -466,27 +591,20 @@ function renderAdvancedSettings(): string {
     <details class="worksheet-app__details">
       <summary>Advanced settings</summary>
       <div class="worksheet-app__details-body">
-        ${renderRangeControl({
+        <details class="worksheet-app__details">
+          <summary>Bezier curve settings</summary>
+          <div class="worksheet-app__details-body">
+            ${renderRangeControl({
     id: "target-bend-rate-slider",
     label: "Target maximum bend rate",
     value: DEFAULT_WORKSHEET_JOIN_SPACING.targetBendRate,
     min: 0,
-    max: 60,
-    step: 1,
+    max: 20,
+    step: 0.1,
     valueId: "target-bend-rate-value",
     attrs: 'data-global-setting="targetBendRate"'
   })}
-        ${renderRangeControl({
-    id: "min-sidebearing-gap-slider",
-    label: "Minimum sidebearing gap",
-    value: DEFAULT_WORKSHEET_JOIN_SPACING.minSidebearingGap,
-    min: -300,
-    max: 200,
-    step: 5,
-    valueId: "min-sidebearing-gap-value",
-    attrs: 'data-global-setting="minSidebearingGap"'
-  })}
-        ${renderRangeControl({
+            ${renderRangeControl({
     id: "bend-search-min-sidebearing-gap-slider",
     label: "Search minimum sidebearing gap",
     value: DEFAULT_WORKSHEET_JOIN_SPACING.bendSearchMinSidebearingGap,
@@ -496,7 +614,7 @@ function renderAdvancedSettings(): string {
     valueId: "bend-search-min-sidebearing-gap-value",
     attrs: 'data-global-setting="bendSearchMinSidebearingGap"'
   })}
-        ${renderRangeControl({
+            ${renderRangeControl({
     id: "bend-search-max-sidebearing-gap-slider",
     label: "Search maximum sidebearing gap",
     value: DEFAULT_WORKSHEET_JOIN_SPACING.bendSearchMaxSidebearingGap,
@@ -506,7 +624,7 @@ function renderAdvancedSettings(): string {
     valueId: "bend-search-max-sidebearing-gap-value",
     attrs: 'data-global-setting="bendSearchMaxSidebearingGap"'
   })}
-        ${renderRangeControl({
+            ${renderRangeControl({
     id: "exit-handle-scale-slider",
     label: "p0-p1 handle scale",
     value: DEFAULT_WORKSHEET_JOIN_SPACING.exitHandleScale,
@@ -516,7 +634,7 @@ function renderAdvancedSettings(): string {
     valueId: "exit-handle-scale-value",
     attrs: 'data-global-setting="exitHandleScale"'
   })}
-        ${renderRangeControl({
+            ${renderRangeControl({
     id: "entry-handle-scale-slider",
     label: "p2-p3 handle scale",
     value: DEFAULT_WORKSHEET_JOIN_SPACING.entryHandleScale,
@@ -526,10 +644,10 @@ function renderAdvancedSettings(): string {
     valueId: "entry-handle-scale-value",
     attrs: 'data-global-setting="entryHandleScale"'
   })}
-        <fieldset class="worksheet-app__checks" aria-label="Advanced worksheet toggles">
-          ${renderGlobalToggle("include-initial-lead-in", "keepInitialLeadIn", "Initial lead-in", true)}
-          ${renderGlobalToggle("include-final-lead-out", "keepFinalLeadOut", "Final lead-out", true)}
-        </fieldset>
+          </div>
+        </details>
+        ${renderAnnotationControlSection("top", "Top word annotations", state.top)}
+        ${renderAnnotationControlSection("practice", "Practice annotations", state.practice)}
       </div>
     </details>
   `;
@@ -573,6 +691,7 @@ function renderGlobalToggle(
     WorksheetState,
     | "keepInitialLeadIn"
     | "keepFinalLeadOut"
+    | "includeNameDate"
     | "showBaselineGuide"
     | "showXHeightGuide"
     | "showAscenderGuide"
@@ -620,7 +739,7 @@ function renderAnnotationControlSection(
   settings: WorksheetAnnotationSettings
 ): string {
   return `
-    <details class="worksheet-app__details" open>
+    <details class="worksheet-app__details">
       <summary>${label}</summary>
       <div class="worksheet-app__details-body">
         ${renderRangeControl({
@@ -722,7 +841,9 @@ function renderAnnotationControlSection(
   )}
           ${renderAnnotationToggle(scope, "turning-point", "Turns", settings.visibility["turning-point"])}
           ${renderAnnotationToggle(scope, "start-arrow", "Starts", settings.visibility["start-arrow"])}
-          ${renderAnnotationToggle(scope, "draw-order-number", "Numbers", settings.visibility["draw-order-number"])}
+          ${scope === "practice"
+      ? renderAnnotationToggle(scope, "draw-order-number", "Numbers", settings.visibility["draw-order-number"])
+      : ""}
           ${renderAnnotationToggle(scope, "midpoint-arrow", "Midpoints", settings.visibility["midpoint-arrow"])}
           <label class="worksheet-app__check">
             <input
@@ -791,7 +912,7 @@ function renderAnnotationToggle(
   `;
 }
 
-const normalizeText = (value: string): string => value.trim().toLowerCase().replace(/\s+/g, " ");
+const normalizeText = (value: string): string => value.trim().replace(/\s+/g, " ");
 
 const escapeHtml = (value: string): string =>
   value
@@ -838,6 +959,11 @@ const normalizeSliderValue = (input: HTMLInputElement, value: number): number =>
   return Number(nextValue.toFixed(getSliderValuePrecision(input)));
 };
 
+const normalizePreviewZoom = (value: number): number => {
+  const clampedValue = Math.min(MAX_PREVIEW_ZOOM, Math.max(MIN_PREVIEW_ZOOM, value));
+  return Math.round(clampedValue / PREVIEW_ZOOM_STEP) * PREVIEW_ZOOM_STEP;
+};
+
 const syncSliderValue = (input: HTMLInputElement, value: number): number => {
   const normalizedValue = normalizeSliderValue(input, value);
   input.value = normalizedValue.toFixed(getSliderValuePrecision(input));
@@ -877,6 +1003,20 @@ const parseSliderSearchParam = (
   }
 
   return normalizeSliderValue(input, parsedValue);
+};
+
+const parsePreviewZoomSearchParam = (params: URLSearchParams): number | null => {
+  const rawValue = params.get("previewZoom");
+  if (rawValue === null) {
+    return null;
+  }
+
+  const parsedValue = Number(rawValue);
+  if (!Number.isFinite(parsedValue)) {
+    return null;
+  }
+
+  return normalizePreviewZoom(parsedValue);
 };
 
 const parseColorSearchParam = (params: URLSearchParams, key: string): string | null =>
@@ -941,7 +1081,7 @@ const syncScopedSettingsControlsFromState = (scope: AnnotationScope) => {
 
 const syncSettingsControlsFromState = () => {
   textInput.value = state.text;
-  state.previewZoom = syncSliderValue(previewZoomSlider, state.previewZoom);
+  state.previewZoom = normalizePreviewZoom(state.previewZoom);
   state.practiceRowHeightMm = syncSliderValue(practiceSizeSlider, state.practiceRowHeightMm);
   state.practiceRepeatCount = syncSliderValue(practiceRepeatSlider, state.practiceRepeatCount);
   state.strokeWidth = syncSliderValue(strokeWidthSlider, state.strokeWidth);
@@ -972,6 +1112,8 @@ const syncSettingsControlsFromState = () => {
       input.checked = state.keepInitialLeadIn;
     } else if (setting === "keepFinalLeadOut") {
       input.checked = state.keepFinalLeadOut;
+    } else if (setting === "includeNameDate") {
+      input.checked = state.includeNameDate;
     } else if (setting === "showBaselineGuide") {
       input.checked = state.showBaselineGuide;
     } else if (setting === "showXHeightGuide") {
@@ -1032,9 +1174,6 @@ const syncSettingsUrl = () => {
 
   if (state.text !== DEFAULT_STATE.text) {
     url.searchParams.set("text", state.text);
-  }
-  if (state.previewZoom !== DEFAULT_STATE.previewZoom) {
-    url.searchParams.set("previewZoom", String(state.previewZoom));
   }
   if (state.practiceRowHeightMm !== DEFAULT_STATE.practiceRowHeightMm) {
     url.searchParams.set("practiceSize", String(state.practiceRowHeightMm));
@@ -1098,6 +1237,9 @@ const syncSettingsUrl = () => {
   }
   if (state.keepFinalLeadOut !== DEFAULT_STATE.keepFinalLeadOut) {
     url.searchParams.set("keepFinalLeadOut", state.keepFinalLeadOut ? "1" : "0");
+  }
+  if (state.includeNameDate !== DEFAULT_STATE.includeNameDate) {
+    url.searchParams.set("includeNameDate", state.includeNameDate ? "1" : "0");
   }
 
   syncScopedSettingsUrl(url, "top", state.top, DEFAULT_STATE.top);
@@ -1179,8 +1321,13 @@ const applyUrlSettings = () => {
     state.text = normalizeText(textParam);
   }
 
-  state.previewZoom =
-    parseSliderSearchParam(params, "previewZoom", previewZoomSlider) ?? state.previewZoom;
+  const previewZoomParam = parsePreviewZoomSearchParam(params);
+  if (previewZoomParam !== null) {
+    state.previewZoom = previewZoomParam;
+    isPreviewZoomManual = true;
+  } else {
+    isPreviewZoomManual = false;
+  }
   state.practiceRowHeightMm =
     parseSliderSearchParam(params, "practiceSize", practiceSizeSlider) ?? state.practiceRowHeightMm;
   state.practiceRepeatCount =
@@ -1220,6 +1367,9 @@ const applyUrlSettings = () => {
     } else if (setting === "keepFinalLeadOut") {
       state.keepFinalLeadOut =
         parseBooleanSearchParam(params, setting) ?? state.keepFinalLeadOut;
+    } else if (setting === "includeNameDate") {
+      state.includeNameDate =
+        parseBooleanSearchParam(params, setting) ?? state.includeNameDate;
     } else if (setting === "showBaselineGuide") {
       state.showBaselineGuide =
         parseBooleanSearchParam(params, setting) ?? state.showBaselineGuide;
@@ -1296,11 +1446,57 @@ const applyPreviewZoom = () => {
   worksheetPageFrame.style.setProperty("--worksheet-preview-scale", `${state.previewZoom / 100}`);
 };
 
-const setPreviewZoom = (value: number) => {
-  state.previewZoom = syncSliderValue(previewZoomSlider, value);
+const refreshWorksheetAfterPreviewScale = () => {
+  const refreshId = ++previewScaleRefreshId;
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      if (refreshId !== previewScaleRefreshId) {
+        return;
+      }
+
+      renderWorksheet();
+    });
+  });
+};
+
+const setPreviewZoom = (
+  value: number,
+  options: { manual?: boolean; syncUrl?: boolean; refreshAfterScale?: boolean } = {}
+) => {
+  const previousZoom = state.previewZoom;
+  state.previewZoom = normalizePreviewZoom(value);
+  if (options.manual) {
+    isPreviewZoomManual = true;
+  }
   applyPreviewZoom();
   syncLabels();
-  syncSettingsUrl();
+  if (options.syncUrl ?? true) {
+    syncSettingsUrl();
+  }
+  if ((options.refreshAfterScale ?? true) && state.previewZoom !== previousZoom) {
+    refreshWorksheetAfterPreviewScale();
+  }
+};
+
+const fitPreviewZoomToWidth = () => {
+  if (isPreviewZoomManual) {
+    return;
+  }
+
+  const previewStyles = window.getComputedStyle(worksheetPageFrame.parentElement ?? worksheetPageFrame);
+  const horizontalPadding =
+    Number.parseFloat(previewStyles.paddingLeft) + Number.parseFloat(previewStyles.paddingRight);
+  const availableWidth =
+    worksheetPageFrame.parentElement?.clientWidth ?? worksheetPageFrame.clientWidth;
+  const previewWidth = Math.max(0, availableWidth - horizontalPadding - PREVIEW_FIT_PADDING_PX);
+  const pageWidth = worksheetPage.offsetWidth;
+  if (pageWidth <= 0 || previewWidth <= 0) {
+    return;
+  }
+
+  const fittedZoom =
+    Math.floor(((previewWidth / pageWidth) * 100) / PREVIEW_ZOOM_STEP) * PREVIEW_ZOOM_STEP;
+  setPreviewZoom(fittedZoom, { syncUrl: false });
 };
 
 const nextFrame = () =>
@@ -1370,7 +1566,7 @@ const profileWorksheetRender = async (
 const withPreviewZoom = async <T>(zoom: number, action: () => Promise<T>): Promise<T> => {
   const previousZoom = state.previewZoom;
   if (previousZoom !== zoom) {
-    setPreviewZoom(zoom);
+    setPreviewZoom(zoom, { refreshAfterScale: false });
     await nextFrame();
   }
 
@@ -1378,7 +1574,7 @@ const withPreviewZoom = async <T>(zoom: number, action: () => Promise<T>): Promi
     return await action();
   } finally {
     if (previousZoom !== zoom) {
-      setPreviewZoom(previousZoom);
+      setPreviewZoom(previousZoom, { refreshAfterScale: false });
       await nextFrame();
     }
   }
@@ -1648,15 +1844,21 @@ const renderWorksheet = () => {
       rowIndex
     )
   ).join("");
-
-  worksheetPage.style.setProperty("--practice-row-height", `${state.practiceRowHeightMm}mm`);
-  worksheetPage.innerHTML = `
+  const nameDateHeader = state.includeNameDate
+    ? `
     <header class="worksheet-page__header">
       <div class="worksheet-page__meta-line">
         <span>Name</span>
         <span>Date</span>
       </div>
     </header>
+  `
+    : "";
+
+  worksheetPage.style.setProperty("--practice-row-height", `${state.practiceRowHeightMm}mm`);
+  worksheetPage.classList.toggle("worksheet-page--without-meta", !state.includeNameDate);
+  worksheetPage.innerHTML = `
+    ${nameDateHeader}
     <section class="worksheet-page__example" aria-label="Top example">
       ${topSvg}
     </section>
@@ -1833,8 +2035,11 @@ const createWorksheetPngBlob = async (): Promise<Blob> => {
 };
 
 textInput.addEventListener("input", renderWorksheet);
-previewZoomSlider.addEventListener("input", () => {
-  setPreviewZoom(Number(previewZoomSlider.value));
+previewZoomOutButton.addEventListener("click", () => {
+  setPreviewZoom(state.previewZoom - PREVIEW_ZOOM_STEP, { manual: true });
+});
+previewZoomInButton.addEventListener("click", () => {
+  setPreviewZoom(state.previewZoom + PREVIEW_ZOOM_STEP, { manual: true });
 });
 practiceSizeSlider.addEventListener("input", renderWorksheet);
 practiceRepeatSlider.addEventListener("input", renderWorksheet);
@@ -1842,22 +2047,6 @@ strokeWidthSlider.addEventListener("input", renderWorksheet);
 printButton.addEventListener("click", () => {
   renderWorksheet();
   window.print();
-});
-downloadPngButton.addEventListener("click", () => {
-  downloadPngButton.disabled = true;
-  statusEl.textContent = "Preparing PNG...";
-  createWorksheetPngBlob()
-    .then((blob) => {
-      const filenameText = normalizeText(state.text).replaceAll(/\s+/g, "-") || "worksheet";
-      downloadBlob(blob, `${filenameText}-cursive-worksheet.png`);
-      statusEl.textContent = "PNG downloaded.";
-    })
-    .catch((error) => {
-      statusEl.textContent = error instanceof Error ? error.message : "Could not download PNG.";
-    })
-    .finally(() => {
-      downloadPngButton.disabled = false;
-    });
 });
 
 globalSettingInputs.forEach((input) => {
@@ -1881,6 +2070,8 @@ globalSettingInputs.forEach((input) => {
       state.keepInitialLeadIn = input.checked;
     } else if (setting === "keepFinalLeadOut") {
       state.keepFinalLeadOut = input.checked;
+    } else if (setting === "includeNameDate") {
+      state.includeNameDate = input.checked;
     } else if (setting === "showBaselineGuide") {
       state.showBaselineGuide = input.checked;
     } else if (setting === "showXHeightGuide") {
@@ -1960,8 +2151,31 @@ annotationKindInputs.forEach((input) => {
   });
 });
 
+topAnnotationPresetButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    const presetName = button.dataset.topAnnotationPreset;
+    if (
+      presetName !== "outside" &&
+      presetName !== "inside" &&
+      presetName !== "inside-two-lanes"
+    ) {
+      return;
+    }
+
+    const preset = TOP_ANNOTATION_PRESETS[presetName];
+    state.top = applyAnnotationSettingsPatch(createTopAnnotationBaseSettings(), preset);
+    syncScopedSettingsControlsFromState("top");
+    renderWorksheet();
+  });
+});
+
 applyUrlSettings();
 renderWorksheet();
+fitPreviewZoomToWidth();
+
+new ResizeObserver(() => {
+  fitPreviewZoomToWidth();
+}).observe(worksheetPageFrame.parentElement ?? worksheetPageFrame);
 
 window.__worksheetProfiler = {
   getState: getWorksheetProfilerState,

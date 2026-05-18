@@ -11,8 +11,8 @@ export function buildPreCursiveWord(
 ): WritingPath {
   return buildStandaloneWord(text, options, {
     keepLeadIn: options.keepInitialLeadIn ?? true,
-    keepEntry: true,
-    keepExit: true,
+    keepEntry: options.keepInitialLeadIn ?? true,
+    keepExit: options.keepFinalLeadOut ?? true,
     keepLeadOut: options.keepFinalLeadOut ?? true,
     additionalSpacing: preCursiveLetterSpacing
   }, "pre-cursive");

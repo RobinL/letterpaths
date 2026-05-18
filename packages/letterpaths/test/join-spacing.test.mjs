@@ -48,6 +48,12 @@ const countSegments = (path, segment) =>
     .flatMap((stroke) => stroke.curveSegments ?? [])
     .filter((curveSegment) => curveSegment === segment).length;
 
+const maxCurveX = (curves) =>
+  Math.max(...curves.flatMap((curve) => [curve.p0.x, curve.p1.x, curve.p2.x, curve.p3.x]));
+
+const minCurveX = (curves) =>
+  Math.min(...curves.flatMap((curve) => [curve.p0.x, curve.p1.x, curve.p2.x, curve.p3.x]));
+
 test("join spacing searches sidebearing gaps from -30 to 80 by default", () => {
   const metric = metricFor("cu", {
     joinSpacing: {
@@ -208,4 +214,45 @@ test("lead-in and lead-out options apply to every word", () => {
 
   assert.equal(countSegments(multi, "lead-in"), countSegments(single, "lead-in") * 2);
   assert.equal(countSegments(multi, "lead-out"), countSegments(single, "lead-out") * 2);
+});
+
+test("capital letters in cursive text render as standalone print letters", () => {
+  const capitalOnly = buildHandwritingPath("A", { style: "cursive" });
+  const mixed = buildHandwritingPath("Apple", { style: "cursive" });
+
+  assert.ok(capitalOnly.strokes.length > 0);
+  assert.equal(countSegments(capitalOnly, "join"), 0);
+  assert.equal(mixed.joinMetrics?.length, 3);
+  assert.equal(countSegments(mixed, "join"), 3);
+});
+
+test("capital letters do not consume initial cursive lead-in", () => {
+  const initialLowercase = buildHandwritingPath("apple", {
+    style: "cursive",
+    keepInitialLeadIn: true
+  });
+  const mixed = buildHandwritingPath("Hello", {
+    style: "cursive",
+    keepInitialLeadIn: true
+  });
+  const firstStrokeWithLeadIn = mixed.strokes.find((stroke) =>
+    stroke.curveSegments?.includes("lead-in")
+  );
+  const firstLeadInStrokeIndex = mixed.strokes.findIndex((stroke) =>
+    stroke.curveSegments?.includes("lead-in")
+  );
+  const previousVisibleMaxX = maxCurveX(
+    mixed.strokes.slice(0, firstLeadInStrokeIndex).flatMap((stroke) => stroke.curves)
+  );
+  const leadInMinX = minCurveX(
+    firstStrokeWithLeadIn?.curves.filter(
+      (_curve, index) => firstStrokeWithLeadIn.curveSegments?.[index] === "lead-in"
+    ) ?? []
+  );
+
+  assert.ok(countSegments(initialLowercase, "lead-in") > 0);
+  assert.ok(countSegments(initialLowercase, "entry") > 0);
+  assert.ok(countSegments(mixed, "lead-in") > 0);
+  assert.equal(firstStrokeWithLeadIn?.curveSegments?.[0], "lead-in");
+  assert.ok(leadInMinX > previousVisibleMaxX);
 });

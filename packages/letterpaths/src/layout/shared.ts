@@ -5,7 +5,6 @@ import {
   cursiveEntryVariantByExitVariant,
   cursiveExitVariantByLetter,
   defaultCursiveEntryVariant,
-  letters as defaultLetters,
   lettersById,
   lettersByVariantId,
   printLettersById
@@ -108,7 +107,7 @@ export function buildStandaloneWord(
       continue;
     }
 
-    const char = rawChar.toLowerCase();
+    const char = rawChar;
     const letter = findStandaloneLetter(letterMap, char, style);
     if (!letter) {
       cursorX = Math.max(rightSidebearingEdge, visibleRightEdge) + wordSpacing;
@@ -1003,13 +1002,14 @@ export function findCursiveLetter(
   char: string,
   entryVariant: CursiveEntryVariant
 ): BezierLetter | null {
-  const variantKey = createLetterId(char, entryVariant);
+  const normalizedChar = char.toLowerCase();
+  const variantKey = createLetterId(normalizedChar, entryVariant);
   const variantMatch = letterMap[variantKey] ?? lettersByVariantId[variantKey];
   if (variantMatch) {
     return variantMatch;
   }
 
-  const legacyKey = createLegacyLetterId(char);
+  const legacyKey = createLegacyLetterId(normalizedChar);
   const legacyMatch = letterMap[legacyKey] ?? lettersById[legacyKey];
   if (legacyMatch) {
     return legacyMatch;
@@ -1017,11 +1017,39 @@ export function findCursiveLetter(
 
   const match = Object.values(letterMap).find(
     (letter) =>
-      letter.glyph.char.toLowerCase() === char &&
+      letter.glyph.char.toLowerCase() === normalizedChar &&
       letter.glyph.case === "lower" &&
       letter.glyph.style === "cursive"
   );
   return match ?? null;
+}
+
+export function isUppercaseLetter(char: string): boolean {
+  return (
+    char.length === 1 &&
+    char === char.toUpperCase() &&
+    char !== char.toLowerCase()
+  );
+}
+
+export function findPrintLetter(
+  letterMap: Record<string, BezierLetter>,
+  char: string
+): BezierLetter | null {
+  const printKey = createPrintLetterId(char);
+  const printMatch = letterMap[printKey] ?? printLettersById[printKey];
+  if (printMatch) {
+    return printMatch;
+  }
+
+  const expectedCase = isUppercaseLetter(char) ? "upper" : "lower";
+  const explicitPrintMatch = Object.values(letterMap).find(
+    (letter) =>
+      letter.glyph.char === char &&
+      letter.glyph.case === expectedCase &&
+      letter.glyph.style === "print"
+  );
+  return explicitPrintMatch ?? null;
 }
 
 export function findStandaloneLetter(
@@ -1029,27 +1057,17 @@ export function findStandaloneLetter(
   char: string,
   style: Extract<HandwritingStyle, "print" | "pre-cursive">
 ): BezierLetter | null {
+  if (isUppercaseLetter(char)) {
+    return findPrintLetter(letterMap, char);
+  }
+
   if (style !== "print") {
     return findCursiveLetter(letterMap, char, defaultCursiveEntryVariant);
   }
 
-  const printKey = createPrintLetterId(char);
-  const printMatch = letterMap[printKey] ?? printLettersById[printKey];
-  if (printMatch) {
-    return printMatch;
-  }
+  const printMatch = findPrintLetter(letterMap, char);
 
-  const explicitPrintMatch = Object.values(letterMap).find(
-    (letter) =>
-      letter.glyph.char.toLowerCase() === char &&
-      letter.glyph.case === "lower" &&
-      letter.glyph.style === "print"
-  );
-  if (explicitPrintMatch) {
-    return explicitPrintMatch;
-  }
-
-  return findCursiveLetter(letterMap, char, defaultCursiveEntryVariant);
+  return printMatch ?? findCursiveLetter(letterMap, char, defaultCursiveEntryVariant);
 }
 
 export function getEntryVariantForExitVariant(
@@ -1173,5 +1191,5 @@ function getCurveFromDrawStep(steps: BezierStep[], index: number): Curve {
 }
 
 export function listAvailableLetters(): BezierLetter[] {
-  return defaultLetters;
+  return Object.values(lettersByVariantId);
 }
