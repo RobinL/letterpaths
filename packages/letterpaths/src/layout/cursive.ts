@@ -59,6 +59,7 @@ export function joinCursiveWord(
   let prevExitCurve: Curve | null = null;
   let prevExitVariant: CursiveExitVariant | null = null;
   let prevRightSidebearing = 0;
+  let prevStandaloneRightSidebearing: number | null = null;
   let prevChar: string | null = null;
   let hasPlacedLetter = false;
   const keepInitialLeadIn = options.keepInitialLeadIn ?? false;
@@ -71,6 +72,7 @@ export function joinCursiveWord(
       prevExitCurve = null;
       prevExitVariant = null;
       prevRightSidebearing = 0;
+      prevStandaloneRightSidebearing = null;
       prevChar = null;
       hasPlacedLetter = false;
       cursorX = rightEdge + wordSpacing;
@@ -85,6 +87,7 @@ export function joinCursiveWord(
         prevExitCurve = null;
         prevExitVariant = null;
         prevRightSidebearing = 0;
+        prevStandaloneRightSidebearing = null;
         prevChar = null;
         hasPlacedLetter = false;
         cursorX = rightEdge + wordSpacing;
@@ -123,6 +126,7 @@ export function joinCursiveWord(
       prevExitCurve = null;
       prevExitVariant = null;
       prevRightSidebearing = 0;
+      prevStandaloneRightSidebearing = rightSidebearing;
       prevChar = null;
       hasPlacedLetter = true;
       continue;
@@ -130,7 +134,7 @@ export function joinCursiveWord(
 
     const char = rawChar.toLowerCase();
     if (!prevExitCurve && hasPlacedLetter) {
-      cursorX = rightEdge + cursiveLetterSpacing;
+      cursorX = (prevStandaloneRightSidebearing ?? rightEdge) + cursiveLetterSpacing;
     }
 
     const isFirstDrawableLetter = prevExitCurve === null;
@@ -144,6 +148,7 @@ export function joinCursiveWord(
       prevExitCurve = null;
       prevExitVariant = null;
       prevRightSidebearing = 0;
+      prevStandaloneRightSidebearing = null;
       prevChar = null;
       hasPlacedLetter = false;
       cursorX = rightEdge + wordSpacing;
@@ -175,6 +180,16 @@ export function joinCursiveWord(
         )
       }))
       .filter((stroke) => stroke.curves.length > 0);
+
+    if (prevStandaloneRightSidebearing !== null) {
+      const visibleBounds = measureCurveBounds(
+        filteredMainStrokes.flatMap((stroke) => stroke.curves)
+      );
+      const visibleMinFromLeftSidebearing = visibleBounds.minX - normalizedGuides.left;
+      const minCursorX =
+        prevStandaloneRightSidebearing + cursiveLetterSpacing - visibleMinFromLeftSidebearing;
+      cursorX = Math.max(cursorX, minCursorX);
+    }
 
     const entryCurve = findEntryCurve(filteredMainStrokes);
     const entryPhaseCurves = findEntryPhaseCurves(filteredMainStrokes);
@@ -268,6 +283,7 @@ export function joinCursiveWord(
     rightEdge = Math.max(rightEdge, letterBounds.maxX, prevRightSidebearing);
     prevExitCurve = shiftedExitCurve;
     prevExitVariant = getExitVariantForLetter(char);
+    prevStandaloneRightSidebearing = null;
     prevChar = char;
     hasPlacedLetter = true;
   }

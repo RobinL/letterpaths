@@ -185,7 +185,7 @@ body {
   font-size: 1rem;
   font-weight: 700;
   letter-spacing: 0;
-  text-transform: lowercase;
+  text-transform: none;
   box-shadow: 0 8px 18px rgba(35, 49, 61, 0.08);
 }
 
@@ -1209,7 +1209,7 @@ body {
   font-size: 1rem;
   font-weight: 700;
   letter-spacing: 0;
-  text-transform: lowercase;
+  text-transform: none;
 }
 
 .worksheet-app__text-input:focus,

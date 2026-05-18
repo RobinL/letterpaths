@@ -358,6 +358,26 @@ const TOP_ANNOTATION_PRESETS = {
       "draw-order-number": true,
       "midpoint-arrow": false
     }
+  },
+  "inside-two-lanes": {
+    directionalDashSpacing: 124,
+    midpointDensity: 160,
+    turnRadius: 13,
+    uTurnLength: 58,
+    arrowLength: 90,
+    arrowHeadSize: 31,
+    arrowStrokeWidth: 6.5,
+    numberSize: 40,
+    numberPathOffset: -55,
+    offsetArrowLanes: true,
+    alwaysOffsetArrowLanes: false,
+    visibility: {
+      "directional-dash": false,
+      "turning-point": true,
+      "start-arrow": true,
+      "draw-order-number": true,
+      "midpoint-arrow": true
+    }
   }
 } as const;
 
@@ -464,7 +484,10 @@ app.innerHTML = `
             Outside letters
           </button>
           <button class="worksheet-app__button worksheet-app__button--secondary" type="button" data-top-annotation-preset="inside">
-            Inside letters
+            Inside letters, middle
+          </button>
+          <button class="worksheet-app__button worksheet-app__button--secondary" type="button" data-top-annotation-preset="inside-two-lanes">
+            Inside letters, two lanes
           </button>
         </fieldset>
 
@@ -889,7 +912,7 @@ function renderAnnotationToggle(
   `;
 }
 
-const normalizeText = (value: string): string => value.trim().toLowerCase().replace(/\s+/g, " ");
+const normalizeText = (value: string): string => value.trim().replace(/\s+/g, " ");
 
 const escapeHtml = (value: string): string =>
   value
@@ -2131,7 +2154,11 @@ annotationKindInputs.forEach((input) => {
 topAnnotationPresetButtons.forEach((button) => {
   button.addEventListener("click", () => {
     const presetName = button.dataset.topAnnotationPreset;
-    if (presetName !== "outside" && presetName !== "inside") {
+    if (
+      presetName !== "outside" &&
+      presetName !== "inside" &&
+      presetName !== "inside-two-lanes"
+    ) {
       return;
     }
 
