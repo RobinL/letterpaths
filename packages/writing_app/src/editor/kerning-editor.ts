@@ -1,5 +1,6 @@
 import "./demo.css"
 import "./kerning-editor.css"
+import { bigramFrequencyRank } from "./bigram-frequency"
 import {
   buildHandwritingPath,
   defaultCursiveKerningSettings,
@@ -68,6 +69,7 @@ type DragState = {
   startClientY: number
   startGap: number
   startExitHandleScale: number
+  startEntryHandleScale: number
   unitsPerPx: number
 }
 
@@ -477,7 +479,18 @@ function buildCardContent(pair: string): string {
   return `
     <div class="kerning-card__header">
       <span class="kerning-card__pair">${pair.toUpperCase()}</span>
-      <span class="kerning-card__source ${snapshot.source === "override" ? "kerning-card__source--override" : ""}" title="${snapshot.source}"></span>
+      <div class="kerning-card__tools">
+        <span class="kerning-card__source ${snapshot.source === "override" ? "kerning-card__source--override" : ""}" title="${snapshot.source}"></span>
+        <button
+          class="kerning-card__save"
+          type="button"
+          data-pair-save="${pair}"
+          title="Save this pair"
+          aria-label="Save ${pair.toUpperCase()} kerning pair"
+        >
+          Save
+        </button>
+      </div>
     </div>
     <svg class="kerning-card__svg" viewBox="${snapshot.viewBox}" aria-hidden="true">
       ${buildPathMarkup(snapshot)}
@@ -529,9 +542,17 @@ function buildPairSection(title: string, sectionPairs: string[]): string {
   `
 }
 
+function comparePairsByFrequency(first: string, second: string): number {
+  const firstRank = bigramFrequencyRank.get(first) ?? Number.MAX_SAFE_INTEGER
+  const secondRank = bigramFrequencyRank.get(second) ?? Number.MAX_SAFE_INTEGER
+  return firstRank - secondRank || first.localeCompare(second)
+}
+
 function renderGrid() {
   const visiblePairs = pairs.filter(pairMatchesFilter)
-  const todoPairs = visiblePairs.filter((pair) => !kerningPairs[pair])
+  const todoPairs = visiblePairs
+    .filter((pair) => !kerningPairs[pair])
+    .sort(comparePairsByFrequency)
   const donePairs = visiblePairs.filter((pair) => kerningPairs[pair])
   gridEl.innerHTML = [
     filterMode === "override" ? "" : buildPairSection("To do", todoPairs),
@@ -789,6 +810,29 @@ function setPairHandleScale(
   statusEl.textContent = `${pair.toUpperCase()} ${key} set to ${formatScale(scale)}.`
 }
 
+function savePairAsOverride(pair: string) {
+  const snapshot = computePairSnapshot(pair)
+  kerningPairs = {
+    ...kerningPairs,
+    [pair]: {
+      sidebearingGap: roundGap(clamp(snapshot.gap, kerningGapMin, kerningGapMax)),
+      exitHandleScale: roundScale(
+        clamp(snapshot.exitHandleScale, handleScaleMin, handleScaleMax)
+      ),
+      entryHandleScale: roundScale(
+        clamp(snapshot.entryHandleScale, handleScaleMin, handleScaleMax)
+      )
+    }
+  }
+  hasUnsavedChanges = true
+  renderGrid()
+  if (pair === selectedPair) {
+    renderSelectedPair()
+  }
+  syncMeta()
+  statusEl.textContent = `${pair.toUpperCase()} saved as an override.`
+}
+
 function clearPairOverride(pair: string) {
   if (!kerningPairs[pair]) {
     return
@@ -814,6 +858,7 @@ function beginDrag(pair: string, event: PointerEvent, card: HTMLElement) {
     startClientY: event.clientY,
     startGap: snapshot.gap,
     startExitHandleScale: snapshot.exitHandleScale,
+    startEntryHandleScale: snapshot.entryHandleScale,
     unitsPerPx: rect && rect.width > 0 ? viewBoxWidth / rect.width : 3
   }
   document.body.classList.add("kerning-editor--dragging")
@@ -1054,6 +1099,9 @@ gridEl.addEventListener("pointerdown", (event) => {
   if (event.button !== 0) {
     return
   }
+  if ((event.target as Element | null)?.closest("[data-pair-save]")) {
+    return
+  }
   const card = (event.target as Element | null)?.closest<HTMLElement>("[data-pair]")
   if (!card) {
     return
@@ -1062,17 +1110,49 @@ gridEl.addEventListener("pointerdown", (event) => {
   beginDrag(card.dataset.pair ?? selectedPair, event, card)
 })
 
+gridEl.addEventListener("click", (event) => {
+  const button = (event.target as Element | null)?.closest<HTMLButtonElement>(
+    "[data-pair-save]"
+  )
+  if (!button) {
+    return
+  }
+  event.preventDefault()
+  event.stopPropagation()
+  savePairAsOverride(button.dataset.pairSave ?? selectedPair)
+})
+
 window.addEventListener("pointermove", (event) => {
   if (!activeDrag) {
     return
   }
+  const nextHandleScaleDelta =
+    (activeDrag.startClientY - event.clientY) * handleScaleDragStepPerPx
+  if (event.shiftKey) {
+    const nextEntryHandleScale =
+      activeDrag.startEntryHandleScale +
+      (event.clientX - activeDrag.startClientX) * handleScaleDragStepPerPx
+    setPairHandleScale(
+      activeDrag.pair,
+      "exitHandleScale",
+      activeDrag.startExitHandleScale + nextHandleScaleDelta
+    )
+    setPairHandleScale(
+      activeDrag.pair,
+      "entryHandleScale",
+      nextEntryHandleScale
+    )
+    return
+  }
+
   const nextGap =
     activeDrag.startGap + (event.clientX - activeDrag.startClientX) * activeDrag.unitsPerPx
-  const nextExitHandleScale =
-    activeDrag.startExitHandleScale +
-    (activeDrag.startClientY - event.clientY) * handleScaleDragStepPerPx
   setPairSidebearingGap(activeDrag.pair, nextGap)
-  setPairHandleScale(activeDrag.pair, "exitHandleScale", nextExitHandleScale)
+  setPairHandleScale(
+    activeDrag.pair,
+    "exitHandleScale",
+    activeDrag.startExitHandleScale + nextHandleScaleDelta
+  )
 })
 
 window.addEventListener("pointerup", finishDrag)

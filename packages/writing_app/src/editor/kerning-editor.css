@@ -344,15 +344,40 @@ body {
   letter-spacing: 0;
 }
 
+.kerning-card__tools {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .kerning-card__source {
   width: 9px;
   height: 9px;
   border-radius: 999px;
   background: var(--kerning-blue);
+  flex: 0 0 auto;
 }
 
 .kerning-card__source--override {
   background: var(--kerning-accent);
+}
+
+.kerning-card__save {
+  min-height: 22px;
+  padding: 2px 6px;
+  border: 1px solid rgba(31, 39, 36, 0.16);
+  border-radius: 6px;
+  background: #ffffff;
+  color: var(--kerning-muted);
+  cursor: pointer;
+  font: 0.68rem "Space Mono", "Courier New", monospace;
+}
+
+.kerning-card__save:hover,
+.kerning-card__save:focus-visible {
+  border-color: rgba(200, 79, 53, 0.42);
+  color: var(--kerning-accent);
+  outline: none;
 }
 
 .kerning-card__svg {
