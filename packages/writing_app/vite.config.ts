@@ -19,6 +19,7 @@ export default defineConfig(({ command }) => ({
         ),
         guidedTracing: path.resolve(__dirname, "guided_tracing/index.html"),
         freehandTracing: path.resolve(__dirname, "freehand_tracing/index.html"),
+        fireworksTracing: path.resolve(__dirname, "fireworks/index.html"),
         editor: path.resolve(__dirname, "editor.html"),
         gallery: path.resolve(__dirname, "gallery.html"),
         joinStats: path.resolve(__dirname, "join_stats/index.html")

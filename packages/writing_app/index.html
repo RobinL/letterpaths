@@ -274,6 +274,61 @@
       object-position: top center;
     }
 
+    .fireworks-preview {
+      position: relative;
+      isolation: isolate;
+      background:
+        radial-gradient(circle at 32% 30%, rgba(255, 226, 129, 0.9), transparent 8%),
+        radial-gradient(circle at 68% 24%, rgba(93, 193, 255, 0.78), transparent 10%),
+        radial-gradient(circle at 58% 52%, rgba(255, 96, 57, 0.62), transparent 9%),
+        linear-gradient(180deg, #071029, #15081d 78%);
+    }
+
+    .fireworks-preview::before {
+      content: "";
+      position: absolute;
+      left: 12%;
+      right: 10%;
+      bottom: 20%;
+      height: 34%;
+      border-bottom: 14px solid #4a3528;
+      border-radius: 50%;
+      filter: drop-shadow(0 0 18px rgba(255, 152, 61, 0.7));
+      transform: rotate(-4deg);
+      z-index: 0;
+    }
+
+    .fireworks-preview::after {
+      content: "";
+      position: absolute;
+      right: 24%;
+      bottom: 33%;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: #fff3ad;
+      box-shadow:
+        0 0 16px #fff3ad,
+        0 0 42px #ff742f,
+        -30px -26px 0 -7px #ffcf5c,
+        24px -38px 0 -8px #78c9ff,
+        38px 12px 0 -9px #ff6857;
+      z-index: 1;
+    }
+
+    .fireworks-preview__word {
+      position: relative;
+      align-self: end;
+      justify-self: center;
+      margin-bottom: 16%;
+      color: #ffe9a7;
+      font-size: clamp(2.2rem, 7vw, 4.2rem);
+      font-weight: 900;
+      letter-spacing: 0;
+      text-shadow: 0 0 24px rgba(255, 135, 49, 0.78);
+      z-index: 2;
+    }
+
     .tool-card__media video {
       background: #f7f4ed;
       object-fit: contain;
@@ -471,6 +526,13 @@
           </span>
           <strong>Freehand handwriting tracing</strong>
           <span>Write over grey word shapes and get a precision score from dot-to-dot checkpoints.</span>
+        </a>
+        <a class="tool-card" href="./fireworks/?word=spark">
+          <span class="tool-card__media fireworks-preview" aria-hidden="true">
+            <span class="fireworks-preview__word">spark</span>
+          </span>
+          <strong>Firework fuse letter paths</strong>
+          <span>Turn a cursive word into a burning fuse that launches fireworks from checkpoints.</span>
         </a>
         <a class="tool-card" href="https://www.robinlinacre.com/letter_constellations/">
           <span class="tool-card__media" aria-hidden="true">

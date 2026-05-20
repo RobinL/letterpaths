@@ -60,6 +60,323 @@ body {
   padding: 0;
 }
 
+.fireworks-app {
+  --fireworks-ink: #f9f1df;
+  --fireworks-muted: rgba(249, 241, 223, 0.7);
+  --fireworks-panel: rgba(7, 10, 31, 0.62);
+  --fireworks-panel-line: rgba(255, 228, 171, 0.22);
+  --fireworks-gold: #ffcf5c;
+  --fireworks-coal: #201610;
+  --fireworks-rope: #5b4434;
+  --fireworks-copper: #c86a2d;
+  position: relative;
+  height: 100svh;
+  overflow: hidden;
+  color: var(--fireworks-ink);
+  background:
+    radial-gradient(circle at 50% 112%, rgba(255, 116, 48, 0.24), transparent 36%),
+    radial-gradient(circle at 10% 12%, rgba(70, 109, 193, 0.26), transparent 30%),
+    linear-gradient(180deg, #070a1f 0%, #050716 54%, #120719 100%);
+  color-scheme: dark;
+}
+
+.fireworks-app__stage {
+  position: relative;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.fireworks-app__stage::before {
+  content: "";
+  position: absolute;
+  inset: auto -8% -16% -8%;
+  height: 34%;
+  background:
+    linear-gradient(180deg, rgba(255, 168, 76, 0), rgba(255, 118, 45, 0.14)),
+    repeating-linear-gradient(90deg, rgba(255, 222, 156, 0.1) 0 1px, transparent 1px 36px);
+  filter: blur(0.2px);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.fireworks-app__canvas,
+.fireworks-app__svg {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.fireworks-app__canvas {
+  z-index: 1;
+}
+
+.fireworks-app__svg {
+  z-index: 2;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.fireworks-app__topbar {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  right: 16px;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  pointer-events: none;
+}
+
+.fireworks-app__word-field {
+  display: grid;
+  grid-template-columns: auto minmax(150px, 260px);
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 8px 10px 8px 14px;
+  border: 1px solid var(--fireworks-panel-line);
+  border-radius: 8px;
+  color: var(--fireworks-muted);
+  background: var(--fireworks-panel);
+  box-shadow:
+    0 16px 34px rgba(0, 0, 0, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(12px);
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  pointer-events: auto;
+}
+
+.fireworks-app__word-input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  border-radius: 6px;
+  padding: 10px 12px;
+  color: #1b1220;
+  background: rgba(255, 247, 222, 0.94);
+  box-shadow: inset 0 0 0 1px rgba(92, 49, 24, 0.12);
+  font: inherit;
+  font-size: 1rem;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.fireworks-app__word-input:focus {
+  outline: 3px solid rgba(255, 207, 92, 0.36);
+  outline-offset: 2px;
+}
+
+.fireworks-app__replay-button {
+  appearance: none;
+  border: 1px solid rgba(255, 228, 171, 0.24);
+  border-radius: 8px;
+  padding: 13px 16px;
+  color: var(--fireworks-ink);
+  background:
+    linear-gradient(180deg, rgba(255, 207, 92, 0.22), rgba(255, 113, 43, 0.18)),
+    rgba(7, 10, 31, 0.62);
+  box-shadow:
+    0 16px 34px rgba(0, 0, 0, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(12px);
+  font: inherit;
+  font-size: 0.95rem;
+  font-weight: 900;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.fireworks-app__replay-button:hover {
+  transform: translateY(-1px);
+}
+
+.fireworks-app__replay-button:active {
+  transform: translateY(1px);
+}
+
+.fireworks-app__status {
+  position: absolute;
+  left: 50%;
+  bottom: 18px;
+  z-index: 4;
+  max-width: min(520px, calc(100vw - 32px));
+  margin: 0;
+  padding: 12px 16px;
+  border: 1px solid rgba(255, 228, 171, 0.2);
+  border-radius: 8px;
+  color: var(--fireworks-ink);
+  background: rgba(7, 10, 31, 0.72);
+  box-shadow: 0 16px 34px rgba(0, 0, 0, 0.24);
+  font-weight: 800;
+  text-align: center;
+  transform: translateX(-50%);
+}
+
+.fireworks-app__status[hidden] {
+  display: none;
+}
+
+.fireworks-app__svg-shade {
+  fill: transparent;
+}
+
+.fireworks-app__guide {
+  stroke-width: 2;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.fireworks-app__guide--xheight {
+  stroke: rgba(255, 207, 92, 0.16);
+}
+
+.fireworks-app__guide--baseline {
+  stroke: rgba(255, 115, 64, 0.22);
+}
+
+.fireworks-app__fuse-shadow,
+.fireworks-app__fuse-core,
+.fireworks-app__fuse-braid,
+.fireworks-app__burned-path,
+.fireworks-app__burned-glow {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.fireworks-app__fuse-shadow {
+  stroke: rgba(0, 0, 0, 0.46);
+  stroke-width: 72;
+  filter: blur(3px);
+}
+
+.fireworks-app__fuse-core {
+  stroke: var(--fireworks-coal);
+  stroke-width: 52;
+}
+
+.fireworks-app__fuse-braid {
+  stroke-width: 48;
+  stroke-dasharray: 24 20;
+  stroke-linecap: butt;
+  opacity: 0.84;
+}
+
+.fireworks-app__fuse-braid--warm {
+  stroke: var(--fireworks-rope);
+  stroke-dashoffset: 0;
+}
+
+.fireworks-app__fuse-braid--cool {
+  stroke: rgba(150, 109, 76, 0.72);
+  stroke-dashoffset: 22;
+}
+
+.fireworks-app__burned-glow {
+  stroke: rgba(255, 89, 24, 0.64);
+  stroke-width: 78;
+  filter: url("#fireworks-fuse-glow");
+  opacity: 0.86;
+}
+
+.fireworks-app__burned-path {
+  stroke: url("#fireworks-burn-gradient");
+  stroke-width: 40;
+  filter: url("#fireworks-fuse-glow");
+}
+
+.fireworks-app__ember {
+  pointer-events: none;
+  filter: url("#fireworks-fuse-glow");
+  transition: opacity 0.22s ease;
+}
+
+.fireworks-app__ember-aura {
+  fill: url("#fireworks-ember-gradient");
+  opacity: 0.86;
+  animation: fireworks-ember-breathe 0.32s ease-in-out infinite alternate;
+}
+
+.fireworks-app__ember-flame {
+  fill: #ff9d21;
+  opacity: 0.95;
+}
+
+.fireworks-app__ember-core {
+  fill: #fff6bc;
+}
+
+.fireworks-app__waypoint {
+  pointer-events: none;
+  filter: drop-shadow(0 0 16px rgba(255, 205, 92, 0.62));
+  opacity: 0.95;
+  transition:
+    opacity 0.28s ease,
+    transform 0.28s ease;
+}
+
+.fireworks-app__waypoint-halo {
+  fill: rgba(255, 198, 84, 0.08);
+  stroke: rgba(255, 214, 112, 0.28);
+  stroke-width: 2;
+  animation: fireworks-waypoint-pulse 1.45s ease-in-out infinite;
+}
+
+.fireworks-app__waypoint-ring {
+  fill: rgba(255, 180, 60, 0.16);
+  stroke: rgba(255, 234, 166, 0.82);
+  stroke-width: 4;
+}
+
+.fireworks-app__waypoint-core {
+  fill: #fff1a6;
+}
+
+.fireworks-app__waypoint--finale .fireworks-app__waypoint-halo {
+  stroke: rgba(255, 113, 43, 0.48);
+  animation-duration: 0.92s;
+}
+
+.fireworks-app__waypoint--spent {
+  opacity: 0;
+  transform: scale(1.6);
+}
+
+@keyframes fireworks-ember-breathe {
+  from {
+    transform: scale(0.86);
+    opacity: 0.72;
+  }
+
+  to {
+    transform: scale(1.14);
+    opacity: 1;
+  }
+}
+
+@keyframes fireworks-waypoint-pulse {
+  0%,
+  100% {
+    transform: scale(0.82);
+    opacity: 0.36;
+  }
+
+  50% {
+    transform: scale(1.14);
+    opacity: 0.92;
+  }
+}
+
 .writing-app__topbar {
   position: absolute;
   top: 16px;
@@ -955,6 +1272,16 @@ body {
     padding: 0;
   }
 
+  .fireworks-app__topbar {
+    top: 12px;
+    left: 12px;
+    right: 12px;
+  }
+
+  .fireworks-app__word-field {
+    grid-template-columns: auto minmax(130px, 230px);
+  }
+
   .writing-app__topbar {
     top: 14px;
     left: 14px;
@@ -1109,6 +1436,26 @@ body {
 
   .writing-app__success-actions {
     grid-template-columns: 1fr;
+  }
+
+  .fireworks-app__topbar {
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .fireworks-app__word-field {
+    grid-template-columns: 1fr;
+    gap: 6px;
+    width: min(100%, 245px);
+    padding: 9px 10px;
+  }
+
+  .fireworks-app__word-input {
+    padding: 9px 10px;
+  }
+
+  .fireworks-app__replay-button {
+    padding: 12px 13px;
   }
 }
 
