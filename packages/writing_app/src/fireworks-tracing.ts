@@ -26,6 +26,9 @@ const MAX_ROCKETS = 34;
 const MAX_WAYPOINTS = 18;
 const HARD_CLEAR_ALPHA = 1;
 const TRAIL_CLEAR_ALPHA = 0.24;
+const HOT_BURN_DISTANCE = 150;
+const COOLING_BURN_DISTANCE = 620;
+const FINAL_COOL_MS = 2800;
 const TWO_PI = Math.PI * 2;
 
 type CanvasPoint = Point;
@@ -51,7 +54,8 @@ type Scene = {
     completed: boolean;
 };
 
-type ParticleKind = "fuse" | "rocket" | "shell" | "crackle";
+type ParticleKind = "fuse" | "ember" | "rocket" | "shell" | "crackle" | "smoke" | "willow" | "strobe";
+type FireworkPattern = "peony" | "ring" | "willow" | "palm" | "strobe" | "chrysanthemum";
 
 type Particle = {
     x: number;
@@ -79,6 +83,7 @@ type Rocket = {
     hue: number;
     power: number;
     isFinale: boolean;
+    pattern: FireworkPattern;
     trail: CanvasPoint[];
 };
 
@@ -89,6 +94,17 @@ type PendingLaunch = {
     hue: number;
     power: number;
     isFinale: boolean;
+    pattern: FireworkPattern;
+};
+
+type Flash = {
+    x: number;
+    y: number;
+    age: number;
+    life: number;
+    radius: number;
+    hue: number;
+    alpha: number;
 };
 
 type Star = {
@@ -159,6 +175,9 @@ if (!fireworksContext) {
 
 let currentWord = DEFAULT_WORD;
 let currentScene: Scene | null = null;
+let spentFusePathEl: SVGPathElement | null = null;
+let coolingFusePathEl: SVGPathElement | null = null;
+let smoulderFusePathEl: SVGPathElement | null = null;
 let burnedPathEl: SVGPathElement | null = null;
 let burnedGlowPathEl: SVGPathElement | null = null;
 let emberEl: SVGGElement | null = null;
@@ -171,6 +190,7 @@ let canvasDevicePixelRatio = 1;
 let particles: Particle[] = [];
 let rockets: Rocket[] = [];
 let pendingLaunches: PendingLaunch[] = [];
+let flashes: Flash[] = [];
 let stars: Star[] = [];
 let needsHardCanvasClear = true;
 
@@ -558,9 +578,55 @@ const pushParticle = (particle: Particle) => {
     }
 };
 
+const pushFlash = (flash: Flash) => {
+    flashes.push(flash);
+    if (flashes.length > 24) {
+        flashes.splice(0, flashes.length - 24);
+    }
+};
+
+const spawnBurstParticle = (
+    point: CanvasPoint,
+    angle: number,
+    speed: number,
+    options: {
+        hue: number;
+        saturation?: [number, number];
+        lightness?: [number, number];
+        life?: [number, number];
+        size?: [number, number];
+        gravity?: [number, number];
+        drag?: [number, number];
+        kind?: ParticleKind;
+    }
+) => {
+    const saturation = options.saturation ?? [82, 100];
+    const lightness = options.lightness ?? [54, 76];
+    const life = options.life ?? [1.0, 1.9];
+    const size = options.size ?? [1.2, 3.8];
+    const gravity = options.gravity ?? [62, 118];
+    const drag = options.drag ?? [0.965, 0.985];
+
+    pushParticle({
+        x: point.x,
+        y: point.y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        age: 0,
+        life: randomBetween(life[0], life[1]),
+        size: randomBetween(size[0], size[1]),
+        hue: options.hue,
+        saturation: randomBetween(saturation[0], saturation[1]),
+        lightness: randomBetween(lightness[0], lightness[1]),
+        gravity: randomBetween(gravity[0], gravity[1]),
+        drag: randomBetween(drag[0], drag[1]),
+        kind: options.kind ?? "shell"
+    });
+};
+
 const spawnFuseSparks = (point: CanvasPoint, tangent: Point, deltaSeconds: number) => {
     const normal = { x: -tangent.y, y: tangent.x };
-    const sparkCount = Math.max(1, Math.floor(randomBetween(60, 130) * deltaSeconds));
+    const sparkCount = Math.max(2, Math.floor(randomBetween(95, 190) * deltaSeconds));
 
     for (let sparkIndex = 0; sparkIndex < sparkCount; sparkIndex += 1) {
         const sideVelocity = randomBetween(-190, 190);
@@ -580,6 +646,54 @@ const spawnFuseSparks = (point: CanvasPoint, tangent: Point, deltaSeconds: numbe
             gravity: randomBetween(260, 430),
             drag: randomBetween(0.88, 0.94),
             kind: "fuse"
+        });
+    }
+
+    if (Math.random() < deltaSeconds * 22) {
+        pushParticle({
+            x: point.x - tangent.x * randomBetween(8, 28) + randomBetween(-4, 4),
+            y: point.y - tangent.y * randomBetween(8, 28) + randomBetween(-4, 4),
+            vx: -tangent.x * randomBetween(12, 46) + normal.x * randomBetween(-38, 38),
+            vy: -tangent.y * randomBetween(12, 46) + normal.y * randomBetween(-38, 38) - randomBetween(12, 52),
+            age: 0,
+            life: randomBetween(0.8, 1.45),
+            size: randomBetween(2.5, 6.2),
+            hue: randomBetween(8, 34),
+            saturation: randomBetween(86, 100),
+            lightness: randomBetween(42, 68),
+            gravity: randomBetween(40, 95),
+            drag: randomBetween(0.94, 0.98),
+            kind: "ember"
+        });
+    }
+};
+
+const spawnFuseSmoke = (point: CanvasPoint, tangent: Point, deltaSeconds: number) => {
+    const normal = { x: -tangent.y, y: tangent.x };
+    const smokeChance = Math.min(0.94, deltaSeconds * 56);
+
+    if (Math.random() >= smokeChance) {
+        return;
+    }
+
+    const smokePalette = [194, 212, 284, 318, 24, 46] as const;
+    const smokeCount = Math.random() < 0.42 ? 3 : Math.random() < 0.74 ? 2 : 1;
+    for (let smokeIndex = 0; smokeIndex < smokeCount; smokeIndex += 1) {
+        const hue = smokePalette[Math.floor(Math.random() * smokePalette.length)] ?? 212;
+        pushParticle({
+            x: point.x - tangent.x * randomBetween(6, 44) + normal.x * randomBetween(-24, 24),
+            y: point.y - tangent.y * randomBetween(6, 44) + normal.y * randomBetween(-18, 18),
+            vx: -tangent.x * randomBetween(14, 64) + normal.x * randomBetween(-34, 34),
+            vy: -randomBetween(28, 92),
+            age: 0,
+            life: randomBetween(1.45, 3.15),
+            size: randomBetween(14, 34),
+            hue: hue + randomBetween(-10, 10),
+            saturation: randomBetween(28, 62),
+            lightness: randomBetween(56, 76),
+            gravity: randomBetween(-20, 4),
+            drag: randomBetween(0.965, 0.989),
+            kind: "smoke"
         });
     }
 };
@@ -621,8 +735,25 @@ const createRocketTarget = (origin: CanvasPoint, isFinale: boolean): CanvasPoint
     return { x: targetX, y: targetY };
 };
 
+const FIREWORK_PATTERNS: FireworkPattern[] = [
+    "peony",
+    "ring",
+    "willow",
+    "palm",
+    "strobe",
+    "chrysanthemum"
+];
+
+const chooseFireworkPattern = (launchIndex: number, isFinale: boolean): FireworkPattern => {
+    if (isFinale) {
+        return FIREWORK_PATTERNS[launchIndex % FIREWORK_PATTERNS.length] ?? "peony";
+    }
+
+    return FIREWORK_PATTERNS[Math.floor(Math.random() * FIREWORK_PATTERNS.length)] ?? "peony";
+};
+
 const queueWaypointFireworks = (origin: CanvasPoint, isFinale: boolean) => {
-    const launchCount = isFinale ? 8 : Math.random() < 0.42 ? 2 : 1;
+    const launchCount = isFinale ? 11 : Math.random() < 0.54 ? 2 : 1;
 
     for (let launchIndex = 0; launchIndex < launchCount; launchIndex += 1) {
         pendingLaunches.push({
@@ -631,7 +762,8 @@ const queueWaypointFireworks = (origin: CanvasPoint, isFinale: boolean) => {
             delayMs: isFinale ? launchIndex * randomBetween(80, 150) : launchIndex * randomBetween(90, 170),
             hue: randomBetween(0, 360),
             power: isFinale ? randomBetween(1.1, 1.55) : randomBetween(0.78, 1.15),
-            isFinale
+            isFinale,
+            pattern: chooseFireworkPattern(launchIndex, isFinale)
         });
     }
 };
@@ -651,6 +783,7 @@ const launchRocket = (launch: PendingLaunch) => {
         hue: launch.hue,
         power: launch.power,
         isFinale: launch.isFinale,
+        pattern: launch.pattern,
         trail: [{ ...launch.origin }]
     });
 };
@@ -690,51 +823,158 @@ const spawnRocketTrail = (rocket: Rocket) => {
     }
 };
 
-const explodeRocket = (rocket: Rocket) => {
+const explodePeony = (rocket: Rocket) => {
     const shellCount = Math.floor((rocket.isFinale ? 210 : 116) * rocket.power);
     const ringOffset = randomBetween(0, TWO_PI);
 
     for (let particleIndex = 0; particleIndex < shellCount; particleIndex += 1) {
-        const ringRatio = particleIndex / shellCount;
-        const angle = ringRatio * TWO_PI + ringOffset + randomBetween(-0.035, 0.035);
-        const ringSpeed = randomBetween(80, rocket.isFinale ? 345 : 255) * rocket.power;
+        const angle = (particleIndex / shellCount) * TWO_PI + ringOffset + randomBetween(-0.035, 0.035);
+        const speed = randomBetween(80, rocket.isFinale ? 345 : 255) * rocket.power;
         const secondaryRing = particleIndex % 5 === 0 ? 0.58 : 1;
-        pushParticle({
-            x: rocket.x,
-            y: rocket.y,
-            vx: Math.cos(angle) * ringSpeed * secondaryRing,
-            vy: Math.sin(angle) * ringSpeed * secondaryRing,
-            age: 0,
-            life: randomBetween(1.0, rocket.isFinale ? 2.45 : 1.9),
-            size: randomBetween(1.2, rocket.isFinale ? 4.9 : 3.8),
+        spawnBurstParticle({ x: rocket.x, y: rocket.y }, angle, speed * secondaryRing, {
             hue: rocket.hue + randomBetween(-34, 34),
-            saturation: randomBetween(82, 100),
-            lightness: randomBetween(54, 76),
-            gravity: randomBetween(62, 118),
-            drag: randomBetween(0.965, 0.985),
-            kind: "shell"
+            life: [1.0, rocket.isFinale ? 2.45 : 1.9],
+            size: [1.2, rocket.isFinale ? 4.9 : 3.8]
+        });
+    }
+};
+
+const explodeRing = (rocket: Rocket) => {
+    const shellCount = Math.floor((rocket.isFinale ? 180 : 96) * rocket.power);
+    const ringOffset = randomBetween(0, TWO_PI);
+    const point = { x: rocket.x, y: rocket.y };
+
+    for (let particleIndex = 0; particleIndex < shellCount; particleIndex += 1) {
+        const angle = (particleIndex / shellCount) * TWO_PI + ringOffset;
+        const speed = randomBetween(170, rocket.isFinale ? 315 : 255) * rocket.power;
+        spawnBurstParticle(point, angle + randomBetween(-0.015, 0.015), speed, {
+            hue: rocket.hue + randomBetween(-18, 18),
+            life: [1.05, 1.9],
+            size: [1.0, 3.4],
+            gravity: [34, 78],
+            drag: [0.972, 0.988]
         });
     }
 
-    const crackleCount = Math.floor((rocket.isFinale ? 70 : 28) * rocket.power);
+    for (let particleIndex = 0; particleIndex < shellCount * 0.44; particleIndex += 1) {
+        const angle = (particleIndex / (shellCount * 0.44)) * TWO_PI - ringOffset;
+        spawnBurstParticle(point, angle, randomBetween(82, 128) * rocket.power, {
+            hue: rocket.hue + 150 + randomBetween(-16, 16),
+            life: [0.9, 1.45],
+            size: [0.8, 2.5],
+            gravity: [32, 72],
+            drag: [0.972, 0.988]
+        });
+    }
+};
+
+const explodeWillow = (rocket: Rocket) => {
+    const shellCount = Math.floor((rocket.isFinale ? 170 : 92) * rocket.power);
+    const point = { x: rocket.x, y: rocket.y };
+
+    for (let particleIndex = 0; particleIndex < shellCount; particleIndex += 1) {
+        const angle = randomBetween(-Math.PI * 0.96, -Math.PI * 0.04);
+        const speed = randomBetween(92, rocket.isFinale ? 285 : 218) * rocket.power;
+        spawnBurstParticle(point, angle, speed, {
+            hue: randomBetween(38, 54),
+            saturation: [58, 88],
+            lightness: [56, 82],
+            life: [1.7, rocket.isFinale ? 3.3 : 2.55],
+            size: [1.0, rocket.isFinale ? 4.4 : 3.4],
+            gravity: [148, 228],
+            drag: [0.982, 0.994],
+            kind: "willow"
+        });
+    }
+};
+
+const explodePalm = (rocket: Rocket) => {
+    const armCount = rocket.isFinale ? 9 : 7;
+    const point = { x: rocket.x, y: rocket.y };
+
+    for (let armIndex = 0; armIndex < armCount; armIndex += 1) {
+        const armAngle = -Math.PI + (armIndex / (armCount - 1)) * Math.PI + randomBetween(-0.08, 0.08);
+        const armParticles = Math.floor((rocket.isFinale ? 26 : 18) * rocket.power);
+        for (let particleIndex = 0; particleIndex < armParticles; particleIndex += 1) {
+            const speed = randomBetween(80, 275) * rocket.power * (0.65 + particleIndex / armParticles);
+            spawnBurstParticle(point, armAngle + randomBetween(-0.07, 0.07), speed, {
+                hue: randomBetween(24, 48),
+                saturation: [84, 100],
+                lightness: [54, 78],
+                life: [1.1, 2.25],
+                size: [1.0, 3.8],
+                gravity: [96, 170],
+                drag: [0.966, 0.986],
+                kind: particleIndex % 3 === 0 ? "crackle" : "shell"
+            });
+        }
+    }
+};
+
+const explodeStrobe = (rocket: Rocket) => {
+    const shellCount = Math.floor((rocket.isFinale ? 190 : 110) * rocket.power);
+    const point = { x: rocket.x, y: rocket.y };
+
+    for (let particleIndex = 0; particleIndex < shellCount; particleIndex += 1) {
+        const angle = randomBetween(0, TWO_PI);
+        const speed = randomBetween(74, rocket.isFinale ? 320 : 240) * rocket.power;
+        spawnBurstParticle(point, angle, speed, {
+            hue: particleIndex % 2 === 0 ? rocket.hue : rocket.hue + 190,
+            saturation: [40, 100],
+            lightness: [70, 96],
+            life: [0.8, 1.8],
+            size: [0.8, 3.2],
+            gravity: [34, 95],
+            drag: [0.95, 0.982],
+            kind: "strobe"
+        });
+    }
+};
+
+const explodeChrysanthemum = (rocket: Rocket) => {
+    explodePeony(rocket);
+    const crackleCount = Math.floor((rocket.isFinale ? 120 : 54) * rocket.power);
+    const point = { x: rocket.x, y: rocket.y };
+
     for (let crackleIndex = 0; crackleIndex < crackleCount; crackleIndex += 1) {
         const angle = randomBetween(0, TWO_PI);
-        const speed = randomBetween(120, rocket.isFinale ? 420 : 320) * rocket.power;
-        pushParticle({
-            x: rocket.x,
-            y: rocket.y,
-            vx: Math.cos(angle) * speed,
-            vy: Math.sin(angle) * speed,
-            age: 0,
-            life: randomBetween(0.42, 1.2),
-            size: randomBetween(0.8, 2.4),
+        const speed = randomBetween(120, rocket.isFinale ? 460 : 340) * rocket.power;
+        spawnBurstParticle(point, angle, speed, {
             hue: randomBetween(42, 58),
-            saturation: randomBetween(20, 55),
-            lightness: randomBetween(78, 96),
-            gravity: randomBetween(90, 150),
-            drag: randomBetween(0.94, 0.975),
+            saturation: [20, 55],
+            lightness: [78, 96],
+            life: [0.42, 1.2],
+            size: [0.8, 2.4],
+            gravity: [90, 150],
+            drag: [0.94, 0.975],
             kind: "crackle"
         });
+    }
+};
+
+const explodeRocket = (rocket: Rocket) => {
+    pushFlash({
+        x: rocket.x,
+        y: rocket.y,
+        age: 0,
+        life: rocket.isFinale ? 0.5 : 0.34,
+        radius: randomBetween(120, rocket.isFinale ? 280 : 190) * rocket.power,
+        hue: rocket.hue,
+        alpha: rocket.isFinale ? 0.58 : 0.42
+    });
+
+    if (rocket.pattern === "ring") {
+        explodeRing(rocket);
+    } else if (rocket.pattern === "willow") {
+        explodeWillow(rocket);
+    } else if (rocket.pattern === "palm") {
+        explodePalm(rocket);
+    } else if (rocket.pattern === "strobe") {
+        explodeStrobe(rocket);
+    } else if (rocket.pattern === "chrysanthemum") {
+        explodeChrysanthemum(rocket);
+    } else {
+        explodePeony(rocket);
     }
 };
 
@@ -786,6 +1026,13 @@ const updateParticles = (deltaSeconds: number) => {
     particles = liveParticles;
 };
 
+const updateFlashes = (deltaSeconds: number) => {
+    flashes = flashes.filter((flash) => {
+        flash.age += deltaSeconds;
+        return flash.age < flash.life;
+    });
+};
+
 const drawRockets = () => {
     fireworksContext.lineCap = "round";
     rockets.forEach((rocket) => {
@@ -816,10 +1063,17 @@ const drawParticles = () => {
     fireworksContext.lineCap = "round";
 
     particles.forEach((particle) => {
+        if (particle.kind === "smoke") {
+            return;
+        }
+
         const lifeRatio = clamp(particle.age / particle.life, 0, 1);
-        const alpha = (1 - lifeRatio) ** (particle.kind === "fuse" ? 1.1 : 1.55);
-        const tailScale = particle.kind === "shell" || particle.kind === "crackle" ? 0.046 : 0.028;
-        const strokeAlpha = alpha * (particle.kind === "fuse" ? 0.88 : 0.62);
+        const strobeAlpha = particle.kind === "strobe"
+            ? Math.max(0.12, Math.sin(particle.age * 58 + particle.x * 0.13) > 0 ? 1 : 0.18)
+            : 1;
+        const alpha = ((1 - lifeRatio) ** (particle.kind === "fuse" || particle.kind === "ember" ? 1.1 : 1.55)) * strobeAlpha;
+        const tailScale = particle.kind === "shell" || particle.kind === "crackle" || particle.kind === "willow" || particle.kind === "strobe" ? 0.046 : 0.028;
+        const strokeAlpha = alpha * (particle.kind === "fuse" || particle.kind === "ember" ? 0.88 : 0.62);
 
         fireworksContext.strokeStyle = `hsla(${particle.hue}, ${particle.saturation}%, ${particle.lightness}%, ${strokeAlpha})`;
         fireworksContext.lineWidth = Math.max(0.8, particle.size * (1 - lifeRatio * 0.35));
@@ -841,6 +1095,55 @@ const drawParticles = () => {
         )}%, ${alpha})`;
         fireworksContext.beginPath();
         fireworksContext.arc(particle.x, particle.y, particle.size * (1 - lifeRatio * 0.55), 0, TWO_PI);
+        fireworksContext.fill();
+    });
+};
+
+const drawSmokeParticles = () => {
+    fireworksContext.save();
+    fireworksContext.globalCompositeOperation = "source-over";
+    fireworksContext.filter = "blur(5px)";
+
+    particles.forEach((particle) => {
+        if (particle.kind !== "smoke") {
+            return;
+        }
+
+        const lifeRatio = clamp(particle.age / particle.life, 0, 1);
+        const alpha = 0.16 * (1 - lifeRatio) ** 1.8;
+        const radius = particle.size * (1 + lifeRatio * 1.7);
+        const gradient = fireworksContext.createRadialGradient(
+            particle.x,
+            particle.y,
+            0,
+            particle.x,
+            particle.y,
+            radius
+        );
+        gradient.addColorStop(0, `hsla(${particle.hue}, ${particle.saturation}%, ${particle.lightness + 8}%, ${alpha * 1.35})`);
+        gradient.addColorStop(0.48, `hsla(${particle.hue + 18}, ${Math.max(18, particle.saturation - 12)}%, ${particle.lightness}%, ${alpha * 0.72})`);
+        gradient.addColorStop(1, `hsla(${particle.hue + 36}, ${Math.max(10, particle.saturation - 22)}%, ${particle.lightness - 8}%, 0)`);
+        fireworksContext.fillStyle = gradient;
+        fireworksContext.beginPath();
+        fireworksContext.arc(particle.x, particle.y, radius, 0, TWO_PI);
+        fireworksContext.fill();
+    });
+
+    fireworksContext.restore();
+};
+
+const drawFlashes = () => {
+    flashes.forEach((flash) => {
+        const lifeRatio = clamp(flash.age / flash.life, 0, 1);
+        const radius = flash.radius * (0.35 + lifeRatio * 0.82);
+        const alpha = flash.alpha * (1 - lifeRatio) ** 1.8;
+        const gradient = fireworksContext.createRadialGradient(flash.x, flash.y, 0, flash.x, flash.y, radius);
+        gradient.addColorStop(0, `hsla(${flash.hue}, 100%, 88%, ${alpha})`);
+        gradient.addColorStop(0.28, `hsla(${flash.hue}, 100%, 64%, ${alpha * 0.42})`);
+        gradient.addColorStop(1, `hsla(${flash.hue}, 100%, 52%, 0)`);
+        fireworksContext.fillStyle = gradient;
+        fireworksContext.beginPath();
+        fireworksContext.arc(flash.x, flash.y, radius, 0, TWO_PI);
         fireworksContext.fill();
     });
 };
@@ -872,8 +1175,35 @@ const updateFuse = (now: number, deltaSeconds: number) => {
     const progress = clamp(elapsedMs / scene.durationMs, 0, 1);
     const traveledDistance = scene.totalLength * progress;
     const pose = getPoseAtOverallDistance(scene.preparedPath, traveledDistance);
-    const burnedPathD = buildPathDFromOverallDistanceRange(scene.preparedPath, 0, traveledDistance);
+    const finalCoolProgress = progress >= 1
+        ? clamp((elapsedMs - scene.durationMs) / FINAL_COOL_MS, 0, 1)
+        : 0;
+    const hotDistance = HOT_BURN_DISTANCE * (1 - finalCoolProgress);
+    const coolingDistance = COOLING_BURN_DISTANCE * (1 - finalCoolProgress);
+    const spentEndDistance = Math.max(0, traveledDistance - hotDistance - coolingDistance);
+    const coolingStartDistance = spentEndDistance;
+    const coolingEndDistance = Math.max(spentEndDistance, traveledDistance - hotDistance);
+    const hotStartDistance = coolingEndDistance;
+    const hotEndDistance = traveledDistance;
+    const spentPathD = buildPathDFromOverallDistanceRange(scene.preparedPath, 0, spentEndDistance);
+    const coolingPathD = buildPathDFromOverallDistanceRange(
+        scene.preparedPath,
+        coolingStartDistance,
+        coolingEndDistance
+    );
+    const burnedPathD = buildPathDFromOverallDistanceRange(
+        scene.preparedPath,
+        hotStartDistance,
+        hotEndDistance
+    );
 
+    spentFusePathEl?.setAttribute("d", progress >= 1 && finalCoolProgress >= 1
+        ? buildPathDFromOverallDistanceRange(scene.preparedPath, 0, scene.totalLength)
+        : spentPathD);
+    coolingFusePathEl?.setAttribute("d", finalCoolProgress >= 1 ? "" : coolingPathD);
+    smoulderFusePathEl?.setAttribute("d", progress >= 1 && finalCoolProgress >= 1
+        ? buildPathDFromOverallDistanceRange(scene.preparedPath, 0, scene.totalLength)
+        : spentPathD);
     burnedPathEl?.setAttribute("d", burnedPathD);
     burnedGlowPathEl?.setAttribute("d", burnedPathD);
 
@@ -889,6 +1219,7 @@ const updateFuse = (now: number, deltaSeconds: number) => {
     const canvasPose = svgPoseToCanvas(pose.point, pose.tangent);
     if (canvasPose && progress < 1) {
         spawnFuseSparks(canvasPose.point, canvasPose.tangent, deltaSeconds);
+        spawnFuseSmoke(canvasPose.point, canvasPose.tangent, deltaSeconds);
     }
 
     scene.waypoints.forEach((waypoint) => {
@@ -907,8 +1238,11 @@ const renderCanvasFrame = (now: number, deltaSeconds: number) => {
     updatePendingLaunches(deltaSeconds);
     updateRockets(deltaSeconds);
     updateParticles(deltaSeconds);
+    updateFlashes(deltaSeconds);
 
+    drawSmokeParticles();
     fireworksContext.globalCompositeOperation = "lighter";
+    drawFlashes();
     drawRockets();
     drawParticles();
     needsHardCanvasClear = false;
@@ -936,6 +1270,7 @@ const buildFuseMarkup = (scene: Scene): string => {
         <path class="fireworks-app__fuse-core" d="${pathD}"></path>
         <path class="fireworks-app__fuse-braid fireworks-app__fuse-braid--warm" d="${pathD}"></path>
         <path class="fireworks-app__fuse-braid fireworks-app__fuse-braid--cool" d="${pathD}"></path>
+                <path class="fireworks-app__fuse-thread fireworks-app__fuse-thread--fine" d="${pathD}"></path>
       `
         )
         .join("");
@@ -970,11 +1305,32 @@ const buildFuseMarkup = (scene: Scene): string => {
           <feMergeNode in="SourceGraphic"></feMergeNode>
         </feMerge>
       </filter>
+            <filter id="fireworks-rope-texture" x="-12%" y="-12%" width="124%" height="124%">
+                <feTurbulence type="fractalNoise" baseFrequency="0.8 0.18" numOctaves="3" seed="8" result="ropeNoise"></feTurbulence>
+                <feDisplacementMap in="SourceGraphic" in2="ropeNoise" scale="2.1" xChannelSelector="R" yChannelSelector="G"></feDisplacementMap>
+            </filter>
+            <filter id="fireworks-smoulder-glow" x="-45%" y="-45%" width="190%" height="190%">
+                <feTurbulence type="fractalNoise" baseFrequency="0.035 0.22" numOctaves="3" seed="14" result="smoulderNoise"></feTurbulence>
+                <feDisplacementMap in="SourceGraphic" in2="smoulderNoise" scale="3.4" result="warpedSmoulder"></feDisplacementMap>
+                <feGaussianBlur in="warpedSmoulder" stdDeviation="4.6" result="smoulderBlur"></feGaussianBlur>
+                <feMerge>
+                    <feMergeNode in="smoulderBlur"></feMergeNode>
+                    <feMergeNode in="warpedSmoulder"></feMergeNode>
+                    <feMergeNode in="SourceGraphic"></feMergeNode>
+                </feMerge>
+            </filter>
       <radialGradient id="fireworks-ember-gradient" cx="50%" cy="50%" r="50%">
         <stop offset="0" stop-color="#fff8b8"></stop>
         <stop offset="0.36" stop-color="#ffb229"></stop>
         <stop offset="1" stop-color="#ff3b1f" stop-opacity="0"></stop>
       </radialGradient>
+            <linearGradient id="fireworks-smoulder-gradient" x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0" stop-color="#ff4b24" stop-opacity="0.16"></stop>
+                <stop offset="0.28" stop-color="#ffb43e" stop-opacity="0.86"></stop>
+                <stop offset="0.52" stop-color="#ff2c8a" stop-opacity="0.34"></stop>
+                <stop offset="0.72" stop-color="#f9f1df" stop-opacity="0.62"></stop>
+                <stop offset="1" stop-color="#ff5a22" stop-opacity="0.18"></stop>
+            </linearGradient>
       <linearGradient id="fireworks-burn-gradient" x1="0" y1="0" x2="1" y2="0">
         <stop offset="0" stop-color="#3c2315"></stop>
         <stop offset="0.68" stop-color="#f06920"></stop>
@@ -1000,6 +1356,9 @@ const buildFuseMarkup = (scene: Scene): string => {
       ></line>
     </g>
     <g class="fireworks-app__fuse-layer">${fusePaths}</g>
+    <path class="fireworks-app__spent-fuse" id="fireworks-spent-fuse" d=""></path>
+    <path class="fireworks-app__cooling-fuse" id="fireworks-cooling-fuse" d=""></path>
+    <path class="fireworks-app__smoulder-fuse" id="fireworks-smoulder-fuse" d=""></path>
     <path class="fireworks-app__burned-glow" id="fireworks-burned-glow" d=""></path>
     <path class="fireworks-app__burned-path" id="fireworks-burned-path" d=""></path>
     <g class="fireworks-app__waypoints">${waypointMarkup}</g>
@@ -1023,6 +1382,7 @@ const resetVisualEffects = () => {
     particles = [];
     rockets = [];
     pendingLaunches = [];
+    flashes = [];
     needsHardCanvasClear = true;
 };
 
@@ -1035,6 +1395,9 @@ const renderWord = (word: string) => {
     if (currentWord.length === 0) {
         currentScene = null;
         fireworksSvg.innerHTML = "";
+        spentFusePathEl = null;
+        coolingFusePathEl = null;
+        smoulderFusePathEl = null;
         burnedPathEl = null;
         burnedGlowPathEl = null;
         emberEl = null;
@@ -1067,6 +1430,9 @@ const renderWord = (word: string) => {
         currentScene = scene;
         fireworksSvg.setAttribute("viewBox", `0 0 ${scene.width} ${scene.height}`);
         fireworksSvg.innerHTML = buildFuseMarkup(scene);
+        spentFusePathEl = fireworksSvg.querySelector<SVGPathElement>("#fireworks-spent-fuse");
+        coolingFusePathEl = fireworksSvg.querySelector<SVGPathElement>("#fireworks-cooling-fuse");
+        smoulderFusePathEl = fireworksSvg.querySelector<SVGPathElement>("#fireworks-smoulder-fuse");
         burnedPathEl = fireworksSvg.querySelector<SVGPathElement>("#fireworks-burned-path");
         burnedGlowPathEl = fireworksSvg.querySelector<SVGPathElement>("#fireworks-burned-glow");
         emberEl = fireworksSvg.querySelector<SVGGElement>("#fireworks-ember");
@@ -1075,6 +1441,9 @@ const renderWord = (word: string) => {
     } catch {
         currentScene = null;
         fireworksSvg.innerHTML = "";
+        spentFusePathEl = null;
+        coolingFusePathEl = null;
+        smoulderFusePathEl = null;
         burnedPathEl = null;
         burnedGlowPathEl = null;
         emberEl = null;

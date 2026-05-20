@@ -247,6 +247,10 @@ body {
 .fireworks-app__fuse-shadow,
 .fireworks-app__fuse-core,
 .fireworks-app__fuse-braid,
+.fireworks-app__fuse-thread,
+.fireworks-app__spent-fuse,
+.fireworks-app__cooling-fuse,
+.fireworks-app__smoulder-fuse,
 .fireworks-app__burned-path,
 .fireworks-app__burned-glow {
   fill: none;
@@ -255,43 +259,83 @@ body {
 }
 
 .fireworks-app__fuse-shadow {
-  stroke: rgba(0, 0, 0, 0.46);
-  stroke-width: 72;
-  filter: blur(3px);
+  stroke: rgba(0, 0, 0, 0.54);
+  stroke-width: 76;
+  filter: blur(4px);
 }
 
 .fireworks-app__fuse-core {
-  stroke: var(--fireworks-coal);
-  stroke-width: 52;
+  stroke: #f8f2df;
+  stroke-width: 54;
+  filter: url("#fireworks-rope-texture") drop-shadow(0 0 12px rgba(255, 243, 202, 0.18));
 }
 
 .fireworks-app__fuse-braid {
   stroke-width: 48;
-  stroke-dasharray: 24 20;
-  stroke-linecap: butt;
-  opacity: 0.84;
+  stroke-dasharray: 14 18;
+  stroke-linecap: round;
+  opacity: 0.82;
 }
 
 .fireworks-app__fuse-braid--warm {
-  stroke: var(--fireworks-rope);
+  stroke: rgba(255, 255, 255, 0.58);
   stroke-dashoffset: 0;
 }
 
 .fireworks-app__fuse-braid--cool {
-  stroke: rgba(150, 109, 76, 0.72);
-  stroke-dashoffset: 22;
+  stroke: rgba(117, 102, 80, 0.42);
+  stroke-dashoffset: 15;
+}
+
+.fireworks-app__fuse-thread {
+  stroke: rgba(255, 255, 255, 0.5);
+  stroke-width: 8;
+  stroke-dasharray: 2 11;
+  stroke-linecap: round;
+  opacity: 0.7;
+}
+
+.fireworks-app__fuse-thread--fine {
+  stroke-dashoffset: 6;
+}
+
+.fireworks-app__spent-fuse {
+  stroke: #17110d;
+  stroke-width: 56;
+  opacity: 0.96;
+  filter:
+    drop-shadow(0 0 8px rgba(0, 0, 0, 0.72))
+    drop-shadow(0 0 9px rgba(255, 88, 28, 0.18));
+}
+
+.fireworks-app__cooling-fuse {
+  stroke: rgba(118, 28, 14, 0.88);
+  stroke-width: 49;
+  filter: drop-shadow(0 0 13px rgba(255, 68, 27, 0.32));
+}
+
+.fireworks-app__smoulder-fuse {
+  stroke: url("#fireworks-smoulder-gradient");
+  stroke-width: 26;
+  stroke-dasharray: 2 18 36 28 4 22;
+  stroke-linecap: round;
+  opacity: 0.72;
+  filter: url("#fireworks-smoulder-glow") drop-shadow(0 0 14px rgba(255, 88, 30, 0.34));
+  animation:
+    fireworks-smoulder-flow 2.2s linear infinite,
+    fireworks-smoulder-pulse 1.35s ease-in-out infinite alternate;
 }
 
 .fireworks-app__burned-glow {
-  stroke: rgba(255, 89, 24, 0.64);
-  stroke-width: 78;
+  stroke: rgba(255, 98, 24, 0.78);
+  stroke-width: 88;
   filter: url("#fireworks-fuse-glow");
-  opacity: 0.86;
+  opacity: 0.92;
 }
 
 .fireworks-app__burned-path {
   stroke: url("#fireworks-burn-gradient");
-  stroke-width: 40;
+  stroke-width: 44;
   filter: url("#fireworks-fuse-glow");
 }
 
@@ -374,6 +418,22 @@ body {
   50% {
     transform: scale(1.14);
     opacity: 0.92;
+  }
+}
+
+@keyframes fireworks-smoulder-flow {
+  to {
+    stroke-dashoffset: -110;
+  }
+}
+
+@keyframes fireworks-smoulder-pulse {
+  from {
+    opacity: 0.42;
+  }
+
+  to {
+    opacity: 0.9;
   }
 }
 
