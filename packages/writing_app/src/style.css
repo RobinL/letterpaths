@@ -122,6 +122,22 @@ body {
 
 .fireworks-app__topbar {
   position: absolute;
+.fireworks-app__perf {
+  position: absolute;
+  right: 18px;
+  bottom: 18px;
+  z-index: 3;
+  min-width: 230px;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 224, 154, 0.22);
+  border-radius: 8px;
+  background: rgba(6, 8, 18, 0.66);
+  color: rgba(255, 239, 202, 0.88);
+  font: 11px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  white-space: pre;
+  pointer-events: none;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.26);
+}
   top: 16px;
   left: 16px;
   right: 16px;
@@ -316,14 +332,17 @@ body {
 
 .fireworks-app__smoulder-fuse {
   stroke: url("#fireworks-smoulder-gradient");
-  stroke-width: 26;
-  stroke-dasharray: 2 18 36 28 4 22;
+  stroke-width: 31;
+  stroke-dasharray: 3 14 8 28 42 18 2 22;
   stroke-linecap: round;
-  opacity: 0.72;
-  filter: url("#fireworks-smoulder-glow") drop-shadow(0 0 14px rgba(255, 88, 30, 0.34));
+  mix-blend-mode: screen;
+  opacity: 0.78;
+  filter:
+    drop-shadow(0 0 18px rgba(255, 88, 30, 0.46))
+    drop-shadow(0 0 34px rgba(255, 26, 94, 0.16));
   animation:
-    fireworks-smoulder-flow 2.2s linear infinite,
-    fireworks-smoulder-pulse 1.35s ease-in-out infinite alternate;
+    fireworks-smoulder-flow 1.75s linear infinite,
+    fireworks-smoulder-pulse 1.08s ease-in-out infinite alternate;
 }
 
 .fireworks-app__burned-glow {
@@ -331,6 +350,7 @@ body {
   stroke-width: 88;
   filter: url("#fireworks-fuse-glow");
   opacity: 0.92;
+  animation: fireworks-hot-burn-flicker 0.24s steps(2, end) infinite;
 }
 
 .fireworks-app__burned-path {
@@ -341,23 +361,50 @@ body {
 
 .fireworks-app__ember {
   pointer-events: none;
-  filter: url("#fireworks-fuse-glow");
+  filter:
+    url("#fireworks-ember-head")
+    drop-shadow(0 0 26px rgba(255, 80, 26, 0.72))
+    drop-shadow(0 0 52px rgba(255, 205, 72, 0.18));
+  mix-blend-mode: screen;
   transition: opacity 0.22s ease;
+}
+
+.fireworks-app__ember-heat {
+  fill: url("#fireworks-ember-gradient");
+  opacity: 0.36;
+  animation: fireworks-ember-heat 0.46s ease-in-out infinite alternate;
 }
 
 .fireworks-app__ember-aura {
   fill: url("#fireworks-ember-gradient");
-  opacity: 0.86;
+  opacity: 0.68;
   animation: fireworks-ember-breathe 0.32s ease-in-out infinite alternate;
 }
 
+.fireworks-app__ember-coal {
+  fill: url("#fireworks-coal-gradient");
+  opacity: 0.96;
+  transform-origin: center;
+  animation: fireworks-ember-coal 0.58s ease-in-out infinite alternate;
+}
+
 .fireworks-app__ember-flame {
-  fill: #ff9d21;
+  fill: url("#fireworks-flame-gradient");
   opacity: 0.95;
+  transform-origin: center;
+  animation: fireworks-ember-flame 0.18s ease-in-out infinite alternate;
+}
+
+.fireworks-app__ember-flame-core {
+  fill: #fff7c6;
+  opacity: 0.9;
+  transform-origin: center;
+  animation: fireworks-ember-core-flicker 0.2s ease-in-out infinite alternate;
 }
 
 .fireworks-app__ember-core {
   fill: #fff6bc;
+  opacity: 0.96;
 }
 
 .fireworks-app__waypoint {
@@ -408,6 +455,52 @@ body {
   }
 }
 
+@keyframes fireworks-ember-heat {
+  from {
+    transform: scale(0.78);
+    opacity: 0.2;
+  }
+
+  to {
+    transform: scale(1.18);
+    opacity: 0.44;
+  }
+}
+
+@keyframes fireworks-ember-coal {
+  from {
+    transform: scaleX(0.88) scaleY(1.08) rotate(-2deg);
+  }
+
+  to {
+    transform: scaleX(1.08) scaleY(0.92) rotate(2deg);
+  }
+}
+
+@keyframes fireworks-ember-flame {
+  from {
+    transform: translateX(-2px) scaleX(0.88) scaleY(1.16) rotate(-4deg);
+    opacity: 0.72;
+  }
+
+  to {
+    transform: translateX(2px) scaleX(1.12) scaleY(0.9) rotate(3deg);
+    opacity: 1;
+  }
+}
+
+@keyframes fireworks-ember-core-flicker {
+  from {
+    transform: scale(0.74);
+    opacity: 0.68;
+  }
+
+  to {
+    transform: scale(1.18);
+    opacity: 1;
+  }
+}
+
 @keyframes fireworks-waypoint-pulse {
   0%,
   100% {
@@ -429,11 +522,22 @@ body {
 
 @keyframes fireworks-smoulder-pulse {
   from {
-    opacity: 0.42;
+    opacity: 0.46;
   }
 
   to {
-    opacity: 0.9;
+    opacity: 0.96;
+  }
+}
+
+@keyframes fireworks-hot-burn-flicker {
+  0%,
+  100% {
+    opacity: 0.62;
+  }
+
+  50% {
+    opacity: 0.96;
   }
 }
 

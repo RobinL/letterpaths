@@ -21,7 +21,7 @@ const FUSE_SAMPLE_RATE = 5;
 const FUSE_SPEED = 430;
 const MIN_FUSE_DURATION_MS = 5600;
 const MAX_FUSE_DURATION_MS = 19000;
-const MAX_PARTICLES = 5200;
+const MAX_PARTICLES = 4200;
 const MAX_ROCKETS = 34;
 const MAX_WAYPOINTS = 18;
 const HARD_CLEAR_ALPHA = 1;
@@ -29,6 +29,11 @@ const TRAIL_CLEAR_ALPHA = 0.24;
 const HOT_BURN_DISTANCE = 150;
 const COOLING_BURN_DISTANCE = 620;
 const FINAL_COOL_MS = 2800;
+const SMOULDER_SAMPLE_SPACING = 46;
+const SMOULDER_MAX_SAMPLES = 84;
+const PERF_REPORT_INTERVAL_MS = 500;
+const SVG_PATH_UPDATE_INTERVAL_MS = 34;
+const SVG_PATH_UPDATE_DISTANCE = 12;
 const TWO_PI = Math.PI * 2;
 
 type CanvasPoint = Point;
@@ -41,17 +46,41 @@ type Waypoint = {
     element: SVGGElement | null;
 };
 
+type SmoulderSample = {
+    distance: number;
+    x: number;
+    y: number;
+    tangentX: number;
+    tangentY: number;
+    normalX: number;
+    normalY: number;
+    emberNoise: number;
+    pocketNoise: number;
+};
+
+type SmoulderSampleCache = {
+    width: number;
+    height: number;
+    devicePixelRatio: number;
+    samples: SmoulderSample[];
+};
+
 type Scene = {
     path: WritingPath;
     preparedPath: PreparedTracingPath;
     totalLength: number;
     durationMs: number;
     startedAt: number;
+    fullPathD: string;
     width: number;
     height: number;
     offsetY: number;
     waypoints: Waypoint[];
     completed: boolean;
+    smoulderSampleCache: SmoulderSampleCache | null;
+    lastSvgPathUpdateAt: number;
+    lastSvgPathDistance: number;
+    lastSvgPathCoolProgress: number;
 };
 
 type ParticleKind = "fuse" | "ember" | "rocket" | "shell" | "crackle" | "smoke" | "willow" | "strobe";
@@ -115,6 +144,18 @@ type Star = {
     speed: number;
 };
 
+type PerfSection = "updateFuse" | "backdrop" | "updates" | "smoke" | "smoulder" | "effects" | "particles";
+
+type PerfStats = {
+    frames: number;
+    lastReportAt: number;
+    totalFrameMs: number;
+    maxFrameMs: number;
+    droppedFrames: number;
+    sections: Record<PerfSection, number>;
+    smoulderSamples: number;
+};
+
 const app = document.querySelector<HTMLDivElement>("#app");
 
 if (!app) {
@@ -152,6 +193,7 @@ app.innerHTML = `
           Replay
         </button>
       </header>
+            <output class="fireworks-app__perf" id="fireworks-perf" aria-live="off"></output>
       <p class="fireworks-app__status" id="fireworks-status" aria-live="polite" hidden></p>
     </main>
   </div>
@@ -162,8 +204,9 @@ const replayButton = document.querySelector<HTMLButtonElement>("#fireworks-repla
 const fireworksSvg = document.querySelector<SVGSVGElement>("#fireworks-svg");
 const fireworksCanvas = document.querySelector<HTMLCanvasElement>("#fireworks-canvas");
 const statusEl = document.querySelector<HTMLParagraphElement>("#fireworks-status");
+const perfEl = document.querySelector<HTMLOutputElement>("#fireworks-perf");
 
-if (!wordInput || !replayButton || !fireworksSvg || !fireworksCanvas || !statusEl) {
+if (!wordInput || !replayButton || !fireworksSvg || !fireworksCanvas || !statusEl || !perfEl) {
     throw new Error("Missing elements for fireworks tracing app.");
 }
 
@@ -193,12 +236,94 @@ let pendingLaunches: PendingLaunch[] = [];
 let flashes: Flash[] = [];
 let stars: Star[] = [];
 let needsHardCanvasClear = true;
+let smoulderQuality = 1;
+let perfStats: PerfStats = {
+    frames: 0,
+    lastReportAt: performance.now(),
+    totalFrameMs: 0,
+    maxFrameMs: 0,
+    droppedFrames: 0,
+    sections: {
+        updateFuse: 0,
+        backdrop: 0,
+        updates: 0,
+        smoke: 0,
+        smoulder: 0,
+        effects: 0,
+        particles: 0
+    },
+    smoulderSamples: 0
+};
 
 const clamp = (value: number, min: number, max: number): number =>
     Math.min(max, Math.max(min, value));
 
 const randomBetween = (min: number, max: number): number =>
     min + Math.random() * (max - min);
+
+const createPerfSections = (): Record<PerfSection, number> => ({
+    updateFuse: 0,
+    backdrop: 0,
+    updates: 0,
+    smoke: 0,
+    smoulder: 0,
+    effects: 0,
+    particles: 0
+});
+
+const recordPerfSection = (section: PerfSection, startedAt: number) => {
+    perfStats.sections[section] += performance.now() - startedAt;
+};
+
+const updatePerfPanel = (now: number, frameMs: number) => {
+    perfStats.frames += 1;
+    perfStats.totalFrameMs += frameMs;
+    perfStats.maxFrameMs = Math.max(perfStats.maxFrameMs, frameMs);
+    if (frameMs > 24) {
+        perfStats.droppedFrames += 1;
+    }
+
+    if (now - perfStats.lastReportAt < PERF_REPORT_INTERVAL_MS) {
+        return;
+    }
+
+    const windowSeconds = Math.max((now - perfStats.lastReportAt) / 1000, 0.001);
+    const averageFrameMs = perfStats.totalFrameMs / Math.max(perfStats.frames, 1);
+    const averageSectionMs = (section: PerfSection) =>
+        perfStats.sections[section] / Math.max(perfStats.frames, 1);
+    const averageSmoulderMs = averageSectionMs("smoulder");
+    const smokeParticles = particles.filter((particle) => particle.kind === "smoke").length;
+
+    if (averageFrameMs > 22 || averageSmoulderMs > 5) {
+        smoulderQuality = Math.max(0.5, smoulderQuality - 0.12);
+    } else if (averageFrameMs < 15.5 && averageSmoulderMs < 2.6) {
+        smoulderQuality = Math.min(1, smoulderQuality + 0.04);
+    }
+
+    perfEl.textContent = [
+        `${Math.round(perfStats.frames / windowSeconds)} fps`,
+        `frame ${averageFrameMs.toFixed(1)}ms max ${perfStats.maxFrameMs.toFixed(1)}ms drops ${perfStats.droppedFrames}`,
+        `fuse ${averageSectionMs("updateFuse").toFixed(1)}ms smoke ${averageSectionMs("smoke").toFixed(1)}ms smoulder ${averageSmoulderMs.toFixed(1)}ms`,
+        `effects ${averageSectionMs("effects").toFixed(1)}ms particles ${averageSectionMs("particles").toFixed(1)}ms`,
+        `objects ${particles.length} smoke ${smokeParticles} rockets ${rockets.length} smoulder ${perfStats.smoulderSamples}`,
+        `quality ${Math.round(smoulderQuality * 100)}%`
+    ].join("\n");
+
+    perfStats = {
+        frames: 0,
+        lastReportAt: now,
+        totalFrameMs: 0,
+        maxFrameMs: 0,
+        droppedFrames: 0,
+        sections: createPerfSections(),
+        smoulderSamples: perfStats.smoulderSamples
+    };
+};
+
+const noiseUnit = (seed: number): number => {
+    const noise = Math.sin(seed * 12.9898) * 43758.5453123;
+    return noise - Math.floor(noise);
+};
 
 const normalizeWordInput = (word: string): string =>
     word.trim().replace(/\s+/g, " ").toLowerCase();
@@ -544,7 +669,76 @@ const resizeCanvas = () => {
         0
     );
     stars = createStars(canvasCssWidth, canvasCssHeight);
+    if (currentScene) {
+        currentScene.smoulderSampleCache = null;
+    }
     needsHardCanvasClear = true;
+};
+
+const getSmoulderSampleCache = (scene: Scene): SmoulderSampleCache | null => {
+    const cachedSamples = scene.smoulderSampleCache;
+    if (
+        cachedSamples &&
+        cachedSamples.width === canvasCssWidth &&
+        cachedSamples.height === canvasCssHeight &&
+        cachedSamples.devicePixelRatio === canvasDevicePixelRatio
+    ) {
+        return cachedSamples;
+    }
+
+    const matrix = fireworksSvg.getScreenCTM();
+    if (!matrix) {
+        return null;
+    }
+
+    const canvasRect = fireworksCanvas.getBoundingClientRect();
+    const projectPoint = (point: Point): CanvasPoint => {
+        const screenPoint = new DOMPoint(point.x, point.y).matrixTransform(matrix);
+        return {
+            x: screenPoint.x - canvasRect.left,
+            y: screenPoint.y - canvasRect.top
+        };
+    };
+    const sampleCount = Math.min(
+        SMOULDER_MAX_SAMPLES,
+        Math.max(8, Math.floor(scene.totalLength / SMOULDER_SAMPLE_SPACING))
+    );
+    const stepDistance = scene.totalLength / sampleCount;
+    const samples: SmoulderSample[] = [];
+
+    for (let sampleIndex = 0; sampleIndex <= sampleCount; sampleIndex += 1) {
+        const distance = Math.min(scene.totalLength, sampleIndex * stepDistance);
+        const pose = getPoseAtOverallDistance(scene.preparedPath, distance);
+        const canvasPoint = projectPoint(pose.point);
+        const tangentPoint = projectPoint({
+            x: pose.point.x + pose.tangent.x * 18,
+            y: pose.point.y + pose.tangent.y * 18
+        });
+        const tangent = normalizeVector({
+            x: tangentPoint.x - canvasPoint.x,
+            y: tangentPoint.y - canvasPoint.y
+        });
+        const seed = distance * 0.071 + sampleIndex * 8.37;
+        samples.push({
+            distance,
+            x: canvasPoint.x,
+            y: canvasPoint.y,
+            tangentX: tangent.x,
+            tangentY: tangent.y,
+            normalX: -tangent.y,
+            normalY: tangent.x,
+            emberNoise: noiseUnit(seed),
+            pocketNoise: noiseUnit(seed + 91.7)
+        });
+    }
+
+    scene.smoulderSampleCache = {
+        width: canvasCssWidth,
+        height: canvasCssHeight,
+        devicePixelRatio: canvasDevicePixelRatio,
+        samples
+    };
+    return scene.smoulderSampleCache;
 };
 
 const drawBackdrop = (now: number) => {
@@ -1099,19 +1293,125 @@ const drawParticles = () => {
     });
 };
 
+const drawSmoulderingFuse = (now: number) => {
+    const scene = currentScene;
+    perfStats.smoulderSamples = 0;
+    if (!scene) {
+        return;
+    }
+
+    const smoulderSampleCache = getSmoulderSampleCache(scene);
+    if (!smoulderSampleCache) {
+        return;
+    }
+
+    const elapsedMs = now - scene.startedAt;
+    const progress = clamp(elapsedMs / scene.durationMs, 0, 1);
+    const traveledDistance = scene.totalLength * progress;
+    const finalCoolProgress = progress >= 1
+        ? clamp((elapsedMs - scene.durationMs) / FINAL_COOL_MS, 0, 1)
+        : 0;
+    const smoulderEndDistance = progress >= 1 && finalCoolProgress >= 1
+        ? scene.totalLength
+        : Math.max(0, traveledDistance - HOT_BURN_DISTANCE * 0.36);
+
+    if (smoulderEndDistance <= 1) {
+        return;
+    }
+    const drawStride = smoulderQuality > 0.85 ? 1 : smoulderQuality > 0.62 ? 2 : 3;
+    let renderedSampleCount = 0;
+
+    fireworksContext.save();
+    fireworksContext.globalCompositeOperation = "lighter";
+    fireworksContext.filter = "none";
+    fireworksContext.lineCap = "round";
+
+    for (let sampleIndex = 0; sampleIndex < smoulderSampleCache.samples.length; sampleIndex += 1) {
+        const sample = smoulderSampleCache.samples[sampleIndex];
+        if (!sample || sample.distance > smoulderEndDistance) {
+            break;
+        }
+
+        const charAge = clamp((traveledDistance - sample.distance) / Math.max(COOLING_BURN_DISTANCE, 1), 0, 1);
+        const recentHeat = 1 - charAge;
+        if (drawStride > 1 && sampleIndex % drawStride !== 0 && recentHeat < 0.78) {
+            continue;
+        }
+
+        const shimmer = 0.52 + Math.sin(now * 0.0064 + sample.distance * 0.035 + sample.emberNoise * TWO_PI) * 0.48;
+        const residualHeat = progress >= 1 ? 0.24 + (1 - finalCoolProgress) * 0.14 : 0.08;
+        const intensity = clamp(
+            (residualHeat + recentHeat * 0.58 + Math.max(0, sample.pocketNoise - 0.46) * 0.62)
+            * (0.72 + shimmer * 0.42),
+            0,
+            1
+        );
+
+        if (intensity < 0.15 && sample.emberNoise < 0.72) {
+            continue;
+        }
+
+        renderedSampleCount += 1;
+        const lateralJitter = (sample.emberNoise - 0.5) * (20 + recentHeat * 16);
+        const emberX = sample.x + sample.normalX * lateralJitter + sample.tangentX * (sample.pocketNoise - 0.5) * 10;
+        const emberY = sample.y + sample.normalY * lateralJitter + sample.tangentY * (sample.pocketNoise - 0.5) * 10;
+        const radius = (8 + sample.emberNoise * 16 + recentHeat * 19) * (0.82 + shimmer * 0.22);
+        const hue = 16 + sample.pocketNoise * 32 + recentHeat * 6;
+        const alpha = intensity * (0.2 + sample.pocketNoise * 0.36);
+        const glowGradient = fireworksContext.createRadialGradient(emberX, emberY, 0, emberX, emberY, radius);
+        glowGradient.addColorStop(0, `hsla(${hue + 28}, 100%, 88%, ${alpha * 0.92})`);
+        glowGradient.addColorStop(0.22, `hsla(${hue + 8}, 100%, 62%, ${alpha * 0.72})`);
+        glowGradient.addColorStop(0.58, `hsla(${hue - 8}, 96%, 38%, ${alpha * 0.28})`);
+        glowGradient.addColorStop(1, `hsla(${hue - 14}, 88%, 18%, 0)`);
+        fireworksContext.fillStyle = glowGradient;
+        fireworksContext.beginPath();
+        fireworksContext.arc(emberX, emberY, radius, 0, TWO_PI);
+        fireworksContext.fill();
+
+        if (sample.pocketNoise < 0.42 && recentHeat < 0.22) {
+            continue;
+        }
+
+        const veinLength = 13 + recentHeat * 30 + sample.emberNoise * 18;
+        const veinAlpha = clamp(alpha * (0.7 + recentHeat * 0.5), 0, 0.72);
+        fireworksContext.strokeStyle = `hsla(${hue + 12}, 100%, ${66 + recentHeat * 16}%, ${veinAlpha})`;
+        fireworksContext.lineWidth = 1.1 + recentHeat * 2.5 + sample.pocketNoise * 1.8;
+        fireworksContext.beginPath();
+        fireworksContext.moveTo(
+            emberX - sample.tangentX * veinLength * 0.52,
+            emberY - sample.tangentY * veinLength * 0.52
+        );
+        fireworksContext.lineTo(
+            emberX + sample.tangentX * veinLength * 0.48,
+            emberY + sample.tangentY * veinLength * 0.48
+        );
+        fireworksContext.stroke();
+    }
+
+    perfStats.smoulderSamples = renderedSampleCount;
+    fireworksContext.restore();
+};
+
 const drawSmokeParticles = () => {
     fireworksContext.save();
     fireworksContext.globalCompositeOperation = "source-over";
-    fireworksContext.filter = "blur(5px)";
+    fireworksContext.filter = "none";
+    const smokeDrawStride = particles.length > 3200 ? 2 : 1;
+    let smokeIndex = 0;
 
     particles.forEach((particle) => {
         if (particle.kind !== "smoke") {
             return;
         }
 
+        smokeIndex += 1;
+        if (smokeDrawStride > 1 && smokeIndex % smokeDrawStride !== 0) {
+            return;
+        }
+
         const lifeRatio = clamp(particle.age / particle.life, 0, 1);
-        const alpha = 0.16 * (1 - lifeRatio) ** 1.8;
-        const radius = particle.size * (1 + lifeRatio * 1.7);
+        const alpha = 0.18 * (1 - lifeRatio) ** 1.8;
+        const radius = particle.size * (1.2 + lifeRatio * 1.9);
         const gradient = fireworksContext.createRadialGradient(
             particle.x,
             particle.y,
@@ -1178,34 +1478,45 @@ const updateFuse = (now: number, deltaSeconds: number) => {
     const finalCoolProgress = progress >= 1
         ? clamp((elapsedMs - scene.durationMs) / FINAL_COOL_MS, 0, 1)
         : 0;
-    const hotDistance = HOT_BURN_DISTANCE * (1 - finalCoolProgress);
-    const coolingDistance = COOLING_BURN_DISTANCE * (1 - finalCoolProgress);
-    const spentEndDistance = Math.max(0, traveledDistance - hotDistance - coolingDistance);
-    const coolingStartDistance = spentEndDistance;
-    const coolingEndDistance = Math.max(spentEndDistance, traveledDistance - hotDistance);
-    const hotStartDistance = coolingEndDistance;
-    const hotEndDistance = traveledDistance;
-    const spentPathD = buildPathDFromOverallDistanceRange(scene.preparedPath, 0, spentEndDistance);
-    const coolingPathD = buildPathDFromOverallDistanceRange(
-        scene.preparedPath,
-        coolingStartDistance,
-        coolingEndDistance
-    );
-    const burnedPathD = buildPathDFromOverallDistanceRange(
-        scene.preparedPath,
-        hotStartDistance,
-        hotEndDistance
-    );
+    const shouldUpdateSvgPaths =
+        now - scene.lastSvgPathUpdateAt >= SVG_PATH_UPDATE_INTERVAL_MS ||
+        Math.abs(traveledDistance - scene.lastSvgPathDistance) >= SVG_PATH_UPDATE_DISTANCE ||
+        Math.abs(finalCoolProgress - scene.lastSvgPathCoolProgress) >= 0.018 ||
+        (progress >= 1 && finalCoolProgress >= 1 && scene.lastSvgPathCoolProgress < 1);
 
-    spentFusePathEl?.setAttribute("d", progress >= 1 && finalCoolProgress >= 1
-        ? buildPathDFromOverallDistanceRange(scene.preparedPath, 0, scene.totalLength)
-        : spentPathD);
-    coolingFusePathEl?.setAttribute("d", finalCoolProgress >= 1 ? "" : coolingPathD);
-    smoulderFusePathEl?.setAttribute("d", progress >= 1 && finalCoolProgress >= 1
-        ? buildPathDFromOverallDistanceRange(scene.preparedPath, 0, scene.totalLength)
-        : spentPathD);
-    burnedPathEl?.setAttribute("d", burnedPathD);
-    burnedGlowPathEl?.setAttribute("d", burnedPathD);
+    if (shouldUpdateSvgPaths) {
+        const hotDistance = HOT_BURN_DISTANCE * (1 - finalCoolProgress);
+        const coolingDistance = COOLING_BURN_DISTANCE * (1 - finalCoolProgress);
+        const spentEndDistance = Math.max(0, traveledDistance - hotDistance - coolingDistance);
+        const coolingStartDistance = spentEndDistance;
+        const coolingEndDistance = Math.max(spentEndDistance, traveledDistance - hotDistance);
+        const hotStartDistance = coolingEndDistance;
+        const hotEndDistance = traveledDistance;
+        const spentPathD = progress >= 1 && finalCoolProgress >= 1
+            ? scene.fullPathD
+            : buildPathDFromOverallDistanceRange(scene.preparedPath, 0, spentEndDistance);
+        const coolingPathD = finalCoolProgress >= 1
+            ? ""
+            : buildPathDFromOverallDistanceRange(
+                scene.preparedPath,
+                coolingStartDistance,
+                coolingEndDistance
+            );
+        const burnedPathD = buildPathDFromOverallDistanceRange(
+            scene.preparedPath,
+            hotStartDistance,
+            hotEndDistance
+        );
+
+        spentFusePathEl?.setAttribute("d", spentPathD);
+        coolingFusePathEl?.setAttribute("d", coolingPathD);
+        smoulderFusePathEl?.setAttribute("d", spentPathD);
+        burnedPathEl?.setAttribute("d", burnedPathD);
+        burnedGlowPathEl?.setAttribute("d", burnedPathD);
+        scene.lastSvgPathUpdateAt = now;
+        scene.lastSvgPathDistance = traveledDistance;
+        scene.lastSvgPathCoolProgress = finalCoolProgress;
+    }
 
     const angle = Math.atan2(pose.tangent.y, pose.tangent.x) * (180 / Math.PI);
     emberEl?.setAttribute(
@@ -1234,27 +1545,48 @@ const updateFuse = (now: number, deltaSeconds: number) => {
 };
 
 const renderCanvasFrame = (now: number, deltaSeconds: number) => {
+    let sectionStartedAt = performance.now();
     drawBackdrop(now);
+    recordPerfSection("backdrop", sectionStartedAt);
+
+    sectionStartedAt = performance.now();
     updatePendingLaunches(deltaSeconds);
     updateRockets(deltaSeconds);
     updateParticles(deltaSeconds);
     updateFlashes(deltaSeconds);
+    recordPerfSection("updates", sectionStartedAt);
 
+    sectionStartedAt = performance.now();
     drawSmokeParticles();
+    recordPerfSection("smoke", sectionStartedAt);
+
+    sectionStartedAt = performance.now();
+    drawSmoulderingFuse(now);
+    recordPerfSection("smoulder", sectionStartedAt);
+
+    sectionStartedAt = performance.now();
     fireworksContext.globalCompositeOperation = "lighter";
     drawFlashes();
     drawRockets();
+    recordPerfSection("effects", sectionStartedAt);
+
+    sectionStartedAt = performance.now();
     drawParticles();
+    recordPerfSection("particles", sectionStartedAt);
     needsHardCanvasClear = false;
 };
 
 const tick = (now: number) => {
+    const frameStartedAt = performance.now();
     resizeCanvas();
     const deltaSeconds = Math.min(0.05, Math.max(0.001, (now - lastFrameAt) / 1000));
     lastFrameAt = now;
 
+    const updateFuseStartedAt = performance.now();
     updateFuse(now, deltaSeconds);
+    recordPerfSection("updateFuse", updateFuseStartedAt);
     renderCanvasFrame(now, deltaSeconds);
+    updatePerfPanel(now, performance.now() - frameStartedAt);
     animationFrameId = requestAnimationFrame(tick);
 };
 
@@ -1309,13 +1641,37 @@ const buildFuseMarkup = (scene: Scene): string => {
                 <feTurbulence type="fractalNoise" baseFrequency="0.8 0.18" numOctaves="3" seed="8" result="ropeNoise"></feTurbulence>
                 <feDisplacementMap in="SourceGraphic" in2="ropeNoise" scale="2.1" xChannelSelector="R" yChannelSelector="G"></feDisplacementMap>
             </filter>
-            <filter id="fireworks-smoulder-glow" x="-45%" y="-45%" width="190%" height="190%">
-                <feTurbulence type="fractalNoise" baseFrequency="0.035 0.22" numOctaves="3" seed="14" result="smoulderNoise"></feTurbulence>
-                <feDisplacementMap in="SourceGraphic" in2="smoulderNoise" scale="3.4" result="warpedSmoulder"></feDisplacementMap>
-                <feGaussianBlur in="warpedSmoulder" stdDeviation="4.6" result="smoulderBlur"></feGaussianBlur>
+            <filter id="fireworks-smoulder-glow" x="-55%" y="-55%" width="210%" height="210%" color-interpolation-filters="sRGB">
+                <feTurbulence type="fractalNoise" baseFrequency="0.036 0.22" numOctaves="3" seed="14" result="smoulderNoise"></feTurbulence>
+                <feDisplacementMap in="SourceGraphic" in2="smoulderNoise" scale="4.8" result="warpedSmoulder"></feDisplacementMap>
+                <feGaussianBlur in="warpedSmoulder" stdDeviation="7.2" result="wideSmoulder"></feGaussianBlur>
+                <feColorMatrix
+                    in="wideSmoulder"
+                    type="matrix"
+                    values="1.5 0 0 0 0.42 0 0.44 0 0 0.06 0 0 0.08 0 0 0 0 0 0.78 0"
+                    result="emberGlow"
+                ></feColorMatrix>
+                <feGaussianBlur in="warpedSmoulder" stdDeviation="1.6" result="hotFlecks"></feGaussianBlur>
                 <feMerge>
-                    <feMergeNode in="smoulderBlur"></feMergeNode>
+                    <feMergeNode in="emberGlow"></feMergeNode>
+                    <feMergeNode in="hotFlecks"></feMergeNode>
                     <feMergeNode in="warpedSmoulder"></feMergeNode>
+                    <feMergeNode in="SourceGraphic"></feMergeNode>
+                </feMerge>
+            </filter>
+            <filter id="fireworks-ember-head" x="-80%" y="-80%" width="260%" height="260%" color-interpolation-filters="sRGB">
+                <feTurbulence type="fractalNoise" baseFrequency="0.92 1.42" numOctaves="2" seed="27" result="emberHeadNoise"></feTurbulence>
+                <feDisplacementMap in="SourceGraphic" in2="emberHeadNoise" scale="3.6" result="warpedEmberHead"></feDisplacementMap>
+                <feGaussianBlur in="warpedEmberHead" stdDeviation="6.8" result="emberHeadBloom"></feGaussianBlur>
+                <feColorMatrix
+                    in="emberHeadBloom"
+                    type="matrix"
+                    values="1.22 0 0 0 0.35 0 0.52 0 0 0.08 0 0 0.1 0 0.02 0 0 0 0.82 0"
+                    result="emberHeadGlow"
+                ></feColorMatrix>
+                <feMerge>
+                    <feMergeNode in="emberHeadGlow"></feMergeNode>
+                    <feMergeNode in="warpedEmberHead"></feMergeNode>
                     <feMergeNode in="SourceGraphic"></feMergeNode>
                 </feMerge>
             </filter>
@@ -1324,6 +1680,18 @@ const buildFuseMarkup = (scene: Scene): string => {
         <stop offset="0.36" stop-color="#ffb229"></stop>
         <stop offset="1" stop-color="#ff3b1f" stop-opacity="0"></stop>
       </radialGradient>
+            <radialGradient id="fireworks-coal-gradient" cx="42%" cy="45%" r="65%">
+                <stop offset="0" stop-color="#fff4b7"></stop>
+                <stop offset="0.22" stop-color="#ff9f21"></stop>
+                <stop offset="0.55" stop-color="#8e1c0f"></stop>
+                <stop offset="1" stop-color="#140705"></stop>
+            </radialGradient>
+            <radialGradient id="fireworks-flame-gradient" cx="58%" cy="50%" r="72%">
+                <stop offset="0" stop-color="#fffbe0"></stop>
+                <stop offset="0.28" stop-color="#ffd55c"></stop>
+                <stop offset="0.58" stop-color="#ff571f"></stop>
+                <stop offset="1" stop-color="#ff1f5d" stop-opacity="0"></stop>
+            </radialGradient>
             <linearGradient id="fireworks-smoulder-gradient" x1="0" y1="0" x2="1" y2="0">
                 <stop offset="0" stop-color="#ff4b24" stop-opacity="0.16"></stop>
                 <stop offset="0.28" stop-color="#ffb43e" stop-opacity="0.86"></stop>
@@ -1363,9 +1731,12 @@ const buildFuseMarkup = (scene: Scene): string => {
     <path class="fireworks-app__burned-path" id="fireworks-burned-path" d=""></path>
     <g class="fireworks-app__waypoints">${waypointMarkup}</g>
     <g class="fireworks-app__ember" id="fireworks-ember" opacity="0">
+            <circle class="fireworks-app__ember-heat" r="76"></circle>
       <circle class="fireworks-app__ember-aura" r="58"></circle>
-      <ellipse class="fireworks-app__ember-flame" cx="-8" cy="0" rx="30" ry="17"></ellipse>
-      <circle class="fireworks-app__ember-core" r="10"></circle>
+            <ellipse class="fireworks-app__ember-coal" cx="-14" cy="2" rx="28" ry="16"></ellipse>
+            <ellipse class="fireworks-app__ember-flame" cx="-4" cy="0" rx="34" ry="18"></ellipse>
+            <ellipse class="fireworks-app__ember-flame-core" cx="5" cy="0" rx="14" ry="8"></ellipse>
+            <circle class="fireworks-app__ember-core" r="7"></circle>
     </g>
   `;
 };
@@ -1413,6 +1784,7 @@ const renderWord = (word: string) => {
         const path = shiftWritingPath(layout.path, 0, FIREWORK_SKY_HEIGHT);
         const preparedPath = compileTracingPath(path, { sampleRate: FUSE_SAMPLE_RATE });
         const totalLength = Math.max(1, getTotalPathLength(preparedPath));
+        const fullPathD = buildPathDFromOverallDistanceRange(preparedPath, 0, totalLength);
         const waypoints = buildWaypoints(preparedPath);
         const scene: Scene = {
             path,
@@ -1420,11 +1792,16 @@ const renderWord = (word: string) => {
             totalLength,
             durationMs: clamp((totalLength / FUSE_SPEED) * 1000, MIN_FUSE_DURATION_MS, MAX_FUSE_DURATION_MS),
             startedAt: performance.now(),
+            fullPathD,
             width: layout.width,
             height: layout.height + FIREWORK_SKY_HEIGHT,
             offsetY: layout.offsetY + FIREWORK_SKY_HEIGHT,
             waypoints,
-            completed: false
+            completed: false,
+            smoulderSampleCache: null,
+            lastSvgPathUpdateAt: 0,
+            lastSvgPathDistance: -Infinity,
+            lastSvgPathCoolProgress: -Infinity
         };
 
         currentScene = scene;
