@@ -11,8 +11,8 @@ export function buildPrintWord(
 ): WritingPath {
   return buildStandaloneWord(text, options, {
     keepLeadIn: options.keepInitialLeadIn ?? true,
-    keepEntry: true,
-    keepExit: true,
+    keepEntry: options.keepInitialLeadIn ?? true,
+    keepExit: options.keepFinalLeadOut ?? true,
     keepLeadOut: options.keepFinalLeadOut ?? true,
     additionalSpacing: printLetterSpacing
   }, "print");

@@ -82,6 +82,32 @@ import yLowerPrint from "./bezier/print/y-lower-print-bezier.json";
 import zLowerCursiveEntryLow from "./bezier/entry-low/z-lower-cursive-bezier-entry-low.json";
 import zLowerCursiveEntryHigh from "./bezier/entry-high/z-lower-cursive-bezier-entry-high.json";
 import zLowerPrint from "./bezier/print/z-lower-print-bezier.json";
+import aUpperPrint from "./bezier/print/A-upper-print-bezier.json";
+import bUpperPrint from "./bezier/print/B-upper-print-bezier.json";
+import cUpperPrint from "./bezier/print/C-upper-print-bezier.json";
+import dUpperPrint from "./bezier/print/D-upper-print-bezier.json";
+import eUpperPrint from "./bezier/print/E-upper-print-bezier.json";
+import fUpperPrint from "./bezier/print/F-upper-print-bezier.json";
+import gUpperPrint from "./bezier/print/G-upper-print-bezier.json";
+import hUpperPrint from "./bezier/print/H-upper-print-bezier.json";
+import iUpperPrint from "./bezier/print/I-upper-print-bezier.json";
+import jUpperPrint from "./bezier/print/J-upper-print-bezier.json";
+import kUpperPrint from "./bezier/print/K-upper-print-bezier.json";
+import lUpperPrint from "./bezier/print/L-upper-print-bezier.json";
+import mUpperPrint from "./bezier/print/M-upper-print-bezier.json";
+import nUpperPrint from "./bezier/print/N-upper-print-bezier.json";
+import oUpperPrint from "./bezier/print/O-upper-print-bezier.json";
+import pUpperPrint from "./bezier/print/P-upper-print-bezier.json";
+import qUpperPrint from "./bezier/print/Q-upper-print-bezier.json";
+import rUpperPrint from "./bezier/print/R-upper-print-bezier.json";
+import sUpperPrint from "./bezier/print/S-upper-print-bezier.json";
+import tUpperPrint from "./bezier/print/T-upper-print-bezier.json";
+import uUpperPrint from "./bezier/print/U-upper-print-bezier.json";
+import vUpperPrint from "./bezier/print/V-upper-print-bezier.json";
+import wUpperPrint from "./bezier/print/W-upper-print-bezier.json";
+import xUpperPrint from "./bezier/print/X-upper-print-bezier.json";
+import yUpperPrint from "./bezier/print/Y-upper-print-bezier.json";
+import zUpperPrint from "./bezier/print/Z-upper-print-bezier.json";
 
 export type CursiveEntryVariant = "entry-high" | "entry-low";
 export type CursiveExitVariant = "high" | "low";
@@ -209,7 +235,33 @@ const printLettersByChar = {
   w: wLowerPrint,
   x: xLowerPrint,
   y: yLowerPrint,
-  z: zLowerPrint
+  z: zLowerPrint,
+  A: aUpperPrint,
+  B: bUpperPrint,
+  C: cUpperPrint,
+  D: dUpperPrint,
+  E: eUpperPrint,
+  F: fUpperPrint,
+  G: gUpperPrint,
+  H: hUpperPrint,
+  I: iUpperPrint,
+  J: jUpperPrint,
+  K: kUpperPrint,
+  L: lUpperPrint,
+  M: mUpperPrint,
+  N: nUpperPrint,
+  O: oUpperPrint,
+  P: pUpperPrint,
+  Q: qUpperPrint,
+  R: rUpperPrint,
+  S: sUpperPrint,
+  T: tUpperPrint,
+  U: uUpperPrint,
+  V: vUpperPrint,
+  W: wUpperPrint,
+  X: xUpperPrint,
+  Y: yUpperPrint,
+  Z: zUpperPrint
 } as unknown as Record<string, BezierLetter>;
 
 const letterVariantsByEntry: Record<CursiveEntryVariant, Record<string, BezierLetter>> = {
@@ -236,7 +288,9 @@ export function createLegacyLetterId(char: string): string {
 }
 
 export function createPrintLetterId(char: string): string {
-  return `${char}-lower-print`;
+  const letterCase =
+    char === char.toUpperCase() && char !== char.toLowerCase() ? "upper" : "lower";
+  return `${char}-${letterCase}-print`;
 }
 
 export function getCursiveLetterVariant(
