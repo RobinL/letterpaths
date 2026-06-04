@@ -61,8 +61,7 @@ const path = buildHandwritingPath("cat dog", {
     baseline: 720
   },
   joinSpacing: {
-    minSidebearingGap: 50,
-    targetBendRate: 30
+    sidebearingGapAdjustment: 10
   },
   wordSpacing: 540
 });
@@ -74,7 +73,7 @@ const path = buildHandwritingPath("cat dog", {
 - `letters?: Record<string, BezierLetter>` overrides the built-in glyph map
 - `targetGuides?: LetterGuides` rescales the output onto your guide system
 - `wordSpacing?: number` overrides the spacing used for spaces
-- `joinSpacing?: JoinSpacingOptions` tunes cursive joins
+- `joinSpacing?: JoinSpacingOptions` adds a constant adjustment to hard-coded cursive pair gaps
 - `keepInitialLeadIn?: boolean` keeps the first letter's lead-in in cursive output
 - `keepFinalLeadOut?: boolean` keeps the last letter's lead-out in cursive output
 

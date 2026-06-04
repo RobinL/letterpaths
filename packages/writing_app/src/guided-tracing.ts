@@ -272,13 +272,7 @@ const SECTION_ANNOTATION_DISTANCE_EPSILON = 0.5;
 const SNAKE_TURN_COMMIT_DISTANCE = 12;
 const SNAKE_TURN_LOOKAHEAD_DISTANCE = 2;
 const DEFAULT_SNAKE_JOIN_SPACING = {
-  targetBendRate: 16,
-  minSidebearingGap: 80,
-  maxSidebearingGap: 240,
-  bendSearchMinSidebearingGap: -30,
-  bendSearchMaxSidebearingGap: 240,
-  exitHandleScale: 0.75,
-  entryHandleScale: 0.75
+  sidebearingGapAdjustment: 0
 } as const satisfies Required<JoinSpacingOptions>;
 const SNAKE_URL_PARAM_KEYS = [
   "word",
@@ -288,6 +282,7 @@ const SNAKE_URL_PARAM_KEYS = [
   "animationSpeed",
   "turnRadius",
   "offsetArrowLanes",
+  "sidebearingGapAdjustment",
   "targetBendRate",
   "minSidebearingGap",
   "bendSearchMinSidebearingGap",
@@ -651,94 +646,19 @@ app.innerHTML = `
                     <option value="themePark">Rollercoaster</option>
                   </select>
                 </label>
-                <label class="writing-app__settings-field" for="target-bend-rate-slider">
+                <label class="writing-app__settings-field" for="sidebearing-gap-adjustment-slider">
                   <span class="writing-app__settings-label">
-                    Target maximum bend rate
-                    <span class="writing-app__tolerance-value" id="target-bend-rate-value"></span>
+                    Letter spacing adjustment
+                    <span class="writing-app__tolerance-value" id="sidebearing-gap-adjustment-value"></span>
                   </span>
                   <input
                     class="writing-app__tolerance-slider"
-                    id="target-bend-rate-slider"
+                    id="sidebearing-gap-adjustment-slider"
                     type="range"
-                    min="0"
-                    max="60"
-                    step="1"
-                    value="${DEFAULT_SNAKE_JOIN_SPACING.targetBendRate}"
-                  />
-                </label>
-                <label class="writing-app__settings-field" for="min-sidebearing-gap-slider">
-                  <span class="writing-app__settings-label">
-                    Minimum sidebearing gap
-                    <span class="writing-app__tolerance-value" id="min-sidebearing-gap-value"></span>
-                  </span>
-                  <input
-                    class="writing-app__tolerance-slider"
-                    id="min-sidebearing-gap-slider"
-                    type="range"
-                    min="-300"
-                    max="200"
+                    min="-120"
+                    max="120"
                     step="5"
-                    value="${DEFAULT_SNAKE_JOIN_SPACING.minSidebearingGap}"
-                  />
-                </label>
-                <label class="writing-app__settings-field" for="bend-search-min-sidebearing-gap-slider">
-                  <span class="writing-app__settings-label">
-                    Search minimum sidebearing gap
-                    <span class="writing-app__tolerance-value" id="bend-search-min-sidebearing-gap-value"></span>
-                  </span>
-                  <input
-                    class="writing-app__tolerance-slider"
-                    id="bend-search-min-sidebearing-gap-slider"
-                    type="range"
-                    min="-300"
-                    max="200"
-                    step="5"
-                    value="${DEFAULT_SNAKE_JOIN_SPACING.bendSearchMinSidebearingGap}"
-                  />
-                </label>
-                <label class="writing-app__settings-field" for="bend-search-max-sidebearing-gap-slider">
-                  <span class="writing-app__settings-label">
-                    Search maximum sidebearing gap
-                    <span class="writing-app__tolerance-value" id="bend-search-max-sidebearing-gap-value"></span>
-                  </span>
-                  <input
-                    class="writing-app__tolerance-slider"
-                    id="bend-search-max-sidebearing-gap-slider"
-                    type="range"
-                    min="-100"
-                    max="300"
-                    step="5"
-                    value="${DEFAULT_SNAKE_JOIN_SPACING.bendSearchMaxSidebearingGap}"
-                  />
-                </label>
-                <label class="writing-app__settings-field" for="exit-handle-scale-slider">
-                  <span class="writing-app__settings-label">
-                    p0-p1 handle scale
-                    <span class="writing-app__tolerance-value" id="exit-handle-scale-value"></span>
-                  </span>
-                  <input
-                    class="writing-app__tolerance-slider"
-                    id="exit-handle-scale-slider"
-                    type="range"
-                    min="0"
-                    max="2"
-                    step="0.05"
-                    value="${DEFAULT_SNAKE_JOIN_SPACING.exitHandleScale}"
-                  />
-                </label>
-                <label class="writing-app__settings-field" for="entry-handle-scale-slider">
-                  <span class="writing-app__settings-label">
-                    p2-p3 handle scale
-                    <span class="writing-app__tolerance-value" id="entry-handle-scale-value"></span>
-                  </span>
-                  <input
-                    class="writing-app__tolerance-slider"
-                    id="entry-handle-scale-slider"
-                    type="range"
-                    min="0"
-                    max="2"
-                    step="0.05"
-                    value="${DEFAULT_SNAKE_JOIN_SPACING.entryHandleScale}"
+                    value="${DEFAULT_SNAKE_JOIN_SPACING.sidebearingGapAdjustment}"
                   />
                 </label>
                 <label class="writing-app__settings-toggle" for="include-initial-lead-in">
@@ -804,26 +724,12 @@ const animationSpeedSlider = document.querySelector<HTMLInputElement>("#animatio
 const animationSpeedValue = document.querySelector<HTMLSpanElement>("#animation-speed-value");
 const offsetArrowLanesInput = document.querySelector<HTMLInputElement>("#offset-arrow-lanes");
 const skinSelect = document.querySelector<HTMLSelectElement>("#skin-select");
-const targetBendRateSlider = document.querySelector<HTMLInputElement>("#target-bend-rate-slider");
-const targetBendRateValue = document.querySelector<HTMLSpanElement>("#target-bend-rate-value");
-const minSidebearingGapSlider = document.querySelector<HTMLInputElement>("#min-sidebearing-gap-slider");
-const minSidebearingGapValue = document.querySelector<HTMLSpanElement>("#min-sidebearing-gap-value");
-const bendSearchMinSidebearingGapSlider = document.querySelector<HTMLInputElement>(
-  "#bend-search-min-sidebearing-gap-slider"
+const sidebearingGapAdjustmentSlider = document.querySelector<HTMLInputElement>(
+  "#sidebearing-gap-adjustment-slider"
 );
-const bendSearchMinSidebearingGapValue = document.querySelector<HTMLSpanElement>(
-  "#bend-search-min-sidebearing-gap-value"
+const sidebearingGapAdjustmentValue = document.querySelector<HTMLSpanElement>(
+  "#sidebearing-gap-adjustment-value"
 );
-const bendSearchMaxSidebearingGapSlider = document.querySelector<HTMLInputElement>(
-  "#bend-search-max-sidebearing-gap-slider"
-);
-const bendSearchMaxSidebearingGapValue = document.querySelector<HTMLSpanElement>(
-  "#bend-search-max-sidebearing-gap-value"
-);
-const exitHandleScaleSlider = document.querySelector<HTMLInputElement>("#exit-handle-scale-slider");
-const exitHandleScaleValue = document.querySelector<HTMLSpanElement>("#exit-handle-scale-value");
-const entryHandleScaleSlider = document.querySelector<HTMLInputElement>("#entry-handle-scale-slider");
-const entryHandleScaleValue = document.querySelector<HTMLSpanElement>("#entry-handle-scale-value");
 const includeInitialLeadInInput = document.querySelector<HTMLInputElement>("#include-initial-lead-in");
 const includeFinalLeadOutInput = document.querySelector<HTMLInputElement>("#include-final-lead-out");
 const successOverlay = document.querySelector<HTMLDivElement>("#success-overlay");
@@ -844,18 +750,8 @@ if (
   !animationSpeedValue ||
   !offsetArrowLanesInput ||
   !skinSelect ||
-  !targetBendRateSlider ||
-  !targetBendRateValue ||
-  !minSidebearingGapSlider ||
-  !minSidebearingGapValue ||
-  !bendSearchMinSidebearingGapSlider ||
-  !bendSearchMinSidebearingGapValue ||
-  !bendSearchMaxSidebearingGapSlider ||
-  !bendSearchMaxSidebearingGapValue ||
-  !exitHandleScaleSlider ||
-  !exitHandleScaleValue ||
-  !entryHandleScaleSlider ||
-  !entryHandleScaleValue ||
+  !sidebearingGapAdjustmentSlider ||
+  !sidebearingGapAdjustmentValue ||
   !includeInitialLeadInInput ||
   !includeFinalLeadOutInput ||
   !successOverlay ||
@@ -987,35 +883,14 @@ const syncSettingsUrl = () => {
   if (shouldOffsetArrowLanes !== true) {
     url.searchParams.set("offsetArrowLanes", shouldOffsetArrowLanes ? "1" : "0");
   }
-  if (currentJoinSpacing.targetBendRate !== DEFAULT_SNAKE_JOIN_SPACING.targetBendRate) {
-    url.searchParams.set("targetBendRate", String(currentJoinSpacing.targetBendRate));
-  }
-  if (currentJoinSpacing.minSidebearingGap !== DEFAULT_SNAKE_JOIN_SPACING.minSidebearingGap) {
-    url.searchParams.set("minSidebearingGap", String(currentJoinSpacing.minSidebearingGap));
-  }
   if (
-    currentJoinSpacing.bendSearchMinSidebearingGap !==
-    DEFAULT_SNAKE_JOIN_SPACING.bendSearchMinSidebearingGap
+    currentJoinSpacing.sidebearingGapAdjustment !==
+    DEFAULT_SNAKE_JOIN_SPACING.sidebearingGapAdjustment
   ) {
     url.searchParams.set(
-      "bendSearchMinSidebearingGap",
-      String(currentJoinSpacing.bendSearchMinSidebearingGap)
+      "sidebearingGapAdjustment",
+      String(currentJoinSpacing.sidebearingGapAdjustment)
     );
-  }
-  if (
-    currentJoinSpacing.bendSearchMaxSidebearingGap !==
-    DEFAULT_SNAKE_JOIN_SPACING.bendSearchMaxSidebearingGap
-  ) {
-    url.searchParams.set(
-      "bendSearchMaxSidebearingGap",
-      String(currentJoinSpacing.bendSearchMaxSidebearingGap)
-    );
-  }
-  if (currentJoinSpacing.exitHandleScale !== DEFAULT_SNAKE_JOIN_SPACING.exitHandleScale) {
-    url.searchParams.set("exitHandleScale", String(currentJoinSpacing.exitHandleScale));
-  }
-  if (currentJoinSpacing.entryHandleScale !== DEFAULT_SNAKE_JOIN_SPACING.entryHandleScale) {
-    url.searchParams.set("entryHandleScale", String(currentJoinSpacing.entryHandleScale));
   }
   if (includeInitialLeadIn !== true) {
     url.searchParams.set("includeInitialLeadIn", includeInitialLeadIn ? "1" : "0");
@@ -1110,12 +985,7 @@ const syncAnimationSpeedLabel = () => {
 };
 
 const syncJoinSpacingLabels = () => {
-  targetBendRateValue.textContent = `${currentJoinSpacing.targetBendRate}`;
-  minSidebearingGapValue.textContent = `${currentJoinSpacing.minSidebearingGap}`;
-  bendSearchMinSidebearingGapValue.textContent = `${currentJoinSpacing.bendSearchMinSidebearingGap}`;
-  bendSearchMaxSidebearingGapValue.textContent = `${currentJoinSpacing.bendSearchMaxSidebearingGap}`;
-  exitHandleScaleValue.textContent = currentJoinSpacing.exitHandleScale.toFixed(2);
-  entryHandleScaleValue.textContent = currentJoinSpacing.entryHandleScale.toFixed(2);
+  sidebearingGapAdjustmentValue.textContent = `${currentJoinSpacing.sidebearingGapAdjustment}`;
 };
 
 const syncSettingsControlsFromState = () => {
@@ -1130,19 +1000,10 @@ const syncSettingsControlsFromState = () => {
   shouldOffsetArrowLanes = Boolean(shouldOffsetArrowLanes);
   offsetArrowLanesInput.checked = shouldOffsetArrowLanes;
   currentJoinSpacing = {
-    targetBendRate: syncSliderValue(targetBendRateSlider, currentJoinSpacing.targetBendRate),
-    minSidebearingGap: syncSliderValue(minSidebearingGapSlider, currentJoinSpacing.minSidebearingGap),
-    maxSidebearingGap: currentJoinSpacing.maxSidebearingGap,
-    bendSearchMinSidebearingGap: syncSliderValue(
-      bendSearchMinSidebearingGapSlider,
-      currentJoinSpacing.bendSearchMinSidebearingGap
-    ),
-    bendSearchMaxSidebearingGap: syncSliderValue(
-      bendSearchMaxSidebearingGapSlider,
-      currentJoinSpacing.bendSearchMaxSidebearingGap
-    ),
-    exitHandleScale: syncSliderValue(exitHandleScaleSlider, currentJoinSpacing.exitHandleScale),
-    entryHandleScale: syncSliderValue(entryHandleScaleSlider, currentJoinSpacing.entryHandleScale)
+    sidebearingGapAdjustment: syncSliderValue(
+      sidebearingGapAdjustmentSlider,
+      currentJoinSpacing.sidebearingGapAdjustment
+    )
   };
   includeInitialLeadInInput.checked = includeInitialLeadIn;
   includeFinalLeadOutInput.checked = includeFinalLeadOut;
@@ -1176,31 +1037,12 @@ const applyUrlSettings = () => {
   shouldOffsetArrowLanes =
     parseBooleanSearchParam(params, "offsetArrowLanes") ?? shouldOffsetArrowLanes;
   currentJoinSpacing = {
-    targetBendRate:
-      parseSliderSearchParam(params, "targetBendRate", targetBendRateSlider) ??
-      currentJoinSpacing.targetBendRate,
-    minSidebearingGap:
-      parseSliderSearchParam(params, "minSidebearingGap", minSidebearingGapSlider) ??
-      currentJoinSpacing.minSidebearingGap,
-    bendSearchMinSidebearingGap:
+    sidebearingGapAdjustment:
       parseSliderSearchParam(
         params,
-        "bendSearchMinSidebearingGap",
-        bendSearchMinSidebearingGapSlider
-      ) ?? currentJoinSpacing.bendSearchMinSidebearingGap,
-    bendSearchMaxSidebearingGap:
-      parseSliderSearchParam(
-        params,
-        "bendSearchMaxSidebearingGap",
-        bendSearchMaxSidebearingGapSlider
-      ) ?? currentJoinSpacing.bendSearchMaxSidebearingGap,
-    maxSidebearingGap: currentJoinSpacing.maxSidebearingGap,
-    exitHandleScale:
-      parseSliderSearchParam(params, "exitHandleScale", exitHandleScaleSlider) ??
-      currentJoinSpacing.exitHandleScale,
-    entryHandleScale:
-      parseSliderSearchParam(params, "entryHandleScale", entryHandleScaleSlider) ??
-      currentJoinSpacing.entryHandleScale
+        "sidebearingGapAdjustment",
+        sidebearingGapAdjustmentSlider
+      ) ?? currentJoinSpacing.sidebearingGapAdjustment
   };
   includeInitialLeadIn =
     parseBooleanSearchParam(params, "includeInitialLeadIn") ?? includeInitialLeadIn;
@@ -3474,55 +3316,10 @@ skinSelect.addEventListener("change", () => {
   syncSettingsUrl();
   rerenderCurrentWord();
 });
-targetBendRateSlider.addEventListener("input", () => {
+sidebearingGapAdjustmentSlider.addEventListener("input", () => {
   currentJoinSpacing = {
     ...currentJoinSpacing,
-    targetBendRate: Number(targetBendRateSlider.value)
-  };
-  syncJoinSpacingLabels();
-  syncSettingsUrl();
-  rerenderCurrentWord();
-});
-minSidebearingGapSlider.addEventListener("input", () => {
-  currentJoinSpacing = {
-    ...currentJoinSpacing,
-    minSidebearingGap: Number(minSidebearingGapSlider.value)
-  };
-  syncJoinSpacingLabels();
-  syncSettingsUrl();
-  rerenderCurrentWord();
-});
-bendSearchMinSidebearingGapSlider.addEventListener("input", () => {
-  currentJoinSpacing = {
-    ...currentJoinSpacing,
-    bendSearchMinSidebearingGap: Number(bendSearchMinSidebearingGapSlider.value)
-  };
-  syncJoinSpacingLabels();
-  syncSettingsUrl();
-  rerenderCurrentWord();
-});
-bendSearchMaxSidebearingGapSlider.addEventListener("input", () => {
-  currentJoinSpacing = {
-    ...currentJoinSpacing,
-    bendSearchMaxSidebearingGap: Number(bendSearchMaxSidebearingGapSlider.value)
-  };
-  syncJoinSpacingLabels();
-  syncSettingsUrl();
-  rerenderCurrentWord();
-});
-exitHandleScaleSlider.addEventListener("input", () => {
-  currentJoinSpacing = {
-    ...currentJoinSpacing,
-    exitHandleScale: Number(exitHandleScaleSlider.value)
-  };
-  syncJoinSpacingLabels();
-  syncSettingsUrl();
-  rerenderCurrentWord();
-});
-entryHandleScaleSlider.addEventListener("input", () => {
-  currentJoinSpacing = {
-    ...currentJoinSpacing,
-    entryHandleScale: Number(entryHandleScaleSlider.value)
+    sidebearingGapAdjustment: Number(sidebearingGapAdjustmentSlider.value)
   };
   syncJoinSpacingLabels();
   syncSettingsUrl();

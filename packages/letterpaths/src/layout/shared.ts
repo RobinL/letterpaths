@@ -42,23 +42,11 @@ export type BuildHandwritingOptions = JoinCursiveOptions & {
 };
 
 export type JoinSpacingOptions = {
-  targetBendRate?: number;
-  minSidebearingGap?: number;
-  maxSidebearingGap?: number;
-  bendSearchMinSidebearingGap?: number;
-  bendSearchMaxSidebearingGap?: number;
-  exitHandleScale?: number;
-  entryHandleScale?: number;
+  sidebearingGapAdjustment?: number;
 };
 
 export type ResolvedJoinSpacingOptions = {
-  targetBendRate: number;
-  minSidebearingGap: number;
-  maxSidebearingGap: number;
-  bendSearchMinSidebearingGap: number;
-  bendSearchMaxSidebearingGap: number;
-  exitHandleScale: number;
-  entryHandleScale: number;
+  sidebearingGapAdjustment: number;
 };
 
 type StandaloneLayoutConfig = {
@@ -79,16 +67,8 @@ export const cursiveLetterSpacing = 60;
 export const preCursiveLetterSpacing = cursiveLetterSpacing;
 
 export const defaultJoinSpacingOptions: ResolvedJoinSpacingOptions = {
-  targetBendRate: 30,
-  minSidebearingGap: 50,
-  maxSidebearingGap: 240,
-  bendSearchMinSidebearingGap: -30,
-  bendSearchMaxSidebearingGap: 80,
-  exitHandleScale: 1,
-  entryHandleScale: 1
+  sidebearingGapAdjustment: 0
 };
-
-const bendSearchStep = 1;
 
 export function buildStandaloneWord(
   text: string,
@@ -298,25 +278,6 @@ export function findEntryCurve(strokes: LetterStroke[]): Curve | null {
   return strokes[0]?.curves[0] ?? null;
 }
 
-export function findEntryPhaseCurves(strokes: LetterStroke[]): Curve[] {
-  const curves = strokes.flatMap((stroke) => stroke.curves);
-  const entryPhaseCurves: Curve[] = [];
-  let collecting = false;
-
-  for (const curve of curves) {
-    if (curve.segment === "entry") {
-      collecting = true;
-      entryPhaseCurves.push(curve);
-      continue;
-    }
-    if (collecting) {
-      break;
-    }
-  }
-
-  return entryPhaseCurves;
-}
-
 export function findExitCurve(strokes: LetterStroke[]): Curve | null {
   for (let i = strokes.length - 1; i >= 0; i -= 1) {
     const curves = strokes[i]?.curves ?? [];
@@ -436,16 +397,18 @@ export function curveToStep(curve: Curve, segment?: WritingPathSegment): BezierS
   };
 }
 
-type JoinHandleScaleOptions = Pick<
-  ResolvedJoinSpacingOptions,
-  "exitHandleScale" | "entryHandleScale"
->;
+type JoinHandleScaleOptions = {
+  exitHandleScale?: number;
+  entryHandleScale?: number;
+};
 
 export function buildJoinCurve(
   exitCurve: Curve,
   entryCurve: Curve,
-  options: JoinHandleScaleOptions = defaultJoinSpacingOptions
+  options: JoinHandleScaleOptions = {}
 ): Curve {
+  const exitHandleScale = resolveJoinHandleScale(options.exitHandleScale, 1);
+  const entryHandleScale = resolveJoinHandleScale(options.entryHandleScale, 1);
   const p0 = exitCurve.p3;
   const p3 = entryCurve.p0;
   const dx = p3.x - p0.x;
@@ -475,12 +438,12 @@ export function buildJoinCurve(
   return {
     p0,
     p1: {
-      x: p0.x + tanOut.x * adjusted.lenOut * options.exitHandleScale,
-      y: p0.y + tanOut.y * adjusted.lenOut * options.exitHandleScale
+      x: p0.x + tanOut.x * adjusted.lenOut * exitHandleScale,
+      y: p0.y + tanOut.y * adjusted.lenOut * exitHandleScale
     },
     p2: {
-      x: p3.x - tanIn.x * adjusted.lenIn * options.entryHandleScale,
-      y: p3.y - tanIn.y * adjusted.lenIn * options.entryHandleScale
+      x: p3.x - tanIn.x * adjusted.lenIn * entryHandleScale,
+      y: p3.y - tanIn.y * adjusted.lenIn * entryHandleScale
     },
     p3
   };
@@ -526,333 +489,16 @@ function resolveHandleLengths(
 export function resolveJoinSpacingOptions(
   options?: JoinSpacingOptions
 ): ResolvedJoinSpacingOptions {
-  const rawSearchMin =
-    options?.bendSearchMinSidebearingGap ??
-    defaultJoinSpacingOptions.bendSearchMinSidebearingGap;
-  const rawSearchMax =
-    options?.bendSearchMaxSidebearingGap ??
-    defaultJoinSpacingOptions.bendSearchMaxSidebearingGap;
-
   return {
-    targetBendRate: options?.targetBendRate ?? defaultJoinSpacingOptions.targetBendRate,
-    minSidebearingGap:
-      options?.minSidebearingGap ?? defaultJoinSpacingOptions.minSidebearingGap,
-    maxSidebearingGap:
-      options?.maxSidebearingGap ?? defaultJoinSpacingOptions.maxSidebearingGap,
-    bendSearchMinSidebearingGap: Math.min(rawSearchMin, rawSearchMax),
-    bendSearchMaxSidebearingGap: Math.max(rawSearchMin, rawSearchMax),
-    exitHandleScale: resolveJoinHandleScale(
-      options?.exitHandleScale,
-      defaultJoinSpacingOptions.exitHandleScale
-    ),
-    entryHandleScale: resolveJoinHandleScale(
-      options?.entryHandleScale,
-      defaultJoinSpacingOptions.entryHandleScale
-    )
+    sidebearingGapAdjustment:
+      options?.sidebearingGapAdjustment ??
+      defaultJoinSpacingOptions.sidebearingGapAdjustment
   };
 }
 
 function resolveJoinHandleScale(value: number | undefined, fallback: number): number {
   return value !== undefined && Number.isFinite(value) ? Math.max(0, value) : fallback;
 }
-
-export function measureJoinSpacing(
-  exitCurve: Curve,
-  entryPhaseCurves: Curve[],
-  previousExitToRightSidebearing: number,
-  nextEntryFromLeftSidebearing: number,
-  options: ResolvedJoinSpacingOptions
-): {
-  verticalDistance: number;
-  targetBendRate: number;
-  bendSearchMinSidebearingGap: number;
-  bendSearchMaxSidebearingGap: number;
-  bendSearchStep: number;
-  searchedSidebearingGap: number;
-  searchedBendRate: number;
-  searchedBendT: number;
-  searchedJoinCurve: Curve;
-  noBackwardsSidebearingGap: number;
-} {
-  const entryCurve = entryPhaseCurves[0];
-  const lastEntryCurve = entryPhaseCurves[entryPhaseCurves.length - 1];
-  if (!entryCurve || !lastEntryCurve) {
-    const emptyCurve = {
-      p0: { x: 0, y: 0 },
-      p1: { x: 0, y: 0 },
-      p2: { x: 0, y: 0 },
-      p3: { x: 0, y: 0 }
-    };
-    return {
-      verticalDistance: 0,
-      targetBendRate: options.targetBendRate,
-      bendSearchMinSidebearingGap: options.bendSearchMinSidebearingGap,
-      bendSearchMaxSidebearingGap: options.bendSearchMaxSidebearingGap,
-      bendSearchStep,
-      searchedSidebearingGap: 0,
-      searchedBendRate: 0,
-      searchedBendT: 0,
-      searchedJoinCurve: emptyCurve,
-      noBackwardsSidebearingGap: 0
-    };
-  }
-
-  const verticalDistance = Math.abs(entryCurve.p0.y - exitCurve.p3.y);
-  const searched = findSmallestGapForTargetBendRate(
-    exitCurve,
-    entryCurve,
-    previousExitToRightSidebearing,
-    nextEntryFromLeftSidebearing,
-    options.targetBendRate,
-    options.bendSearchMinSidebearingGap,
-    options.bendSearchMaxSidebearingGap,
-    options
-  );
-  const noBackwardsSidebearingGap = measureNoBackwardsSidebearingGap(
-    exitCurve,
-    entryCurve,
-    previousExitToRightSidebearing,
-    nextEntryFromLeftSidebearing,
-    options
-  );
-
-  return {
-    verticalDistance,
-    targetBendRate: options.targetBendRate,
-    bendSearchMinSidebearingGap: options.bendSearchMinSidebearingGap,
-    bendSearchMaxSidebearingGap: options.bendSearchMaxSidebearingGap,
-    bendSearchStep,
-    searchedSidebearingGap: searched.sidebearingGap,
-    searchedBendRate: searched.bend.degrees,
-    searchedBendT: searched.bend.t,
-    searchedJoinCurve: searched.joinCurve,
-    noBackwardsSidebearingGap,
-  };
-}
-
-function findSmallestGapForTargetBendRate(
-  exitCurve: Curve,
-  entryCurve: Curve,
-  previousExitToRightSidebearing: number,
-  nextEntryFromLeftSidebearing: number,
-  targetBendRate: number,
-  bendSearchMinSidebearingGap: number,
-  bendSearchMaxSidebearingGap: number,
-  options: JoinHandleScaleOptions
-): {
-  sidebearingGap: number;
-  bend: { degrees: number; t: number };
-  joinCurve: Curve;
-} {
-  let fallback = measureBendAtSidebearingGap(
-    exitCurve,
-    entryCurve,
-    previousExitToRightSidebearing,
-    nextEntryFromLeftSidebearing,
-    bendSearchMaxSidebearingGap,
-    options
-  );
-
-  for (
-    let sidebearingGap = bendSearchMinSidebearingGap;
-    sidebearingGap <= bendSearchMaxSidebearingGap;
-    sidebearingGap += bendSearchStep
-  ) {
-    const candidate = measureBendAtSidebearingGap(
-      exitCurve,
-      entryCurve,
-      previousExitToRightSidebearing,
-      nextEntryFromLeftSidebearing,
-      sidebearingGap,
-      options
-    );
-    fallback = candidate;
-    if (candidate.bend.degrees <= targetBendRate) {
-      return candidate;
-    }
-  }
-
-  return fallback;
-}
-
-function measureBendAtSidebearingGap(
-  exitCurve: Curve,
-  entryCurve: Curve,
-  previousExitToRightSidebearing: number,
-  nextEntryFromLeftSidebearing: number,
-  sidebearingGap: number,
-  options: JoinHandleScaleOptions
-): {
-  sidebearingGap: number;
-  bend: { degrees: number; t: number };
-  joinCurve: Curve;
-} {
-  const joinCurve = buildJoinAtSidebearingGap(
-    exitCurve,
-    entryCurve,
-    previousExitToRightSidebearing,
-    nextEntryFromLeftSidebearing,
-    sidebearingGap,
-    options
-  );
-  return {
-    sidebearingGap,
-    bend: measureSharpestBend(joinCurve),
-    joinCurve
-  };
-}
-
-function buildJoinAtSidebearingGap(
-  exitCurve: Curve,
-  entryCurve: Curve,
-  previousExitToRightSidebearing: number,
-  nextEntryFromLeftSidebearing: number,
-  sidebearingGap: number,
-  options: JoinHandleScaleOptions
-): Curve {
-  const entryX =
-    exitCurve.p3.x +
-    previousExitToRightSidebearing +
-    sidebearingGap +
-    nextEntryFromLeftSidebearing;
-  const shiftedEntryCurve = translateCurve(entryCurve, entryX - entryCurve.p0.x, 0);
-  return buildJoinCurve(exitCurve, shiftedEntryCurve, options);
-}
-
-function measureNoBackwardsSidebearingGap(
-  exitCurve: Curve,
-  entryCurve: Curve,
-  previousExitToRightSidebearing: number,
-  nextEntryFromLeftSidebearing: number,
-  options: JoinHandleScaleOptions
-): number {
-  const baseRange =
-    Math.abs(previousExitToRightSidebearing) + Math.abs(nextEntryFromLeftSidebearing) + 1000;
-  let low = -Math.max(1000, baseRange);
-  let high = Math.max(1000, baseRange);
-
-  while (
-    !isCurveNonBacktrackingX(
-      buildJoinAtSidebearingGap(
-        exitCurve,
-        entryCurve,
-        previousExitToRightSidebearing,
-        nextEntryFromLeftSidebearing,
-        high,
-        options
-      )
-    ) &&
-    high < 10000
-  ) {
-    high *= 2;
-  }
-
-  if (
-    !isCurveNonBacktrackingX(
-      buildJoinAtSidebearingGap(
-        exitCurve,
-        entryCurve,
-        previousExitToRightSidebearing,
-        nextEntryFromLeftSidebearing,
-        high,
-        options
-      )
-    )
-  ) {
-    return high;
-  }
-
-  for (let i = 0; i < 36; i += 1) {
-    const mid = (low + high) / 2;
-    if (
-      isCurveNonBacktrackingX(
-        buildJoinAtSidebearingGap(
-          exitCurve,
-          entryCurve,
-          previousExitToRightSidebearing,
-          nextEntryFromLeftSidebearing,
-          mid,
-          options
-        )
-      )
-    ) {
-      high = mid;
-    } else {
-      low = mid;
-    }
-  }
-
-  return high;
-}
-
-function isCurveNonBacktrackingX(curve: Curve): boolean {
-  return getMinimumCurveDx(curve) >= -0.001;
-}
-
-function getMinimumCurveDx(curve: Curve): number {
-  const x0 = curve.p0.x;
-  const x1 = curve.p1.x;
-  const x2 = curve.p2.x;
-  const x3 = curve.p3.x;
-  const a = -x0 + 3 * x1 - 3 * x2 + x3;
-  const b = 2 * x0 - 4 * x1 + 2 * x2;
-  const c = x1 - x0;
-  const candidates = [0, 1];
-  if (Math.abs(a) > 0.000001) {
-    const vertex = -b / (2 * a);
-    if (vertex > 0 && vertex < 1) {
-      candidates.push(vertex);
-    }
-  }
-  return Math.min(...candidates.map((t) => 3 * (a * t * t + b * t + c)));
-}
-
-function measureSharpestBend(curve: Curve, sampleCount = 80): { degrees: number; t: number } {
-  const sampleWindowT = 0.02;
-  const rateScaleT = 0.1;
-  let sharpest = { degrees: 0, t: 0 };
-  const edgeSamplePadding = Math.max(1, Math.ceil(sampleCount * 0.05));
-
-  for (let index = edgeSamplePadding; index <= sampleCount - edgeSamplePadding; index += 1) {
-    const t = index / sampleCount;
-    const before = getTangentAngleAt(curve, Math.max(0, t - sampleWindowT));
-    const after = getTangentAngleAt(curve, Math.min(1, t + sampleWindowT));
-    const radiansPerT = getAngleDeltaRadians(before, after) / (sampleWindowT * 2);
-    const degrees = radiansPerT * rateScaleT * (180 / Math.PI);
-    if (degrees > sharpest.degrees) {
-      sharpest = { degrees, t };
-    }
-  }
-
-  return sharpest;
-}
-
-function getTangentAngleAt(curve: Curve, t: number): number {
-  const tangent = getCurveDerivativeAt(curve, t);
-  return Math.atan2(tangent.y, tangent.x);
-}
-
-function getAngleDeltaRadians(a: number, b: number): number {
-  let delta = b - a;
-  while (delta > Math.PI) delta -= Math.PI * 2;
-  while (delta < -Math.PI) delta += Math.PI * 2;
-  return Math.abs(delta);
-}
-
-function getCurveDerivativeAt(curve: Curve, t: number): Point {
-  const mt = 1 - t;
-  return {
-    x:
-      3 * mt * mt * (curve.p1.x - curve.p0.x) +
-      6 * mt * t * (curve.p2.x - curve.p1.x) +
-      3 * t * t * (curve.p3.x - curve.p2.x),
-    y:
-      3 * mt * mt * (curve.p1.y - curve.p0.y) +
-      6 * mt * t * (curve.p2.y - curve.p1.y) +
-      3 * t * t * (curve.p3.y - curve.p2.y)
-  };
-}
-
 
 function getExitTangent(curve: Curve): Point {
   return normalizeVector({
@@ -866,12 +512,6 @@ function getEntryTangent(curve: Curve): Point {
     x: curve.p1.x - curve.p0.x || curve.p2.x - curve.p0.x,
     y: curve.p1.y - curve.p0.y || curve.p2.y - curve.p0.y
   });
-}
-
-function getAngleBetweenVectorsDegrees(a: Point, b: Point): number {
-  const dot = a.x * b.x + a.y * b.y;
-  const clamped = Math.min(1, Math.max(-1, dot));
-  return (Math.acos(clamped) * 180) / Math.PI;
 }
 
 function getStepStartPoint(steps: BezierStep[], index: number): Point {

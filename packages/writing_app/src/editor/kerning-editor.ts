@@ -8,7 +8,6 @@ import {
   type CursiveKerningPairs,
   type CursiveKerningSettings,
   type JoinMetric,
-  type JoinSpacingOptions,
   type WritingPath
 } from "letterpaths"
 
@@ -47,15 +46,13 @@ type FilePickerWindow = Window &
     }) => Promise<EditableFileHandle>
   }
 
-type JoinControlKey = keyof Required<JoinSpacingOptions>
-
 type PairSnapshot = {
   path: WritingPath
   metric: JoinMetric | null
   gap: number
   exitHandleScale: number
   entryHandleScale: number
-  source: "algorithm" | "override"
+  source: "default" | "override"
   viewBox: string
   minX: number
   maxX: number
@@ -96,82 +93,6 @@ const kerningHandleStoreName = "handles"
 const kerningHandleDbVersion = 1
 const kerningFileHandleKey = "cursive-kerning-json"
 
-const defaultEditorJoinSpacing = {
-  targetBendRate: 7,
-  minSidebearingGap: -135,
-  maxSidebearingGap: 500,
-  bendSearchMinSidebearingGap: 189,
-  bendSearchMaxSidebearingGap: 80,
-  exitHandleScale: 0.7,
-  entryHandleScale: 1
-} as const satisfies Required<JoinSpacingOptions>
-
-const joinControlDefinitions = [
-  {
-    key: "targetBendRate",
-    label: "Target maximum bend rate",
-    min: 0,
-    max: 30,
-    step: 0.1,
-    value: defaultEditorJoinSpacing.targetBendRate
-  },
-  {
-    key: "minSidebearingGap",
-    label: "Minimum sidebearing gap",
-    min: -500,
-    max: 500,
-    step: 5,
-    value: defaultEditorJoinSpacing.minSidebearingGap
-  },
-  {
-    key: "maxSidebearingGap",
-    label: "Maximum sidebearing gap",
-    min: -500,
-    max: 500,
-    step: 5,
-    value: defaultEditorJoinSpacing.maxSidebearingGap
-  },
-  {
-    key: "bendSearchMinSidebearingGap",
-    label: "Search minimum sidebearing gap",
-    min: -300,
-    max: 200,
-    step: 1,
-    value: defaultEditorJoinSpacing.bendSearchMinSidebearingGap
-  },
-  {
-    key: "bendSearchMaxSidebearingGap",
-    label: "Search maximum sidebearing gap",
-    min: -120,
-    max: 240,
-    step: 1,
-    value: defaultEditorJoinSpacing.bendSearchMaxSidebearingGap
-  },
-  {
-    key: "exitHandleScale",
-    label: "p0-p1 handle scale",
-    min: 0,
-    max: 2,
-    step: 0.05,
-    value: defaultEditorJoinSpacing.exitHandleScale
-  },
-  {
-    key: "entryHandleScale",
-    label: "p2-p3 handle scale",
-    min: 0,
-    max: 2,
-    step: 0.05,
-    value: defaultEditorJoinSpacing.entryHandleScale
-  }
-] as const satisfies ReadonlyArray<{
-  key: JoinControlKey
-  label: string
-  min: number
-  max: number
-  step: number
-  value: number
-}>
-
 const escapeHtml = (value: string): string =>
   value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
 
@@ -185,13 +106,6 @@ const roundScale = (value: number): number => Math.round(value * 100) / 100
 const formatGap = (value: number): string => value.toFixed(1)
 
 const formatScale = (value: number): string => value.toFixed(2)
-
-const formatControlValue = (key: JoinControlKey, value: number): string =>
-  key === "targetBendRate"
-    ? value.toFixed(1)
-    : key === "exitHandleScale" || key === "entryHandleScale"
-      ? formatScale(value)
-      : value.toFixed(0)
 
 const buildCurveD = (curve: WritingPath["strokes"][number]["curves"][number]): string =>
   `M ${curve.p0.x} ${curve.p0.y} C ${curve.p1.x} ${curve.p1.y} ${curve.p2.x} ${curve.p2.y} ${curve.p3.x} ${curve.p3.y}`
@@ -266,21 +180,20 @@ const normalizeKerningPairs = (value: unknown): CursiveKerningPairs => {
 const buildKerningSettings = (): CursiveKerningSettings => ({
   schemaVersion: 1,
   description:
-    "Sparse hard-coded cursive pair kerning overrides. Each lowercase two-letter key can store sidebearingGap, exitHandleScale, and entryHandleScale. Missing values fall back to the join spacing algorithm/global controls.",
+    "Hard-coded cursive pair kerning. Each lowercase two-letter key can store sidebearingGap, exitHandleScale, and entryHandleScale.",
   units: "letterpath sidebearing gap and Bezier handle scale",
   pairs: Object.fromEntries(
     Object.entries(kerningPairs).sort(([first], [second]) => first.localeCompare(second))
   )
 })
 
-let joinSpacing: Required<JoinSpacingOptions> = { ...defaultEditorJoinSpacing }
 let kerningPairs: CursiveKerningPairs = normalizeKerningPairs(defaultCursiveKerningSettings)
 let selectedPair = "aa"
 let activeDrag: DragState | null = null
 let editableFileHandle: EditableFileHandle | null = null
 let editableFileName = "packages/letterpaths/src/data/cursive-kerning.json"
 let hasUnsavedChanges = false
-let filterMode: "all" | "override" | "algorithm" = "all"
+let filterMode: "all" | "override" | "default" = "all"
 let searchQuery = ""
 
 app.innerHTML = `
@@ -303,7 +216,7 @@ app.innerHTML = `
         <select id="kerning-filter">
           <option value="all">All pairs</option>
           <option value="override">Overrides</option>
-          <option value="algorithm">Algorithm fallback</option>
+          <option value="default">Built-in defaults</option>
         </select>
       </label>
       <label class="kerning-editor__field">
@@ -311,38 +224,6 @@ app.innerHTML = `
         <input id="kerning-search" type="search" placeholder="aa" autocomplete="off" />
       </label>
       <div class="kerning-editor__status" id="kerning-status"></div>
-    </section>
-
-    <section class="kerning-editor__settings">
-      <div class="kerning-editor__settings-title">
-        <h2>Join spacing controls</h2>
-        <span class="kerning-editor__status">Changes re-run the cursive joiner</span>
-      </div>
-      <div class="kerning-editor__slider-grid">
-        ${joinControlDefinitions
-          .map(
-            (control) => `
-              <label class="kerning-editor__field">
-                ${control.label}
-                <div class="kerning-editor__range-row">
-                  <input
-                    class="kerning-editor__range"
-                    id="kerning-${control.key}"
-                    type="range"
-                    min="${control.min}"
-                    max="${control.max}"
-                    step="${control.step}"
-                    value="${control.value}"
-                  />
-                  <span class="kerning-editor__range-value" id="kerning-${control.key}-value">
-                    ${formatControlValue(control.key, control.value)}
-                  </span>
-                </div>
-              </label>
-            `
-          )
-          .join("")}
-      </div>
     </section>
 
     <section class="kerning-editor__workspace">
@@ -386,46 +267,18 @@ if (
   throw new Error("Missing elements for kerning editor.")
 }
 
-const joinSpacingInputs = Object.fromEntries(
-  joinControlDefinitions.map((control) => [
-    control.key,
-    document.querySelector<HTMLInputElement>(`#kerning-${control.key}`)
-  ])
-) as Record<JoinControlKey, HTMLInputElement | null>
-
-const joinSpacingValues = Object.fromEntries(
-  joinControlDefinitions.map((control) => [
-    control.key,
-    document.querySelector<HTMLSpanElement>(`#kerning-${control.key}-value`)
-  ])
-) as Record<JoinControlKey, HTMLSpanElement | null>
-
-if (
-  Object.values(joinSpacingInputs).some((inputEl) => !inputEl) ||
-  Object.values(joinSpacingValues).some((valueEl) => !valueEl)
-) {
-  throw new Error("Missing join spacing controls for kerning editor.")
-}
-
 function computePairSnapshot(pair: string): PairSnapshot {
   const override = kerningPairs[pair]
   const path = buildHandwritingPath(pair, {
     style: "cursive",
     targetGuides,
-    joinSpacing,
     joinKerning: override ? { [pair]: override } : {},
     letters
   })
   const metric = path.joinMetrics?.[0] ?? null
   const gap = metric?.renderedSidebearingGap ?? override?.sidebearingGap ?? 0
-  const exitHandleScale =
-    metric?.kerningOverrideExitHandleScale ??
-    override?.exitHandleScale ??
-    joinSpacing.exitHandleScale
-  const entryHandleScale =
-    metric?.kerningOverrideEntryHandleScale ??
-    override?.entryHandleScale ??
-    joinSpacing.entryHandleScale
+  const exitHandleScale = metric?.exitHandleScale ?? override?.exitHandleScale ?? 1
+  const entryHandleScale = metric?.entryHandleScale ?? override?.entryHandleScale ?? 1
   const paddingX = 120
   const paddingY = 110
   const minX = path.bounds.minX - paddingX
@@ -438,7 +291,7 @@ function computePairSnapshot(pair: string): PairSnapshot {
     gap,
     exitHandleScale,
     entryHandleScale,
-    source: override ? "override" : "algorithm",
+    source: override ? "override" : "default",
     viewBox: `${minX} ${minY} ${Math.max(420, maxX - minX)} ${Math.max(420, maxY - minY)}`,
     minX,
     maxX,
@@ -497,7 +350,7 @@ function buildCardContent(pair: string): string {
     </svg>
     <div class="kerning-card__footer">
       <span class="kerning-card__value">${formatGap(snapshot.gap)}</span>
-      <span class="kerning-card__value">${snapshot.source === "override" ? `h ${formatScale(snapshot.exitHandleScale)}/${formatScale(snapshot.entryHandleScale)}` : "auto"}</span>
+      <span class="kerning-card__value">${snapshot.source === "override" ? `h ${formatScale(snapshot.exitHandleScale)}/${formatScale(snapshot.entryHandleScale)}` : "default"}</span>
     </div>
   `
 }
@@ -507,7 +360,7 @@ function pairMatchesFilter(pair: string): boolean {
   if (filterMode === "override" && !hasOverride) {
     return false
   }
-  if (filterMode === "algorithm" && hasOverride) {
+  if (filterMode === "default" && hasOverride) {
     return false
   }
   return !searchQuery || pair.includes(searchQuery)
@@ -556,7 +409,7 @@ function renderGrid() {
   const donePairs = visiblePairs.filter((pair) => kerningPairs[pair])
   gridEl.innerHTML = [
     filterMode === "override" ? "" : buildPairSection("To do", todoPairs),
-    filterMode === "algorithm" ? "" : buildPairSection("Done", donePairs)
+    filterMode === "default" ? "" : buildPairSection("Done", donePairs)
   ].join("")
   gridCountEl.textContent =
     filterMode === "all"
@@ -583,7 +436,7 @@ function renderSelectedPair() {
         class="kerning-editor__badge ${snapshot.source === "override" ? "kerning-editor__badge--override" : ""}"
         id="kerning-selected-badge"
       >
-        ${snapshot.source === "override" ? "override" : "algorithm"}
+        ${snapshot.source === "override" ? "override" : "default"}
       </span>
     </div>
     <div id="kerning-selected-preview-wrap">
@@ -636,11 +489,10 @@ function renderSelectedPair() {
 function buildSelectedMetrics(snapshot: PairSnapshot): string {
   return `
     ${metricRow("Rendered gap", formatGap(snapshot.gap))}
-    ${metricRow("Algorithm gap", formatGap(computeAlgorithmGap(selectedPair)))}
+    ${snapshot.metric ? metricRow("Base sidebearing gap", formatGap(snapshot.metric.baseSidebearingGap)) : ""}
     ${metricRow("p0-p1 handle scale", formatScale(snapshot.exitHandleScale))}
     ${metricRow("p2-p3 handle scale", formatScale(snapshot.entryHandleScale))}
     ${metricRow("Source", snapshot.source)}
-    ${snapshot.metric?.searchedBendRate === undefined ? "" : metricRow("Selected bend", `${snapshot.metric.searchedBendRate.toFixed(2)} deg/0.1t`)}
   `
 }
 
@@ -657,7 +509,7 @@ function updateSelectedPairReadout(syncInputs = false) {
     titleEl.textContent = selectedPair.toUpperCase()
   }
   if (badgeEl) {
-    badgeEl.textContent = snapshot.source === "override" ? "override" : "algorithm"
+    badgeEl.textContent = snapshot.source === "override" ? "override" : "default"
     badgeEl.classList.toggle("kerning-editor__badge--override", snapshot.source === "override")
   }
   if (previewWrapEl) {
@@ -694,32 +546,6 @@ function metricRow(label: string, value: string): string {
   `
 }
 
-function computeAlgorithmGap(pair: string): number {
-  const path = buildHandwritingPath(pair, {
-    style: "cursive",
-    targetGuides,
-    joinSpacing,
-    joinKerning: {},
-    letters
-  })
-  return path.joinMetrics?.[0]?.renderedSidebearingGap ?? 0
-}
-
-function syncJoinSpacingFromInputs() {
-  joinControlDefinitions.forEach((control) => {
-    const input = joinSpacingInputs[control.key]
-    const value = joinSpacingValues[control.key]
-    if (!input || !value) {
-      return
-    }
-    joinSpacing = {
-      ...joinSpacing,
-      [control.key]: Number(input.value)
-    }
-    value.textContent = formatControlValue(control.key, Number(input.value))
-  })
-}
-
 function syncMeta() {
   const overrideCount = Object.keys(kerningPairs).length
   const dirtyText = hasUnsavedChanges ? "unsaved" : "saved"
@@ -727,7 +553,6 @@ function syncMeta() {
 }
 
 function renderAll() {
-  syncJoinSpacingFromInputs()
   renderSelectedPair()
   renderGrid()
   syncMeta()
@@ -844,7 +669,7 @@ function clearPairOverride(pair: string) {
   renderGrid()
   renderSelectedPair()
   syncMeta()
-  statusEl.textContent = `${pair.toUpperCase()} reset to algorithm fallback.`
+  statusEl.textContent = `${pair.toUpperCase()} reset to built-in default.`
 }
 
 function beginDrag(pair: string, event: PointerEvent, card: HTMLElement) {
@@ -1232,14 +1057,6 @@ filterSelect.addEventListener("change", () => {
 searchInput.addEventListener("input", () => {
   searchQuery = searchInput.value.trim().toLowerCase()
   renderGrid()
-})
-
-joinControlDefinitions.forEach((control) => {
-  joinSpacingInputs[control.key]?.addEventListener("input", () => {
-    syncJoinSpacingFromInputs()
-    renderSelectedPair()
-    renderGrid()
-  })
 })
 
 renderAll()

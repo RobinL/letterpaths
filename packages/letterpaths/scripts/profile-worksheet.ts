@@ -14,13 +14,7 @@ const TARGET_GUIDES = {
 } as const;
 
 const JOIN_SPACING = {
-  targetBendRate: 16,
-  minSidebearingGap: 80,
-  maxSidebearingGap: 240,
-  bendSearchMinSidebearingGap: -30,
-  bendSearchMaxSidebearingGap: 240,
-  exitHandleScale: 0.75,
-  entryHandleScale: 0.75
+  sidebearingGapAdjustment: 0
 } as const;
 
 const TOP_ANNOTATIONS_CURRENT: CompileFormationAnnotationsOptions = {

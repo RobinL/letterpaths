@@ -156,13 +156,7 @@ const WORKSHEET_SVG_EXPORT_STYLES = `
   }
 `;
 const DEFAULT_WORKSHEET_JOIN_SPACING = {
-  targetBendRate: 16,
-  minSidebearingGap: 80,
-  maxSidebearingGap: 240,
-  bendSearchMinSidebearingGap: -30,
-  bendSearchMaxSidebearingGap: 240,
-  exitHandleScale: 0.75,
-  entryHandleScale: 0.75
+  sidebearingGapAdjustment: 0
 } as const satisfies Required<JoinSpacingOptions>;
 const WORKSHEET_URL_PARAM_KEYS = [
   "text",
@@ -171,6 +165,7 @@ const WORKSHEET_URL_PARAM_KEYS = [
   "practiceSize",
   "practiceRepeats",
   "strokeWidth",
+  "sidebearingGapAdjustment",
   "targetBendRate",
   "minSidebearingGap",
   "bendSearchMinSidebearingGap",
@@ -468,64 +463,14 @@ function renderAdvancedSettings(): string {
       <summary>Advanced settings</summary>
       <div class="worksheet-app__details-body">
         ${renderRangeControl({
-    id: "target-bend-rate-slider",
-    label: "Target maximum bend rate",
-    value: DEFAULT_WORKSHEET_JOIN_SPACING.targetBendRate,
-    min: 0,
-    max: 60,
-    step: 1,
-    valueId: "target-bend-rate-value",
-    attrs: 'data-global-setting="targetBendRate"'
-  })}
-        ${renderRangeControl({
-    id: "min-sidebearing-gap-slider",
-    label: "Minimum sidebearing gap",
-    value: DEFAULT_WORKSHEET_JOIN_SPACING.minSidebearingGap,
-    min: -300,
-    max: 200,
+    id: "sidebearing-gap-adjustment-slider",
+    label: "Letter spacing adjustment",
+    value: DEFAULT_WORKSHEET_JOIN_SPACING.sidebearingGapAdjustment,
+    min: -120,
+    max: 120,
     step: 5,
-    valueId: "min-sidebearing-gap-value",
-    attrs: 'data-global-setting="minSidebearingGap"'
-  })}
-        ${renderRangeControl({
-    id: "bend-search-min-sidebearing-gap-slider",
-    label: "Search minimum sidebearing gap",
-    value: DEFAULT_WORKSHEET_JOIN_SPACING.bendSearchMinSidebearingGap,
-    min: -300,
-    max: 200,
-    step: 5,
-    valueId: "bend-search-min-sidebearing-gap-value",
-    attrs: 'data-global-setting="bendSearchMinSidebearingGap"'
-  })}
-        ${renderRangeControl({
-    id: "bend-search-max-sidebearing-gap-slider",
-    label: "Search maximum sidebearing gap",
-    value: DEFAULT_WORKSHEET_JOIN_SPACING.bendSearchMaxSidebearingGap,
-    min: -100,
-    max: 300,
-    step: 5,
-    valueId: "bend-search-max-sidebearing-gap-value",
-    attrs: 'data-global-setting="bendSearchMaxSidebearingGap"'
-  })}
-        ${renderRangeControl({
-    id: "exit-handle-scale-slider",
-    label: "p0-p1 handle scale",
-    value: DEFAULT_WORKSHEET_JOIN_SPACING.exitHandleScale,
-    min: 0,
-    max: 2,
-    step: 0.05,
-    valueId: "exit-handle-scale-value",
-    attrs: 'data-global-setting="exitHandleScale"'
-  })}
-        ${renderRangeControl({
-    id: "entry-handle-scale-slider",
-    label: "p2-p3 handle scale",
-    value: DEFAULT_WORKSHEET_JOIN_SPACING.entryHandleScale,
-    min: 0,
-    max: 2,
-    step: 0.05,
-    valueId: "entry-handle-scale-value",
-    attrs: 'data-global-setting="entryHandleScale"'
+    valueId: "sidebearing-gap-adjustment-value",
+    attrs: 'data-global-setting="sidebearingGapAdjustment"'
   })}
         <fieldset class="worksheet-app__checks" aria-label="Advanced worksheet toggles">
           ${renderGlobalToggle("include-initial-lead-in", "keepInitialLeadIn", "Initial lead-in", true)}
@@ -949,24 +894,11 @@ const syncSettingsControlsFromState = () => {
 
   globalSettingInputs.forEach((input) => {
     const setting = input.dataset.globalSetting;
-    if (setting === "targetBendRate") {
-      state.joinSpacing.targetBendRate = syncSliderValue(input, state.joinSpacing.targetBendRate);
-    } else if (setting === "minSidebearingGap") {
-      state.joinSpacing.minSidebearingGap = syncSliderValue(input, state.joinSpacing.minSidebearingGap);
-    } else if (setting === "bendSearchMinSidebearingGap") {
-      state.joinSpacing.bendSearchMinSidebearingGap = syncSliderValue(
+    if (setting === "sidebearingGapAdjustment") {
+      state.joinSpacing.sidebearingGapAdjustment = syncSliderValue(
         input,
-        state.joinSpacing.bendSearchMinSidebearingGap
+        state.joinSpacing.sidebearingGapAdjustment
       );
-    } else if (setting === "bendSearchMaxSidebearingGap") {
-      state.joinSpacing.bendSearchMaxSidebearingGap = syncSliderValue(
-        input,
-        state.joinSpacing.bendSearchMaxSidebearingGap
-      );
-    } else if (setting === "exitHandleScale") {
-      state.joinSpacing.exitHandleScale = syncSliderValue(input, state.joinSpacing.exitHandleScale);
-    } else if (setting === "entryHandleScale") {
-      state.joinSpacing.entryHandleScale = syncSliderValue(input, state.joinSpacing.entryHandleScale);
     } else if (setting === "gridlineStrokeWidth") {
       state.gridlineStrokeWidth = syncSliderValue(input, state.gridlineStrokeWidth);
     } else if (setting === "keepInitialLeadIn") {
@@ -1046,35 +978,14 @@ const syncSettingsUrl = () => {
   if (state.strokeWidth !== DEFAULT_STATE.strokeWidth) {
     url.searchParams.set("strokeWidth", String(state.strokeWidth));
   }
-  if (state.joinSpacing.targetBendRate !== DEFAULT_STATE.joinSpacing.targetBendRate) {
-    url.searchParams.set("targetBendRate", String(state.joinSpacing.targetBendRate));
-  }
-  if (state.joinSpacing.minSidebearingGap !== DEFAULT_STATE.joinSpacing.minSidebearingGap) {
-    url.searchParams.set("minSidebearingGap", String(state.joinSpacing.minSidebearingGap));
-  }
   if (
-    state.joinSpacing.bendSearchMinSidebearingGap !==
-    DEFAULT_STATE.joinSpacing.bendSearchMinSidebearingGap
+    state.joinSpacing.sidebearingGapAdjustment !==
+    DEFAULT_STATE.joinSpacing.sidebearingGapAdjustment
   ) {
     url.searchParams.set(
-      "bendSearchMinSidebearingGap",
-      String(state.joinSpacing.bendSearchMinSidebearingGap)
+      "sidebearingGapAdjustment",
+      String(state.joinSpacing.sidebearingGapAdjustment)
     );
-  }
-  if (
-    state.joinSpacing.bendSearchMaxSidebearingGap !==
-    DEFAULT_STATE.joinSpacing.bendSearchMaxSidebearingGap
-  ) {
-    url.searchParams.set(
-      "bendSearchMaxSidebearingGap",
-      String(state.joinSpacing.bendSearchMaxSidebearingGap)
-    );
-  }
-  if (state.joinSpacing.exitHandleScale !== DEFAULT_STATE.joinSpacing.exitHandleScale) {
-    url.searchParams.set("exitHandleScale", String(state.joinSpacing.exitHandleScale));
-  }
-  if (state.joinSpacing.entryHandleScale !== DEFAULT_STATE.joinSpacing.entryHandleScale) {
-    url.searchParams.set("entryHandleScale", String(state.joinSpacing.entryHandleScale));
   }
   if (state.showBaselineGuide !== DEFAULT_STATE.showBaselineGuide) {
     url.searchParams.set("showBaselineGuide", state.showBaselineGuide ? "1" : "0");
@@ -1192,26 +1103,10 @@ const applyUrlSettings = () => {
 
   globalSettingInputs.forEach((input) => {
     const setting = input.dataset.globalSetting;
-    if (setting === "targetBendRate") {
-      state.joinSpacing.targetBendRate =
-        parseSliderSearchParam(params, setting, input) ?? state.joinSpacing.targetBendRate;
-    } else if (setting === "minSidebearingGap") {
-      state.joinSpacing.minSidebearingGap =
-        parseSliderSearchParam(params, setting, input) ?? state.joinSpacing.minSidebearingGap;
-    } else if (setting === "bendSearchMinSidebearingGap") {
-      state.joinSpacing.bendSearchMinSidebearingGap =
+    if (setting === "sidebearingGapAdjustment") {
+      state.joinSpacing.sidebearingGapAdjustment =
         parseSliderSearchParam(params, setting, input) ??
-        state.joinSpacing.bendSearchMinSidebearingGap;
-    } else if (setting === "bendSearchMaxSidebearingGap") {
-      state.joinSpacing.bendSearchMaxSidebearingGap =
-        parseSliderSearchParam(params, setting, input) ??
-        state.joinSpacing.bendSearchMaxSidebearingGap;
-    } else if (setting === "exitHandleScale") {
-      state.joinSpacing.exitHandleScale =
-        parseSliderSearchParam(params, setting, input) ?? state.joinSpacing.exitHandleScale;
-    } else if (setting === "entryHandleScale") {
-      state.joinSpacing.entryHandleScale =
-        parseSliderSearchParam(params, setting, input) ?? state.joinSpacing.entryHandleScale;
+        state.joinSpacing.sidebearingGapAdjustment;
     } else if (setting === "gridlineStrokeWidth") {
       state.gridlineStrokeWidth =
         parseSliderSearchParam(params, setting, input) ?? state.gridlineStrokeWidth;
@@ -1248,8 +1143,6 @@ const getScopeSettings = (scope: AnnotationScope): WorksheetAnnotationSettings =
 const getPracticeRowCount = (): number =>
   Math.max(1, Math.floor(PRACTICE_AREA_HEIGHT_MM / state.practiceRowHeightMm));
 
-const formatScale = (value: number): string => value.toFixed(2);
-
 const setText = (id: string, value: string) => {
   const element = document.querySelector<HTMLElement>(`#${id}`);
   if (element) {
@@ -1263,18 +1156,10 @@ const syncLabels = () => {
   setText("practice-repeat-value", `${state.practiceRepeatCount}`);
   setText("stroke-width-value", `${state.strokeWidth}px`);
   setText("gridline-stroke-width-value", `${state.gridlineStrokeWidth.toFixed(1)}px`);
-  setText("target-bend-rate-value", `${state.joinSpacing.targetBendRate}`);
-  setText("min-sidebearing-gap-value", `${state.joinSpacing.minSidebearingGap}`);
   setText(
-    "bend-search-min-sidebearing-gap-value",
-    `${state.joinSpacing.bendSearchMinSidebearingGap}`
+    "sidebearing-gap-adjustment-value",
+    `${state.joinSpacing.sidebearingGapAdjustment}`
   );
-  setText(
-    "bend-search-max-sidebearing-gap-value",
-    `${state.joinSpacing.bendSearchMaxSidebearingGap}`
-  );
-  setText("exit-handle-scale-value", formatScale(state.joinSpacing.exitHandleScale));
-  setText("entry-handle-scale-value", formatScale(state.joinSpacing.entryHandleScale));
 
   (["top", "practice"] as const).forEach((scope) => {
     const settings = getScopeSettings(scope);
@@ -1864,14 +1749,7 @@ downloadPngButton.addEventListener("click", () => {
 globalSettingInputs.forEach((input) => {
   input.addEventListener("input", () => {
     const setting = input.dataset.globalSetting;
-    if (
-      setting === "targetBendRate" ||
-      setting === "minSidebearingGap" ||
-      setting === "bendSearchMinSidebearingGap" ||
-      setting === "bendSearchMaxSidebearingGap" ||
-      setting === "exitHandleScale" ||
-      setting === "entryHandleScale"
-    ) {
+    if (setting === "sidebearingGapAdjustment") {
       state.joinSpacing = {
         ...state.joinSpacing,
         [setting]: Number(input.value)

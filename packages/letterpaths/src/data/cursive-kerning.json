@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "description": "Sparse hard-coded cursive pair kerning overrides. Each lowercase two-letter key can store sidebearingGap, exitHandleScale, and entryHandleScale. Missing values fall back to the join spacing algorithm/global controls.",
+  "description": "Hard-coded cursive pair kerning. Each lowercase two-letter key can store sidebearingGap, exitHandleScale, and entryHandleScale.",
   "units": "letterpath sidebearing gap and Bezier handle scale",
   "pairs": {
     "aa": {
@@ -80,6 +80,7 @@
       "entryHandleScale": 1
     },
     "ar": {
+      "sidebearingGap": 108.3,
       "exitHandleScale": 0.78,
       "entryHandleScale": 1.18
     },
@@ -507,6 +508,7 @@
       "entryHandleScale": 1
     },
     "ec": {
+      "sidebearingGap": 79.3,
       "exitHandleScale": 1.04,
       "entryHandleScale": 1.23
     },
@@ -1061,8 +1063,9 @@
       "entryHandleScale": 1.02
     },
     "is": {
-      "exitHandleScale": 0.87,
-      "entryHandleScale": 0.97
+      "sidebearingGap": 177,
+      "exitHandleScale": 0.85,
+      "entryHandleScale": 0.56
     },
     "it": {
       "sidebearingGap": 101.6,
@@ -1542,6 +1545,7 @@
       "entryHandleScale": 1.06
     },
     "mp": {
+      "sidebearingGap": 84,
       "exitHandleScale": 0.83,
       "entryHandleScale": 1.35
     },
@@ -1712,6 +1716,7 @@
       "entryHandleScale": 1
     },
     "ny": {
+      "sidebearingGap": 80.3,
       "exitHandleScale": 0.79,
       "entryHandleScale": 1
     },
@@ -2244,6 +2249,7 @@
       "exitHandleScale": 0.7
     },
     "sk": {
+      "sidebearingGap": 50,
       "exitHandleScale": 0.73,
       "entryHandleScale": 1.39
     },
@@ -2437,6 +2443,7 @@
       "entryHandleScale": 1
     },
     "ty": {
+      "sidebearingGap": 51.3,
       "exitHandleScale": 0.71,
       "entryHandleScale": 1.38
     },
@@ -2456,6 +2463,7 @@
       "entryHandleScale": 1
     },
     "uc": {
+      "sidebearingGap": 94.4,
       "exitHandleScale": 0.72,
       "entryHandleScale": 1.33
     },
@@ -2531,6 +2539,7 @@
       "entryHandleScale": 1.39
     },
     "us": {
+      "sidebearingGap": 64.9,
       "exitHandleScale": 0.71,
       "entryHandleScale": 0.96
     },
