@@ -168,6 +168,11 @@
       "exitHandleScale": 0.6,
       "entryHandleScale": 1.05
     },
+    "bk": {
+      "sidebearingGap": 189,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
+    },
     "bl": {
       "sidebearingGap": 135.1,
       "exitHandleScale": 1.23,
@@ -188,6 +193,11 @@
       "entryHandleScale": 1.34
     },
     "bp": {
+      "sidebearingGap": 189,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
+    },
+    "bq": {
       "sidebearingGap": 189,
       "exitHandleScale": 0.7,
       "entryHandleScale": 1
@@ -221,10 +231,19 @@
       "exitHandleScale": 0.7,
       "entryHandleScale": 1
     },
+    "bx": {
+      "sidebearingGap": 79.8,
+      "exitHandleScale": 0.7
+    },
     "by": {
       "sidebearingGap": 146.4,
       "exitHandleScale": 0.73,
       "entryHandleScale": 1.5
+    },
+    "bz": {
+      "sidebearingGap": 189,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
     },
     "ca": {
       "sidebearingGap": 158.3,
@@ -268,6 +287,10 @@
       "sidebearingGap": 147.6,
       "exitHandleScale": 0.96,
       "entryHandleScale": 0.92
+    },
+    "cj": {
+      "sidebearingGap": 43.1,
+      "exitHandleScale": 0.7
     },
     "ck": {
       "sidebearingGap": 143.7,
@@ -319,6 +342,20 @@
     },
     "cu": {
       "sidebearingGap": 148,
+      "exitHandleScale": 0.7
+    },
+    "cv": {
+      "sidebearingGap": 189,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
+    },
+    "cw": {
+      "sidebearingGap": 189,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
+    },
+    "cx": {
+      "sidebearingGap": 114.9,
       "exitHandleScale": 0.7
     },
     "cy": {
@@ -444,7 +481,17 @@
       "exitHandleScale": 0.7,
       "entryHandleScale": 1
     },
+    "dx": {
+      "sidebearingGap": 80,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
+    },
     "dy": {
+      "sidebearingGap": 189,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
+    },
+    "dz": {
       "sidebearingGap": 189,
       "exitHandleScale": 0.7,
       "entryHandleScale": 1
@@ -604,10 +651,22 @@
       "sidebearingGap": -28.2,
       "exitHandleScale": 0.71
     },
+    "fh": {
+      "sidebearingGap": 55.4,
+      "exitHandleScale": 0.68
+    },
     "fi": {
       "sidebearingGap": 38.7,
       "exitHandleScale": 1,
       "entryHandleScale": 0.7
+    },
+    "fj": {
+      "sidebearingGap": -32.3,
+      "exitHandleScale": 0.7
+    },
+    "fk": {
+      "sidebearingGap": 105,
+      "exitHandleScale": 0.69
     },
     "fl": {
       "sidebearingGap": 142.8,
@@ -625,6 +684,14 @@
       "sidebearingGap": -5.1,
       "exitHandleScale": 1,
       "entryHandleScale": 0.9
+    },
+    "fp": {
+      "sidebearingGap": 31.6,
+      "exitHandleScale": 0.69
+    },
+    "fq": {
+      "sidebearingGap": 46.8,
+      "exitHandleScale": 0.7
     },
     "fr": {
       "sidebearingGap": 45.1,
@@ -644,9 +711,26 @@
       "sidebearingGap": 22.8,
       "exitHandleScale": 0.7
     },
+    "fv": {
+      "sidebearingGap": 5.3,
+      "exitHandleScale": 0.69
+    },
+    "fw": {
+      "sidebearingGap": 0.6,
+      "exitHandleScale": 0.68
+    },
+    "fx": {
+      "sidebearingGap": -16.4,
+      "exitHandleScale": 0.67
+    },
     "fy": {
       "sidebearingGap": 37.7,
       "exitHandleScale": 0.69
+    },
+    "fz": {
+      "sidebearingGap": 80,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
     },
     "ga": {
       "sidebearingGap": 137.5,
@@ -656,6 +740,10 @@
     "gb": {
       "sidebearingGap": 143.5,
       "exitHandleScale": 0.7
+    },
+    "gc": {
+      "sidebearingGap": 126.1,
+      "exitHandleScale": 0.71
     },
     "gd": {
       "sidebearingGap": 154.8,
@@ -682,6 +770,10 @@
     },
     "gi": {
       "sidebearingGap": 159.6,
+      "exitHandleScale": 0.7
+    },
+    "gj": {
+      "sidebearingGap": 120.5,
       "exitHandleScale": 0.7
     },
     "gk": {
@@ -712,6 +804,10 @@
       "exitHandleScale": 0.7,
       "entryHandleScale": 1
     },
+    "gq": {
+      "sidebearingGap": 116,
+      "exitHandleScale": 0.7
+    },
     "gr": {
       "sidebearingGap": 140.7,
       "exitHandleScale": 0.7,
@@ -730,13 +826,26 @@
       "exitHandleScale": 0.7,
       "entryHandleScale": 1.25
     },
+    "gv": {
+      "sidebearingGap": 144.1,
+      "exitHandleScale": 0.7
+    },
     "gw": {
       "sidebearingGap": 151.3,
       "exitHandleScale": 0.72
     },
+    "gx": {
+      "sidebearingGap": 80,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
+    },
     "gy": {
       "sidebearingGap": 191.2,
       "exitHandleScale": 0.69
+    },
+    "gz": {
+      "sidebearingGap": 124.7,
+      "exitHandleScale": 0.7
     },
     "ha": {
       "sidebearingGap": 189,
@@ -780,6 +889,16 @@
       "sidebearingGap": 155,
       "exitHandleScale": 0.75,
       "entryHandleScale": 0.86
+    },
+    "hj": {
+      "sidebearingGap": 189,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
+    },
+    "hk": {
+      "sidebearingGap": 189,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
     },
     "hl": {
       "sidebearingGap": 189,
@@ -831,8 +950,18 @@
       "exitHandleScale": 0.7,
       "entryHandleScale": 1
     },
+    "hv": {
+      "sidebearingGap": 189,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
+    },
     "hw": {
       "sidebearingGap": 189,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
+    },
+    "hx": {
+      "sidebearingGap": 80,
       "exitHandleScale": 0.7,
       "entryHandleScale": 1
     },
@@ -959,6 +1088,11 @@
       "exitHandleScale": 0.7,
       "entryHandleScale": 1
     },
+    "iy": {
+      "sidebearingGap": 189,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
+    },
     "iz": {
       "sidebearingGap": 189,
       "exitHandleScale": 0.7,
@@ -968,26 +1102,118 @@
       "sidebearingGap": 148.9,
       "exitHandleScale": 0.7
     },
+    "jb": {
+      "sidebearingGap": 80,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
+    },
+    "jc": {
+      "sidebearingGap": 129.9,
+      "exitHandleScale": 0.7
+    },
+    "jd": {
+      "sidebearingGap": 130.5,
+      "exitHandleScale": 0.69
+    },
     "je": {
       "sidebearingGap": 109.4,
       "exitHandleScale": 0.7
+    },
+    "jf": {
+      "sidebearingGap": 92,
+      "exitHandleScale": 0.69
+    },
+    "jg": {
+      "sidebearingGap": 173.9,
+      "exitHandleScale": 0.7
+    },
+    "jh": {
+      "sidebearingGap": 189,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
     },
     "ji": {
       "sidebearingGap": 158.9,
       "exitHandleScale": 0.7
     },
+    "jj": {
+      "sidebearingGap": 93.7,
+      "exitHandleScale": 0.7
+    },
+    "jk": {
+      "sidebearingGap": 189,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
+    },
+    "jl": {
+      "sidebearingGap": 189,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
+    },
+    "jm": {
+      "sidebearingGap": 189,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
+    },
+    "jn": {
+      "sidebearingGap": 189,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
+    },
     "jo": {
       "sidebearingGap": 116.1,
       "exitHandleScale": 0.71
+    },
+    "jp": {
+      "sidebearingGap": 189,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
+    },
+    "jq": {
+      "sidebearingGap": 80,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
     },
     "jr": {
       "sidebearingGap": 189,
       "exitHandleScale": 0.7,
       "entryHandleScale": 1
     },
+    "js": {
+      "sidebearingGap": 130.6,
+      "exitHandleScale": 0.69
+    },
+    "jt": {
+      "sidebearingGap": 171.7,
+      "exitHandleScale": 0.7
+    },
     "ju": {
       "sidebearingGap": 149.9,
       "exitHandleScale": 0.69
+    },
+    "jv": {
+      "sidebearingGap": 189,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
+    },
+    "jw": {
+      "sidebearingGap": 147.2,
+      "exitHandleScale": 0.7
+    },
+    "jx": {
+      "sidebearingGap": 80,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
+    },
+    "jy": {
+      "sidebearingGap": 189,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
+    },
+    "jz": {
+      "sidebearingGap": 80,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
     },
     "ka": {
       "sidebearingGap": 189,
@@ -995,6 +1221,11 @@
       "entryHandleScale": 1
     },
     "kb": {
+      "sidebearingGap": 189,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
+    },
+    "kc": {
       "sidebearingGap": 189,
       "exitHandleScale": 0.7,
       "entryHandleScale": 1
@@ -1027,6 +1258,10 @@
       "sidebearingGap": 187.8,
       "exitHandleScale": 0.7
     },
+    "kj": {
+      "sidebearingGap": 76.1,
+      "exitHandleScale": 0.68
+    },
     "kk": {
       "sidebearingGap": 189,
       "exitHandleScale": 0.7,
@@ -1057,6 +1292,11 @@
       "exitHandleScale": 0.7,
       "entryHandleScale": 1
     },
+    "kq": {
+      "sidebearingGap": 189,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
+    },
     "kr": {
       "sidebearingGap": 189,
       "exitHandleScale": 0.7,
@@ -1077,12 +1317,27 @@
       "exitHandleScale": 0.7,
       "entryHandleScale": 1
     },
+    "kv": {
+      "sidebearingGap": 189,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
+    },
     "kw": {
       "sidebearingGap": 189,
       "exitHandleScale": 0.7,
       "entryHandleScale": 1
     },
+    "kx": {
+      "sidebearingGap": 80,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
+    },
     "ky": {
+      "sidebearingGap": 189,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
+    },
+    "kz": {
       "sidebearingGap": 189,
       "exitHandleScale": 0.7,
       "entryHandleScale": 1
@@ -1132,6 +1387,10 @@
       "exitHandleScale": 0.93,
       "entryHandleScale": 0.9
     },
+    "lj": {
+      "sidebearingGap": 24.1,
+      "exitHandleScale": 0.72
+    },
     "lk": {
       "sidebearingGap": 189,
       "exitHandleScale": 0.7,
@@ -1159,6 +1418,11 @@
     },
     "lp": {
       "sidebearingGap": 174,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
+    },
+    "lq": {
+      "sidebearingGap": 189,
       "exitHandleScale": 0.7,
       "entryHandleScale": 1
     },
@@ -1248,6 +1512,15 @@
       "exitHandleScale": 0.7,
       "entryHandleScale": 1
     },
+    "mj": {
+      "sidebearingGap": 61.2,
+      "exitHandleScale": 0.7
+    },
+    "mk": {
+      "sidebearingGap": 189,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
+    },
     "ml": {
       "sidebearingGap": 189,
       "exitHandleScale": 0.7,
@@ -1271,6 +1544,11 @@
     "mp": {
       "exitHandleScale": 0.83,
       "entryHandleScale": 1.35
+    },
+    "mq": {
+      "sidebearingGap": 189,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
     },
     "mr": {
       "sidebearingGap": 189,
@@ -1302,10 +1580,19 @@
       "exitHandleScale": 0.7,
       "entryHandleScale": 1
     },
+    "mx": {
+      "sidebearingGap": 80,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
+    },
     "my": {
       "sidebearingGap": 189,
       "exitHandleScale": 0.7,
       "entryHandleScale": 1
+    },
+    "mz": {
+      "sidebearingGap": 187.1,
+      "exitHandleScale": 0.7
     },
     "na": {
       "sidebearingGap": 146,
@@ -1595,6 +1882,10 @@
       "sidebearingGap": 137.6,
       "exitHandleScale": 0.69
     },
+    "pj": {
+      "sidebearingGap": 40.4,
+      "exitHandleScale": 0.7
+    },
     "pk": {
       "sidebearingGap": 189,
       "exitHandleScale": 0.7,
@@ -1623,6 +1914,11 @@
       "sidebearingGap": 159.2,
       "exitHandleScale": 0.69
     },
+    "pq": {
+      "sidebearingGap": 189,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
+    },
     "pr": {
       "sidebearingGap": 159.9,
       "exitHandleScale": 1.14,
@@ -1641,8 +1937,18 @@
       "sidebearingGap": 153.7,
       "exitHandleScale": 0.7
     },
+    "pv": {
+      "sidebearingGap": 189,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
+    },
     "pw": {
       "sidebearingGap": 189,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
+    },
+    "px": {
+      "sidebearingGap": 80,
       "exitHandleScale": 0.7,
       "entryHandleScale": 1
     },
@@ -1651,18 +1957,126 @@
       "exitHandleScale": 0.7,
       "entryHandleScale": 1
     },
+    "pz": {
+      "sidebearingGap": 189,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
+    },
+    "qa": {
+      "sidebearingGap": 99,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
+    },
+    "qb": {
+      "sidebearingGap": 135.1,
+      "exitHandleScale": 0.7
+    },
+    "qc": {
+      "sidebearingGap": 162.6,
+      "exitHandleScale": 0.7
+    },
+    "qd": {
+      "sidebearingGap": 144.1,
+      "exitHandleScale": 0.69
+    },
+    "qe": {
+      "sidebearingGap": 80,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
+    },
+    "qf": {
+      "sidebearingGap": 80,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
+    },
+    "qg": {
+      "sidebearingGap": 121.5,
+      "exitHandleScale": 0.7
+    },
+    "qh": {
+      "sidebearingGap": 80,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
+    },
     "qi": {
       "sidebearingGap": 172,
       "exitHandleScale": 0.7
+    },
+    "qj": {
+      "sidebearingGap": 150.4,
+      "exitHandleScale": 0.71
+    },
+    "qk": {
+      "sidebearingGap": 80,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
     },
     "ql": {
       "sidebearingGap": 143,
       "exitHandleScale": 0.7
     },
+    "qm": {
+      "sidebearingGap": 133.3,
+      "exitHandleScale": 0.69
+    },
+    "qn": {
+      "sidebearingGap": 162.8,
+      "exitHandleScale": 0.69
+    },
+    "qo": {
+      "sidebearingGap": 80,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
+    },
+    "qp": {
+      "sidebearingGap": 115.4,
+      "exitHandleScale": 0.7
+    },
+    "qq": {
+      "sidebearingGap": 117,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
+    },
+    "qr": {
+      "sidebearingGap": 145.9,
+      "exitHandleScale": 0.7
+    },
+    "qs": {
+      "sidebearingGap": 144,
+      "exitHandleScale": 0.7
+    },
+    "qt": {
+      "sidebearingGap": 80,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
+    },
     "qu": {
       "sidebearingGap": 150.8,
       "exitHandleScale": 0.63,
       "entryHandleScale": 0.65
+    },
+    "qv": {
+      "sidebearingGap": 148,
+      "exitHandleScale": 0.7
+    },
+    "qw": {
+      "sidebearingGap": 107,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
+    },
+    "qx": {
+      "sidebearingGap": 140,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
+    },
+    "qy": {
+      "sidebearingGap": 157.6,
+      "exitHandleScale": 0.7
+    },
+    "qz": {
+      "sidebearingGap": 110,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
     },
     "ra": {
       "sidebearingGap": 47.9,
@@ -1893,6 +2307,11 @@
       "exitHandleScale": 0.7,
       "entryHandleScale": 1
     },
+    "sx": {
+      "sidebearingGap": 80,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
+    },
     "sy": {
       "sidebearingGap": 142.4,
       "exitHandleScale": 0.7
@@ -1945,6 +2364,10 @@
       "exitHandleScale": 0.79,
       "entryHandleScale": 1.08
     },
+    "tj": {
+      "sidebearingGap": 38.9,
+      "exitHandleScale": 0.7
+    },
     "tk": {
       "sidebearingGap": 189,
       "exitHandleScale": 0.7,
@@ -1975,6 +2398,10 @@
       "exitHandleScale": 0.7,
       "entryHandleScale": 1
     },
+    "tq": {
+      "sidebearingGap": 194.6,
+      "exitHandleScale": 0.7
+    },
     "tr": {
       "sidebearingGap": 163.8,
       "exitHandleScale": 0.93,
@@ -2001,6 +2428,11 @@
     },
     "tw": {
       "sidebearingGap": 189,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
+    },
+    "tx": {
+      "sidebearingGap": 80,
       "exitHandleScale": 0.7,
       "entryHandleScale": 1
     },
@@ -2141,6 +2573,16 @@
       "exitHandleScale": 0.7,
       "entryHandleScale": 1
     },
+    "vb": {
+      "sidebearingGap": 189,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
+    },
+    "vc": {
+      "sidebearingGap": 80,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
+    },
     "vd": {
       "sidebearingGap": 80,
       "exitHandleScale": 0.7,
@@ -2151,17 +2593,59 @@
       "exitHandleScale": 0.46,
       "entryHandleScale": 0.5
     },
+    "vf": {
+      "sidebearingGap": 69.9,
+      "exitHandleScale": 0.69
+    },
+    "vg": {
+      "sidebearingGap": 80,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
+    },
+    "vh": {
+      "sidebearingGap": 189,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
+    },
     "vi": {
       "sidebearingGap": 83.4,
       "exitHandleScale": 0.9,
       "entryHandleScale": 0.79
+    },
+    "vj": {
+      "sidebearingGap": 16.7,
+      "exitHandleScale": 0.69
+    },
+    "vk": {
+      "sidebearingGap": 147.4,
+      "exitHandleScale": 0.7
     },
     "vl": {
       "sidebearingGap": 189,
       "exitHandleScale": 0.7,
       "entryHandleScale": 1
     },
+    "vm": {
+      "sidebearingGap": 80,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
+    },
+    "vn": {
+      "sidebearingGap": 80,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
+    },
     "vo": {
+      "sidebearingGap": 80,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
+    },
+    "vp": {
+      "sidebearingGap": 81,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
+    },
+    "vq": {
       "sidebearingGap": 80,
       "exitHandleScale": 0.7,
       "entryHandleScale": 1
@@ -2175,15 +2659,37 @@
       "sidebearingGap": 74.4,
       "exitHandleScale": 0.7
     },
+    "vt": {
+      "sidebearingGap": 189,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
+    },
     "vu": {
       "sidebearingGap": 80,
       "exitHandleScale": 0.7,
       "entryHandleScale": 1
     },
+    "vv": {
+      "sidebearingGap": 128.3,
+      "exitHandleScale": 0.69
+    },
+    "vw": {
+      "sidebearingGap": 102,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
+    },
+    "vx": {
+      "sidebearingGap": 70.7,
+      "exitHandleScale": 0.7
+    },
     "vy": {
       "sidebearingGap": 80,
       "exitHandleScale": 0.7,
       "entryHandleScale": 1
+    },
+    "vz": {
+      "sidebearingGap": 75.9,
+      "exitHandleScale": 0.71
     },
     "wa": {
       "sidebearingGap": 79.1,
@@ -2212,6 +2718,10 @@
       "sidebearingGap": -45,
       "exitHandleScale": 0.7
     },
+    "wg": {
+      "sidebearingGap": 100.3,
+      "exitHandleScale": 0.7
+    },
     "wh": {
       "sidebearingGap": 117.1,
       "exitHandleScale": 0.68,
@@ -2221,6 +2731,10 @@
       "sidebearingGap": 101.3,
       "exitHandleScale": 0.51,
       "entryHandleScale": 0.61
+    },
+    "wj": {
+      "sidebearingGap": 0.5,
+      "exitHandleScale": 0.73
     },
     "wk": {
       "sidebearingGap": 189,
@@ -2249,6 +2763,10 @@
       "exitHandleScale": 0.7,
       "entryHandleScale": 1
     },
+    "wq": {
+      "sidebearingGap": 98.6,
+      "exitHandleScale": 0.71
+    },
     "wr": {
       "sidebearingGap": 109.6,
       "exitHandleScale": 0.68
@@ -2266,20 +2784,43 @@
       "sidebearingGap": 121.2,
       "exitHandleScale": 0.69
     },
+    "wv": {
+      "sidebearingGap": 189,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
+    },
     "ww": {
       "sidebearingGap": 140.1,
+      "exitHandleScale": 0.7
+    },
+    "wx": {
+      "sidebearingGap": 96.6,
       "exitHandleScale": 0.7
     },
     "wy": {
       "sidebearingGap": 127.8,
       "exitHandleScale": 0.7
     },
+    "wz": {
+      "sidebearingGap": 140.8,
+      "exitHandleScale": 0.71
+    },
     "xa": {
       "sidebearingGap": 189,
       "exitHandleScale": 0.7,
       "entryHandleScale": 1
     },
+    "xb": {
+      "sidebearingGap": 189,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
+    },
     "xc": {
+      "sidebearingGap": 189,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
+    },
+    "xd": {
       "sidebearingGap": 189,
       "exitHandleScale": 0.7,
       "entryHandleScale": 1
@@ -2293,6 +2834,11 @@
       "sidebearingGap": 44.4,
       "exitHandleScale": 0.71
     },
+    "xg": {
+      "sidebearingGap": 189,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
+    },
     "xh": {
       "sidebearingGap": 189,
       "exitHandleScale": 0.7,
@@ -2302,7 +2848,26 @@
       "sidebearingGap": 172.4,
       "exitHandleScale": 0.7
     },
+    "xj": {
+      "sidebearingGap": 4.8,
+      "exitHandleScale": 0.7
+    },
+    "xk": {
+      "sidebearingGap": 189,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
+    },
     "xl": {
+      "sidebearingGap": 189,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
+    },
+    "xm": {
+      "sidebearingGap": 189,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
+    },
+    "xn": {
       "sidebearingGap": 189,
       "exitHandleScale": 0.7,
       "entryHandleScale": 1
@@ -2322,6 +2887,16 @@
       "exitHandleScale": 0.7,
       "entryHandleScale": 1
     },
+    "xr": {
+      "sidebearingGap": 189,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
+    },
+    "xs": {
+      "sidebearingGap": 189,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
+    },
     "xt": {
       "sidebearingGap": 153.8,
       "exitHandleScale": 0.69
@@ -2336,12 +2911,22 @@
       "exitHandleScale": 0.7,
       "entryHandleScale": 1
     },
+    "xw": {
+      "sidebearingGap": 189,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
+    },
     "xx": {
       "sidebearingGap": 80,
       "exitHandleScale": 0.7,
       "entryHandleScale": 1
     },
     "xy": {
+      "sidebearingGap": 189,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
+    },
+    "xz": {
       "sidebearingGap": 189,
       "exitHandleScale": 0.7,
       "entryHandleScale": 1
@@ -2386,6 +2971,10 @@
       "exitHandleScale": 0.7,
       "entryHandleScale": 1
     },
+    "yj": {
+      "sidebearingGap": 68.4,
+      "exitHandleScale": 0.69
+    },
     "yk": {
       "sidebearingGap": 189,
       "exitHandleScale": 0.7,
@@ -2415,6 +3004,10 @@
       "exitHandleScale": 0.7,
       "entryHandleScale": 1
     },
+    "yq": {
+      "sidebearingGap": 157,
+      "exitHandleScale": 0.7
+    },
     "yr": {
       "sidebearingGap": 158.1,
       "exitHandleScale": 0.7
@@ -2432,8 +3025,21 @@
       "sidebearingGap": 146.9,
       "exitHandleScale": 0.7
     },
+    "yv": {
+      "sidebearingGap": 147.9,
+      "exitHandleScale": 0.7
+    },
     "yw": {
       "sidebearingGap": 151.5,
+      "exitHandleScale": 0.7
+    },
+    "yx": {
+      "sidebearingGap": 80,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
+    },
+    "yy": {
+      "sidebearingGap": 145.4,
       "exitHandleScale": 0.7
     },
     "yz": {
@@ -2446,10 +3052,33 @@
       "exitHandleScale": 0.7,
       "entryHandleScale": 1
     },
+    "zb": {
+      "sidebearingGap": 189,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
+    },
+    "zc": {
+      "sidebearingGap": 189,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
+    },
+    "zd": {
+      "sidebearingGap": 189,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
+    },
     "ze": {
       "sidebearingGap": 80,
       "exitHandleScale": 0.7,
       "entryHandleScale": 1
+    },
+    "zf": {
+      "sidebearingGap": -28.9,
+      "exitHandleScale": 0.7
+    },
+    "zg": {
+      "sidebearingGap": 129.4,
+      "exitHandleScale": 0.7
     },
     "zh": {
       "sidebearingGap": 189,
@@ -2461,7 +3090,26 @@
       "exitHandleScale": 0.7,
       "entryHandleScale": 1
     },
+    "zj": {
+      "sidebearingGap": 4.3,
+      "exitHandleScale": 0.71
+    },
+    "zk": {
+      "sidebearingGap": 189,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
+    },
     "zl": {
+      "sidebearingGap": 189,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
+    },
+    "zm": {
+      "sidebearingGap": 189,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
+    },
+    "zn": {
       "sidebearingGap": 189,
       "exitHandleScale": 0.7,
       "entryHandleScale": 1
@@ -2469,6 +3117,21 @@
     "zo": {
       "sidebearingGap": 115.4,
       "exitHandleScale": 0.7
+    },
+    "zp": {
+      "sidebearingGap": 189,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
+    },
+    "zq": {
+      "sidebearingGap": 189,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
+    },
+    "zr": {
+      "sidebearingGap": 189,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
     },
     "zs": {
       "sidebearingGap": 189,
@@ -2482,6 +3145,21 @@
     },
     "zu": {
       "sidebearingGap": 189,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
+    },
+    "zv": {
+      "sidebearingGap": 189,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
+    },
+    "zw": {
+      "sidebearingGap": 189,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
+    },
+    "zx": {
+      "sidebearingGap": 80,
       "exitHandleScale": 0.7,
       "entryHandleScale": 1
     },
