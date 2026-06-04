@@ -4,8 +4,9 @@
   "units": "letterpath sidebearing gap and Bezier handle scale",
   "pairs": {
     "aa": {
-      "sidebearingGap": 161.6,
-      "exitHandleScale": 0.75
+      "sidebearingGap": 160.9,
+      "exitHandleScale": 0.75,
+      "entryHandleScale": 0.94
     },
     "ab": {
       "sidebearingGap": 219.7,
@@ -63,6 +64,11 @@
       "exitHandleScale": 0.77,
       "entryHandleScale": 0.59
     },
+    "ap": {
+      "sidebearingGap": 189,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
+    },
     "ar": {
       "exitHandleScale": 0.78,
       "entryHandleScale": 1.18
@@ -76,6 +82,16 @@
       "sidebearingGap": 142.6,
       "exitHandleScale": 0.63,
       "entryHandleScale": 1.09
+    },
+    "av": {
+      "sidebearingGap": 189,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
+    },
+    "ay": {
+      "sidebearingGap": 189,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
     },
     "ba": {
       "sidebearingGap": 112.4,
@@ -127,6 +143,11 @@
       "exitHandleScale": 1.23,
       "entryHandleScale": 0.88
     },
+    "bo": {
+      "sidebearingGap": 126.7,
+      "exitHandleScale": 0.71,
+      "entryHandleScale": 1.34
+    },
     "ca": {
       "sidebearingGap": 158.3,
       "exitHandleScale": 0.83,
@@ -165,6 +186,11 @@
       "sidebearingGap": 162.4,
       "exitHandleScale": 0.69,
       "entryHandleScale": 1.24
+    },
+    "do": {
+      "sidebearingGap": 159,
+      "exitHandleScale": 0.69,
+      "entryHandleScale": 1.31
     },
     "ea": {
       "sidebearingGap": 153.7,
@@ -217,10 +243,14 @@
       "exitHandleScale": 1,
       "entryHandleScale": 1.01
     },
+    "ex": {
+      "sidebearingGap": 95,
+      "exitHandleScale": 0.72
+    },
     "fe": {
+      "sidebearingGap": -43.1,
       "exitHandleScale": 1.02,
-      "entryHandleScale": 0.99,
-      "sidebearingGap": -43.1
+      "entryHandleScale": 0.99
     },
     "fi": {
       "sidebearingGap": 38.7,
@@ -232,6 +262,11 @@
       "exitHandleScale": 1,
       "entryHandleScale": 0.9
     },
+    "fr": {
+      "exitHandleScale": 0.75,
+      "entryHandleScale": 1.31,
+      "sidebearingGap": 45.1
+    },
     "ge": {
       "sidebearingGap": 80,
       "exitHandleScale": 0.7,
@@ -241,6 +276,11 @@
       "sidebearingGap": 106.8,
       "exitHandleScale": 1.05,
       "entryHandleScale": 1
+    },
+    "gr": {
+      "sidebearingGap": 140.7,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1.31
     },
     "ha": {
       "sidebearingGap": 189,
@@ -278,6 +318,11 @@
       "sidebearingGap": 80,
       "exitHandleScale": 0.7,
       "entryHandleScale": 1
+    },
+    "if": {
+      "sidebearingGap": 20.5,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1.11
     },
     "ig": {
       "sidebearingGap": 179.7,
@@ -319,6 +364,11 @@
     "iv": {
       "sidebearingGap": 176.6,
       "exitHandleScale": 0.7
+    },
+    "ke": {
+      "exitHandleScale": 0.96,
+      "entryHandleScale": 0.78,
+      "sidebearingGap": 97.8
     },
     "la": {
       "sidebearingGap": 184.1,
@@ -422,6 +472,11 @@
       "exitHandleScale": 0.83,
       "entryHandleScale": 1
     },
+    "od": {
+      "sidebearingGap": 80,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
+    },
     "of": {
       "sidebearingGap": -28.8,
       "exitHandleScale": 0.74,
@@ -441,6 +496,14 @@
       "sidebearingGap": 108.6,
       "exitHandleScale": 0.95,
       "entryHandleScale": 0.98
+    },
+    "oo": {
+      "sidebearingGap": 91.4,
+      "exitHandleScale": 0.7
+    },
+    "op": {
+      "sidebearingGap": 99,
+      "exitHandleScale": 0.7
     },
     "or": {
       "sidebearingGap": 91.5,
@@ -496,6 +559,11 @@
       "exitHandleScale": 0.65,
       "entryHandleScale": 1.06
     },
+    "rd": {
+      "sidebearingGap": 80,
+      "exitHandleScale": 0.7,
+      "entryHandleScale": 1
+    },
     "re": {
       "sidebearingGap": 126.9,
       "exitHandleScale": 0.79,
@@ -526,6 +594,11 @@
       "exitHandleScale": 0.78,
       "entryHandleScale": 1
     },
+    "sa": {
+      "sidebearingGap": 120.2,
+      "exitHandleScale": 1.2,
+      "entryHandleScale": 0.9
+    },
     "se": {
       "sidebearingGap": 91.9,
       "exitHandleScale": 0.7
@@ -544,6 +617,11 @@
       "sidebearingGap": 88.4,
       "exitHandleScale": 1.05,
       "entryHandleScale": 0.8
+    },
+    "sp": {
+      "sidebearingGap": 135.4,
+      "exitHandleScale": 0.75,
+      "entryHandleScale": 1.34
     },
     "ss": {
       "sidebearingGap": 119.4,
@@ -599,6 +677,10 @@
       "exitHandleScale": 0.98,
       "entryHandleScale": 0.8
     },
+    "ty": {
+      "exitHandleScale": 0.71,
+      "entryHandleScale": 1.38
+    },
     "ul": {
       "sidebearingGap": 189,
       "exitHandleScale": 0.7,
@@ -652,6 +734,10 @@
       "sidebearingGap": 101.3,
       "exitHandleScale": 0.51,
       "entryHandleScale": 0.61
+    },
+    "wo": {
+      "sidebearingGap": 79,
+      "exitHandleScale": 0.73
     }
   }
 }
