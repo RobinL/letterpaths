@@ -214,7 +214,6 @@ let checkpointEls: SVGPathElement[] = [];
 let completedArrowLayerEl: SVGGElement | null = null;
 let remainingArrowLayerEl: SVGGElement | null = null;
 let toleranceGateEl: SVGRectElement | null = null;
-let completedPathEl: SVGPathElement | null = null;
 let userInkLayerEl: SVGGElement | null = null;
 let activePointerId: number | null = null;
 let activeStroke: DrawnStroke | null = null;
@@ -341,24 +340,6 @@ const pointsToPolylinePathD = (points: readonly Point[]): string => {
   return `M ${first.x} ${first.y}${rest.map((point) => ` L ${point.x} ${point.y}`).join("")}`;
 };
 
-const getCompletedCheckpointPathD = (): string => {
-  const completedPoints = checkpoints.slice(0, completedCheckpointCount);
-  let d = "";
-  let previousStrokeIndex: number | null = null;
-
-  completedPoints.forEach((checkpoint) => {
-    if (checkpoint.strokeIndex !== previousStrokeIndex) {
-      d += ` M ${checkpoint.x} ${checkpoint.y}`;
-      previousStrokeIndex = checkpoint.strokeIndex;
-      return;
-    }
-
-    d += ` L ${checkpoint.x} ${checkpoint.y}`;
-  });
-
-  return d.trim();
-};
-
 const getScore = (): number | null => {
   if (recordedErrors.length === 0) {
     return null;
@@ -444,7 +425,6 @@ const syncProgressDisplay = () => {
   progressValue.textContent = `${progress}%`;
   scoreValue.textContent = score === null ? "--" : `${score}`;
 
-  completedPathEl?.setAttribute("d", getCompletedCheckpointPathD());
   checkpointEls.forEach((el, index) => {
     const checkpoint = checkpoints[index];
     const isCompleted = index < completedCheckpointCount;
@@ -572,7 +552,6 @@ const setupScene = (path: WritingPath, width: number, height: number, offsetY: n
       y2="${path.guides.baseline + offsetY}"
     ></line>
     <g class="writing-app__freehand-word">${guidePaths}</g>
-    <path class="writing-app__freehand-completed" id="completed-checkpoint-path" d=""></path>
     <g class="writing-app__freehand-completed-arrows" id="completed-arrows"></g>
     <rect class="writing-app__freehand-tolerance" id="tolerance-gate"></rect>
     <g class="writing-app__freehand-ink" id="user-ink"></g>
@@ -585,7 +564,6 @@ const setupScene = (path: WritingPath, width: number, height: number, offsetY: n
   completedArrowLayerEl = freehandSvg.querySelector<SVGGElement>("#completed-arrows");
   remainingArrowLayerEl = freehandSvg.querySelector<SVGGElement>("#remaining-arrows");
   toleranceGateEl = freehandSvg.querySelector<SVGRectElement>("#tolerance-gate");
-  completedPathEl = freehandSvg.querySelector<SVGPathElement>("#completed-checkpoint-path");
   userInkLayerEl = freehandSvg.querySelector<SVGGElement>("#user-ink");
 
   resetRoundProgress();
@@ -605,7 +583,6 @@ const renderWord = (word: string, wordIndex = -1) => {
     completedArrowLayerEl = null;
     remainingArrowLayerEl = null;
     toleranceGateEl = null;
-    completedPathEl = null;
     userInkLayerEl = null;
     freehandSvg.innerHTML = "";
     syncProgressDisplay();
@@ -625,7 +602,6 @@ const renderWord = (word: string, wordIndex = -1) => {
     completedArrowLayerEl = null;
     remainingArrowLayerEl = null;
     toleranceGateEl = null;
-    completedPathEl = null;
     userInkLayerEl = null;
     freehandSvg.innerHTML = "";
     syncProgressDisplay();
@@ -734,7 +710,7 @@ freehandSvg.addEventListener("pointermove", onPointerMove);
 freehandSvg.addEventListener("pointerup", endActiveStroke);
 freehandSvg.addEventListener("pointercancel", endActiveStroke);
 
-wordInput.addEventListener("change", () => {
+wordInput.addEventListener("input", () => {
   renderWord(wordInput.value);
 });
 wordInput.addEventListener("keydown", (event) => {

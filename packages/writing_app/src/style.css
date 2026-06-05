@@ -464,7 +464,6 @@ body {
 }
 
 .writing-app__freehand-guide,
-.writing-app__freehand-completed,
 .writing-app__freehand-user-stroke {
   fill: none;
   stroke-linecap: round;
@@ -474,12 +473,6 @@ body {
 .writing-app__freehand-guide {
   stroke: rgba(35, 49, 61, 0.24);
   stroke-width: 54;
-}
-
-.writing-app__freehand-completed {
-  stroke: rgba(90, 182, 168, 0.72);
-  stroke-width: 12;
-  pointer-events: none;
 }
 
 .writing-app__freehand-arrow {
