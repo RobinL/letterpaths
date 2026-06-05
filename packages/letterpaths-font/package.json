@@ -1,0 +1,20 @@
+{
+  "name": "letterpaths-font",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Build installable fonts from letterpaths cursive geometry.",
+  "scripts": {
+    "export": "tsx src/export-option4.ts",
+    "build": "uv run python src/build-option4.py",
+    "verify": "uv run python src/verify-shaping.py",
+    "all": "pnpm run export && pnpm run build && pnpm run verify"
+  },
+  "dependencies": {
+    "letterpaths": "workspace:*"
+  },
+  "devDependencies": {
+    "tsx": "^4.21.0",
+    "typescript": "^5.3.0"
+  }
+}

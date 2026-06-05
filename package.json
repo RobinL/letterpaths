@@ -9,6 +9,8 @@
     "build": "pnpm -r build",
     "build:pages": "pnpm -r build && node ./scripts/build-pages.mjs",
     "check:lib": "pnpm --filter letterpaths build",
+    "font:build": "pnpm --filter letterpaths build && pnpm --filter letterpaths-font all",
+    "font:export": "pnpm --filter letterpaths build && pnpm --filter letterpaths-font export",
     "test:kerning": "pnpm --filter letterpaths test:join-spacing",
     "deploy": "pnpm run build:pages && pnpm exec gh-pages -d dist-pages"
   },
