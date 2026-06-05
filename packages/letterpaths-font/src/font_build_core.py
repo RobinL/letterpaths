@@ -115,7 +115,7 @@ def stroke_to_ops_path(contours, scale, pen_width):
 def measure_scale(geo):
     tops = []
     for g in geo["glyphs"]:
-        if len(g["name"]) == 1 and g["name"].isalpha():
+        if len(g["name"]) == 1 and g["name"].islower():
             top = -1e9
             for c in g["contours"]:
                 for s in c:
@@ -247,11 +247,14 @@ def add_basic_latin_placeholders(font, letter_advance):
     def new_or_existing(name, unicode_value, width=None):
         if name in font:
             glyph = font[name]
+            created = False
         else:
             glyph = font.newGlyph(name)
+            created = True
         glyph.unicode = unicode_value
-        glyph.width = int(width if width is not None else letter_advance * 0.72)
-        return glyph
+        if created:
+            glyph.width = int(width if width is not None else letter_advance * 0.72)
+        return glyph, created
 
     def rectangle(glyph, x0, y0, x1, y1):
         pen = glyph.getPen()
@@ -285,12 +288,14 @@ def add_basic_latin_placeholders(font, letter_advance):
             vertical(glyph, glyph.width * 0.55, TARGET_XHEIGHT * 0.05, TARGET_XHEIGHT * 1.25, PEN_WIDTH * 0.4)
 
     for ch in "ABCDEFGHIJKLMNOPQRSTUVWXYZ":
-        g = new_or_existing(ch, ord(ch))
-        box_placeholder(g)
+        g, created = new_or_existing(ch, ord(ch))
+        if created:
+            box_placeholder(g)
 
     for ch in "0123456789":
-        g = new_or_existing(ch, ord(ch), letter_advance * 0.62)
-        digit_placeholder(g, ch)
+        g, created = new_or_existing(ch, ord(ch), letter_advance * 0.62)
+        if created:
+            digit_placeholder(g, ch)
 
     common = {
         "semicolon": (0x3B, ";"),
@@ -321,7 +326,9 @@ def add_basic_latin_placeholders(font, letter_advance):
 
     for name, (codepoint, kind) in common.items():
         width = letter_advance if kind in ("dashwide",) else letter_advance * 0.6
-        g = new_or_existing(name, codepoint, width)
+        g, created = new_or_existing(name, codepoint, width)
+        if not created:
+            continue
         w = g.width
         stroke = max(18, PEN_WIDTH * 0.4)
         if kind == "dash":

@@ -31,6 +31,7 @@ const XHEIGHT = 500;
 const BASELINE = 750;
 const targetGuides = { xHeight: XHEIGHT, baseline: BASELINE };
 const LETTERS = "abcdefghijklmnopqrstuvwxyz".split("");
+const UPPERCASE_LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
 
 // Probes (same scheme as the main exporter): a low-exit and a high-exit
 // neutral connector reveal a fragment's true entry/exit without extra ink.
@@ -490,12 +491,12 @@ function reconstructionCheck(): {
 // at its own exit. Two adjacent glyphs therefore meet at P's real exit point.
 //
 // Forms per letter L (cmap default = isolated):
-//   L           leadin              + leadout            (isolated)
-//   L.init      leadin              + exit               (word-initial)
+//   L           body                + exit               (isolated)
+//   L.init      body                + exit               (word-initial)
 //   L.medi      incoming(after n)   + exit   } generic placeholders, always
-//   L.fina      incoming(after n)   + leadout}  upgraded by calt (== after-n)
+//   L.fina      incoming(after n)   + exit   }  upgraded by calt (== after-n)
 //   L.medi<P>   incoming(after P)   + exit     for every predecessor P != n
-//   L.fina<P>   incoming(after P)   + leadout  for every predecessor P != n
+//   L.fina<P>   incoming(after P)   + exit     for every predecessor P != n
 // where <P> is the predecessor letter upper-cased (o.finaR = o final after r).
 //
 // This is deliberately exhaustive: 26 predecessor variants per letter.
@@ -505,11 +506,11 @@ const predSuffix = (p: string) => p.toUpperCase(); // r -> "R"
 
 /**
  * Build one pair-specific form of `letter`.
- *   predecessor = null -> word-initial / isolated (lead-in flourish);
+ *   predecessor = null -> word-initial / isolated, with no lead-in flourish;
  *   predecessor = P     -> keep the REAL P->letter join (anchored at P's exit).
  *   trailing  = "exit"    -> medial: cut at the letter's own exit (drop the
  *                            outgoing join; the next glyph owns it);
- *   trailing  = "leadout" -> final: keep the word-final flourish.
+ *   trailing  = "leadout" -> final form, with no word-final flourish.
  */
 function extractPair(
     letter: string,
@@ -524,8 +525,8 @@ function extractPair(
         style: "cursive",
         targetGuides,
         joinSpacing: JOIN_SPACING,
-        keepInitialLeadIn: !hasPrefix,
-        keepFinalLeadOut: trailing === "leadout",
+        keepInitialLeadIn: false,
+        keepFinalLeadOut: false,
     });
     const { main, deferred } = flatten(path);
     const joinIdx: number[] = [];
@@ -537,7 +538,7 @@ function extractPair(
         hasSuffix && joinIdx.length ? joinIdx[joinIdx.length - 1] : -1;
 
     // Left edge: keep the REAL predecessor->letter join; anchor at its p0 (the
-    // predecessor's exit). For init/iso, keep the lead-in and anchor at min x.
+    // predecessor's exit). For init/iso, anchor the visible letter at min x.
     let keepLo: number;
     let anchorX: number;
     let leftBoundX: number;
@@ -553,7 +554,8 @@ function extractPair(
         leftBoundX = anchorX;
     }
 
-    // Right edge: medial cuts at the letter's exit; final keeps the lead-out.
+    // Right edge: medial cuts at the letter's exit; final keeps the same
+    // no-lead-out letter ending.
     let keepHi: number;
     let rightBoundX: number;
     let exitX = Infinity;
@@ -609,6 +611,55 @@ function makeGlyphPair(
     return { name, unicodes, advance, contours };
 }
 
+function extractStandalonePrint(letter: string): { contours: Contour[]; advance: number } {
+    const path = buildHandwritingPath(letter, {
+        style: "print",
+        targetGuides,
+        keepInitialLeadIn: true,
+        keepFinalLeadOut: true,
+    });
+    const { main, deferred } = flatten(path);
+    let minX = Infinity;
+    let maxX = -Infinity;
+    for (const fc of main) {
+        for (const q of fc.p) {
+            minX = Math.min(minX, q.x);
+            maxX = Math.max(maxX, q.x);
+        }
+    }
+    for (const d of deferred) {
+        for (const curve of d.curves) {
+            for (const q of curve) {
+                minX = Math.min(minX, q.x);
+                maxX = Math.max(maxX, q.x);
+            }
+        }
+    }
+    const anchorX = Number.isFinite(minX) ? minX : 0;
+    const contours: Contour[] = [];
+    let cur: Contour = [];
+    let curS = -1;
+    for (const fc of main) {
+        if (fc.sIdx !== curS) {
+            if (cur.length) contours.push(cur);
+            cur = [];
+            curS = fc.sIdx;
+        }
+        cur.push(toSeg(fc.p, anchorX));
+    }
+    if (cur.length) contours.push(cur);
+    for (const d of deferred) {
+        contours.push(d.curves.map((c) => toSeg(c, anchorX)));
+    }
+    const inkWidth = Number.isFinite(maxX) && Number.isFinite(minX) ? maxX - minX : 0;
+    return { contours, advance: Math.round(inkWidth + 100) };
+}
+
+function makeStandalonePrintGlyph(name: string, unicodes: number[]): GlyphOut {
+    const { contours, advance } = extractStandalonePrint(name);
+    return { name, unicodes, advance, contours };
+}
+
 function round(g: GlyphOut): GlyphOut {
     return {
         ...g,
@@ -620,6 +671,9 @@ function round(g: GlyphOut): GlyphOut {
 
 function buildFontGeometry(): { meta: any; glyphs: GlyphOut[] } {
     const glyphs: GlyphOut[] = [];
+    for (const l of UPPERCASE_LETTERS) {
+        glyphs.push(round(makeStandalonePrintGlyph(l, [l.codePointAt(0)!])));
+    }
     for (const l of LETTERS) {
         const cp = l.codePointAt(0)!;
         // Isolated (cmap default) and word-initial.
@@ -653,6 +707,7 @@ function buildFontGeometry(): { meta: any; glyphs: GlyphOut[] } {
             xHeight: XHEIGHT,
             baseline: BASELINE,
             letters: LETTERS,
+            uppercaseLetters: UPPERCASE_LETTERS,
             highExit: HIGH_EXIT_LETTERS,
             midExit: MID_EXIT_LETTERS,
             genericPredecessor: GENERIC_PRED,
