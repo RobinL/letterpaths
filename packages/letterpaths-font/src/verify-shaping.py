@@ -1,16 +1,11 @@
-"""shaping_option4.py
-
-Verify pair-specific joining with HarfBuzz by printing the actual glyph
+"""Verify pair-specific joining with HarfBuzz by printing the actual glyph
 substitutions HarfBuzz performs for a set of probe words, with the `calt`
 feature on.
 
-Option 4's whole claim is that the SUCCESSOR carries the real prev->next join.
-That is only true if HarfBuzz actually selects the pair-specific form L.medi<P>
-/ L.fina<P> (e.g. in "bro" the `o` must become `o.finaR`, carrying the genuine
-r->o join, NOT a generic form). This test asserts exactly that: for every
-inter-letter position it computes the required pair-specific glyph name from the
-real predecessor and checks HarfBuzz produced it. Words after `n` legitimately
-keep the bare (generic == after-n) form.
+The successor carries the real prev->next join. This test asserts that HarfBuzz
+selects the pair-specific form L.medi<P> / L.fina<P>. For example, in "bro" the
+`o` must become `o.finaR`, carrying the genuine r->o join, not a generic form.
+Words after `n` legitimately keep the bare generic form.
 
 Run: uv run python src/verify-shaping.py
 """
@@ -20,7 +15,7 @@ from pathlib import Path
 import uharfbuzz as hb
 
 OUT = Path(__file__).resolve().parent.parent / "fonts"
-FONT = OUT / "LetterpathsOption4.otf"
+FONT = OUT / "Letterpaths.otf"
 
 GENERIC_PRED = "n"  # bare .medi/.fina carry the after-n join
 
@@ -81,7 +76,7 @@ def expected_forms(text):
 
 def main():
     if not FONT.exists():
-        raise SystemExit(f"missing {FONT}; run build_option4.py first")
+        raise SystemExit(f"missing {FONT}; run build-font.py first")
     print(f"Font: {FONT.name}  (feature calt ON)\n")
     ok = True
     pair_specific_hits = 0

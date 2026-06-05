@@ -1,6 +1,6 @@
 # letterpaths-font
 
-Builds the `Letterpaths Option4` font from the `letterpaths` library.
+Builds the `Letterpaths` font from the `letterpaths` library.
 
 This package is downstream of `packages/letterpaths`: the TypeScript exporter
 asks `letterpaths` for the real cursive geometry, then the Python builder turns
@@ -28,8 +28,10 @@ pnpm run verify
 
 Outputs are committed in `fonts/`:
 
-- `LetterpathsOption4.otf`
-- `LetterpathsOption4.ttf`
-- `LetterpathsOption4.woff2`
+- `Letterpaths.otf`
+- `Letterpaths.ttf`
+- `Letterpaths.woff2`
+
+The original research writeup is kept in `docs/writeup.md`.
 
 Intermediate geometry and UFO sources are written to `build/` and ignored.

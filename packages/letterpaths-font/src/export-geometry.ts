@@ -1,5 +1,5 @@
 /**
- * Export centerline geometry for the Letterpaths Option4 font.
+ * Export centerline geometry for the Letterpaths font.
  *
  * For every ordered lowercase pair `prev -> next`, this asks letterpaths for
  * the real join curve (prev.exit -> join -> next.entry). The shipped glyph
@@ -7,10 +7,10 @@
  * selects the correct incoming form for the real predecessor.
  *
  * Products:
- *   1. build/geometry/option4_diagnostic.json — every a-z x a-z true join, the
+ *   1. build/geometry/diagnostic.json — every a-z x a-z true join, the
  *      crossing of each candidate seam height, and a split-reconstruction check
  *      proving left+right == original on the real curve.
- *   2. build/geometry/option4_glyphs.json — the pair-specific glyph set
+ *   2. build/geometry/glyphs.json — the pair-specific glyph set
  *      (the successor owns the whole true prev->next join, so each
  *      letter L gets one incoming form L.medi<P>/L.fina<P> per predecessor P).
  *
@@ -421,7 +421,7 @@ function buildDiagnostic(): {
     });
 
     return {
-        meta: { approach: "option4-diagnostic", candidateHeights: CANDIDATE_HEIGHTS, total },
+        meta: { approach: "pair-specific-diagnostic", candidateHeights: CANDIDATE_HEIGHTS, total },
         pairs,
         summary,
     };
@@ -482,7 +482,7 @@ function reconstructionCheck(): {
 }
 
 // ---------------------------------------------------------------------------
-// Option 4 glyph model: pair-specific incoming joins.
+// Glyph model: pair-specific incoming joins.
 //
 // The successor owns the whole true join. For every letter L and predecessor P
 // we render `P + L` and keep the real P->L join anchored at P's exit, so L's
@@ -618,7 +618,7 @@ function round(g: GlyphOut): GlyphOut {
     };
 }
 
-function buildOption4Font(): { meta: any; glyphs: GlyphOut[] } {
+function buildFontGeometry(): { meta: any; glyphs: GlyphOut[] } {
     const glyphs: GlyphOut[] = [];
     for (const l of LETTERS) {
         const cp = l.codePointAt(0)!;
@@ -648,7 +648,7 @@ function buildOption4Font(): { meta: any; glyphs: GlyphOut[] } {
     }
     return {
         meta: {
-            approach: "option4",
+            approach: "pair-specific-incoming",
             model: "pair-specific-incoming",
             xHeight: XHEIGHT,
             baseline: BASELINE,
@@ -673,8 +673,8 @@ function write(name: string, data: unknown) {
 }
 
 const diag = buildDiagnostic();
-write("option4_diagnostic.json", diag);
-console.log("\nOption 4 canonical-height sweep (Y = font y-up, 0=baseline):");
+write("diagnostic.json", diag);
+console.log("\nCanonical-height sweep (Y = font y-up, 0=baseline):");
 console.log("  height  crossed/676  frac   meanTan  medTan");
 for (const s of diag.summary) {
     console.log(
@@ -701,11 +701,11 @@ if (recon.noCross.length) {
     );
 }
 
-const opt4 = buildOption4Font();
-write("option4_glyphs.json", opt4);
+const fontGeometry = buildFontGeometry();
+write("glyphs.json", fontGeometry);
 console.log(
-    `\nOption 4 (pair-specific) glyphs: ${opt4.glyphs.length} ` +
-    `(${opt4.meta.formsPerLetter} forms x ${LETTERS.length} letters)`
+    `\nPair-specific glyphs: ${fontGeometry.glyphs.length} ` +
+    `(${fontGeometry.meta.formsPerLetter} forms x ${LETTERS.length} letters)`
 );
 console.log("export complete");
 
@@ -727,7 +727,7 @@ export {
     exitClass,
     seamForClass,
     extractPair,
-    buildOption4Font,
+    buildFontGeometry,
     reconstructionCheck,
     type Pt,
     type Seg,

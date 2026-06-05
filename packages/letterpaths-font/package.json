@@ -5,8 +5,8 @@
   "type": "module",
   "description": "Build installable fonts from letterpaths cursive geometry.",
   "scripts": {
-    "export": "tsx src/export-option4.ts",
-    "build": "uv run python src/build-option4.py",
+    "export": "tsx src/export-geometry.ts",
+    "build": "uv run python src/build-font.py",
     "verify": "uv run python src/verify-shaping.py",
     "all": "pnpm run export && pnpm run build && pnpm run verify"
   },

@@ -1,5 +1,5 @@
 """
-Build the Letterpaths Option4 font from exported letterpaths geometry.
+Build the Letterpaths font from exported letterpaths geometry.
 
 Glyph model: the successor owns the whole real prev->next join, so every letter
 L has a distinct incoming form per predecessor P: L.medi<P> / L.fina<P>
@@ -14,7 +14,7 @@ OpenType logic:
            successor is matched exactly once (by its real predecessor), so the
            shaped string ends up carrying the true pair-specific join geometry.
 
-Run: uv run python src/build-option4.py
+Run: uv run python src/build-font.py
 """
 
 from __future__ import annotations
@@ -48,7 +48,7 @@ def _all_forms_of(letter, letters, generic_pred):
     return forms
 
 
-def option4_features(letters, generic_pred):
+def font_features(letters, generic_pred):
     """Pair-specific contextual joining.
 
     A) POSITIONS - init / medi / fina from neighbour presence (two passes).
@@ -119,9 +119,9 @@ def option4_features(letters, generic_pred):
     return "\n".join(lines)
 
 
-def build_option4_font():
-    print("Building OPTION 4 (pair-specific incoming joins) font...")
-    geo = json.loads((GEO_DIR / "option4_glyphs.json").read_text())
+def build_font():
+    print("Building Letterpaths font (pair-specific incoming joins)...")
+    geo = json.loads((GEO_DIR / "glyphs.json").read_text())
     meta = geo["meta"]
     print(
         f"  model={meta['model']} | forms/letter={meta['formsPerLetter']} | "
@@ -129,16 +129,16 @@ def build_option4_font():
         f"{meta['genericPredecessor']}"
     )
     scale = measure_scale(geo)
-    font = new_font("Letterpaths Option4", "Regular")
+    font = new_font("Letterpaths", "Regular")
     typical = build_glyphs(font, geo, scale, overlap=CTX_OVERLAP)
     add_punctuation(font, typical)
-    feats = option4_features(meta["letters"], meta["genericPredecessor"])
+    feats = font_features(meta["letters"], meta["genericPredecessor"])
     font.features.text = feats
     print(f"  calt feature: {len(feats.splitlines())} lines, {len(feats)} chars")
     set_glyph_order(font)
     UFO_DIR.mkdir(parents=True, exist_ok=True)
-    font.save(str(UFO_DIR / "LetterpathsOption4.ufo"), overwrite=True)
-    finalize(font, "LetterpathsOption4")
+    font.save(str(UFO_DIR / "Letterpaths.ufo"), overwrite=True)
+    finalize(font, "Letterpaths")
     print("Done. Output in", font_build_output())
 
 
@@ -149,4 +149,4 @@ def font_build_output():
 
 
 if __name__ == "__main__":
-    build_option4_font()
+    build_font()
