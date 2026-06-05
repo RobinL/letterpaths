@@ -236,11 +236,147 @@ def add_punctuation(font, letter_advance):
     emit(g, [hook, circle(cx - r * 0.8, r, r)])
 
 
+def add_basic_latin_placeholders(font, letter_advance):
+    """Add enough conventional Basic Latin coverage for app font classifiers.
+
+    Lowercase letters are the real handwriting glyphs. These fallback glyphs are
+    intentionally simple; they make the font classify as Latin text while the
+    real design work remains focused on lowercase cursive.
+    """
+
+    def new_or_existing(name, unicode_value, width=None):
+        if name in font:
+            glyph = font[name]
+        else:
+            glyph = font.newGlyph(name)
+        glyph.unicode = unicode_value
+        glyph.width = int(width if width is not None else letter_advance * 0.72)
+        return glyph
+
+    def rectangle(glyph, x0, y0, x1, y1):
+        pen = glyph.getPen()
+        pen.moveTo((x0, y0))
+        pen.lineTo((x1, y0))
+        pen.lineTo((x1, y1))
+        pen.lineTo((x0, y1))
+        pen.closePath()
+
+    def vertical(glyph, x, y0, y1, width):
+        rectangle(glyph, x - width / 2, y0, x + width / 2, y1)
+
+    def horizontal(glyph, x0, x1, y, width):
+        rectangle(glyph, x0, y - width / 2, x1, y + width / 2)
+
+    def box_placeholder(glyph):
+        w = glyph.width
+        stroke = max(18, PEN_WIDTH * 0.45)
+        x0, x1 = w * 0.18, w * 0.82
+        y0, y1 = TARGET_XHEIGHT * 0.02, TARGET_XHEIGHT * 1.28
+        horizontal(glyph, x0, x1, y0, stroke)
+        horizontal(glyph, x0, x1, y1, stroke)
+        vertical(glyph, x0, y0, y1, stroke)
+        vertical(glyph, x1, y0, y1, stroke)
+
+    def digit_placeholder(glyph, digit):
+        box_placeholder(glyph)
+        if digit in "0235689":
+            horizontal(glyph, glyph.width * 0.24, glyph.width * 0.76, TARGET_XHEIGHT * 0.65, PEN_WIDTH * 0.35)
+        if digit in "147":
+            vertical(glyph, glyph.width * 0.55, TARGET_XHEIGHT * 0.05, TARGET_XHEIGHT * 1.25, PEN_WIDTH * 0.4)
+
+    for ch in "ABCDEFGHIJKLMNOPQRSTUVWXYZ":
+        g = new_or_existing(ch, ord(ch))
+        box_placeholder(g)
+
+    for ch in "0123456789":
+        g = new_or_existing(ch, ord(ch), letter_advance * 0.62)
+        digit_placeholder(g, ch)
+
+    common = {
+        "semicolon": (0x3B, ";"),
+        "colon": (0x3A, ":"),
+        "quotedbl": (0x22, '"'),
+        "endash": (0x2013, "dash"),
+        "emdash": (0x2014, "dashwide"),
+        "parenleft": (0x28, "box"),
+        "parenright": (0x29, "box"),
+        "bracketleft": (0x5B, "box"),
+        "bracketright": (0x5D, "box"),
+        "braceleft": (0x7B, "box"),
+        "braceright": (0x7D, "box"),
+        "slash": (0x2F, "slash"),
+        "backslash": (0x5C, "backslash"),
+        "ampersand": (0x26, "box"),
+        "at": (0x40, "box"),
+        "numbersign": (0x23, "hash"),
+        "percent": (0x25, "percent"),
+        "asterisk": (0x2A, "asterisk"),
+        "plus": (0x2B, "plus"),
+        "equal": (0x3D, "equal"),
+        "less": (0x3C, "less"),
+        "greater": (0x3E, "greater"),
+        "sterling": (0xA3, "box"),
+        "dollar": (0x24, "box"),
+    }
+
+    for name, (codepoint, kind) in common.items():
+        width = letter_advance if kind in ("dashwide",) else letter_advance * 0.6
+        g = new_or_existing(name, codepoint, width)
+        w = g.width
+        stroke = max(18, PEN_WIDTH * 0.4)
+        if kind == "dash":
+            horizontal(g, w * 0.14, w * 0.86, TARGET_XHEIGHT * 0.42, stroke)
+        elif kind == "dashwide":
+            horizontal(g, w * 0.08, w * 0.92, TARGET_XHEIGHT * 0.42, stroke)
+        elif kind == "slash":
+            pen = g.getPen()
+            pen.moveTo((w * 0.25, -TARGET_XHEIGHT * 0.08))
+            pen.lineTo((w * 0.42, -TARGET_XHEIGHT * 0.08))
+            pen.lineTo((w * 0.78, TARGET_XHEIGHT * 1.25))
+            pen.lineTo((w * 0.61, TARGET_XHEIGHT * 1.25))
+            pen.closePath()
+        elif kind == "backslash":
+            pen = g.getPen()
+            pen.moveTo((w * 0.22, TARGET_XHEIGHT * 1.25))
+            pen.lineTo((w * 0.39, TARGET_XHEIGHT * 1.25))
+            pen.lineTo((w * 0.75, -TARGET_XHEIGHT * 0.08))
+            pen.lineTo((w * 0.58, -TARGET_XHEIGHT * 0.08))
+            pen.closePath()
+        elif kind == "hash":
+            vertical(g, w * 0.4, 0, TARGET_XHEIGHT, stroke)
+            vertical(g, w * 0.62, 0, TARGET_XHEIGHT, stroke)
+            horizontal(g, w * 0.18, w * 0.84, TARGET_XHEIGHT * 0.35, stroke)
+            horizontal(g, w * 0.16, w * 0.82, TARGET_XHEIGHT * 0.68, stroke)
+        elif kind == "percent":
+            box_placeholder(g)
+            horizontal(g, w * 0.25, w * 0.75, TARGET_XHEIGHT * 0.62, stroke)
+        elif kind == "asterisk":
+            vertical(g, w * 0.5, TARGET_XHEIGHT * 0.18, TARGET_XHEIGHT * 0.92, stroke)
+            horizontal(g, w * 0.2, w * 0.8, TARGET_XHEIGHT * 0.55, stroke)
+        elif kind == "plus":
+            vertical(g, w * 0.5, TARGET_XHEIGHT * 0.18, TARGET_XHEIGHT * 0.82, stroke)
+            horizontal(g, w * 0.18, w * 0.82, TARGET_XHEIGHT * 0.5, stroke)
+        elif kind == "equal":
+            horizontal(g, w * 0.18, w * 0.82, TARGET_XHEIGHT * 0.38, stroke)
+            horizontal(g, w * 0.18, w * 0.82, TARGET_XHEIGHT * 0.62, stroke)
+        elif kind == "less":
+            vertical(g, w * 0.38, TARGET_XHEIGHT * 0.28, TARGET_XHEIGHT * 0.72, stroke)
+        elif kind == "greater":
+            vertical(g, w * 0.62, TARGET_XHEIGHT * 0.28, TARGET_XHEIGHT * 0.72, stroke)
+        else:
+            box_placeholder(g)
+
+
 def new_font(family, style):
     font = UFOFont()
     info = font.info
     info.familyName = family
     info.styleName = style
+    info.styleMapFamilyName = family
+    info.styleMapStyleName = "regular"
+    info.openTypeNamePreferredFamilyName = family
+    info.openTypeNamePreferredSubfamilyName = style
+    info.postscriptFontName = f"{family.replace(' ', '')}-{style}"
     info.unitsPerEm = UPM
     info.ascender = int(TARGET_XHEIGHT * 1.55)
     info.descender = -int(TARGET_XHEIGHT * 0.6)
@@ -248,6 +384,8 @@ def new_font(family, style):
     info.capHeight = int(TARGET_XHEIGHT * 1.4)
     info.versionMajor = 0
     info.versionMinor = 1
+    info.openTypeOS2UnicodeRanges = [0]
+    info.openTypeOS2CodePageRanges = [0]
     return font
 
 
@@ -282,6 +420,7 @@ def set_glyph_order(font):
 def finalize(font, out_stub):
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     otf = compileOTF(font, inplace=False)
+    normalize_font_tables(otf, "Letterpaths", "Regular")
     otf_path = OUT_DIR / f"{out_stub}.otf"
     otf.save(str(otf_path))
 
@@ -289,8 +428,42 @@ def finalize(font, out_stub):
     otf.save(str(OUT_DIR / f"{out_stub}.woff2"))
 
     ttf = compileTTF(font, inplace=False)
+    normalize_font_tables(ttf, "Letterpaths", "Regular")
     ttf.save(str(OUT_DIR / f"{out_stub}.ttf"))
 
     TTFont(str(otf_path))
     print(f"  built {out_stub}: .otf .ttf .woff2")
     return otf_path
+
+
+def normalize_font_tables(ttfont, family, style):
+    full_name = f"{family} {style}"
+    ps_name = f"{family.replace(' ', '')}-{style}"
+    version = "Version 0.001"
+    unique = f"0.001;Letterpaths;{ps_name}"
+
+    name_table = ttfont["name"]
+    for name_id in (1, 2, 3, 4, 5, 6, 16, 17):
+        name_table.removeNames(nameID=name_id)
+
+    records = {
+        1: family,
+        2: style,
+        3: unique,
+        4: full_name,
+        5: version,
+        6: ps_name,
+        16: family,
+        17: style,
+    }
+    for name_id, value in records.items():
+        name_table.setName(value, name_id, 3, 1, 0x409)
+        name_table.setName(value, name_id, 1, 0, 0)
+
+    if "OS/2" in ttfont:
+        os2 = ttfont["OS/2"]
+        os2.usWeightClass = 400
+        os2.usWidthClass = 5
+        os2.fsSelection |= 1 << 6
+        os2.ulUnicodeRange1 |= 1
+        os2.ulCodePageRange1 |= 1

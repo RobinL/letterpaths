@@ -29,6 +29,7 @@ from font_build_core import (
     new_font,
     build_glyphs,
     add_punctuation,
+    add_basic_latin_placeholders,
     set_glyph_order,
     finalize,
     CTX_OVERLAP,
@@ -132,6 +133,7 @@ def build_font():
     font = new_font("Letterpaths", "Regular")
     typical = build_glyphs(font, geo, scale, overlap=CTX_OVERLAP)
     add_punctuation(font, typical)
+    add_basic_latin_placeholders(font, typical)
     feats = font_features(meta["letters"], meta["genericPredecessor"])
     font.features.text = feats
     print(f"  calt feature: {len(feats.splitlines())} lines, {len(feats)} chars")
