@@ -657,7 +657,24 @@ function extractStandalonePrint(letter: string): { contours: Contour[]; advance:
 
 function makeStandalonePrintGlyph(name: string, unicodes: number[]): GlyphOut {
     const { contours, advance } = extractStandalonePrint(name);
-    return { name, unicodes, advance, contours };
+    return {
+        name,
+        unicodes,
+        advance,
+        contours: splitStandaloneContoursForFont(name, contours),
+    };
+}
+
+function splitStandaloneContoursForFont(letter: string, contours: Contour[]): Contour[] {
+    if (letter !== "R") {
+        return contours;
+    }
+    return contours.flatMap((contour) => {
+        if (contour.length !== 3) {
+            return [contour];
+        }
+        return [contour.slice(0, 2), contour.slice(2)];
+    });
 }
 
 function round(g: GlyphOut): GlyphOut {
