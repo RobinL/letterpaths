@@ -327,7 +327,7 @@
       "entryHandleScale": 1
     },
     "cr": {
-      "sidebearingGap": 146.1,
+      "sidebearingGap": 121.7,
       "exitHandleScale": 0.72,
       "entryHandleScale": 1.18
     },
@@ -987,9 +987,9 @@
       "entryHandleScale": 1
     },
     "ic": {
-      "sidebearingGap": 137,
-      "exitHandleScale": 0.92,
-      "entryHandleScale": 0.84
+      "sidebearingGap": 120.9,
+      "exitHandleScale": 1.07,
+      "entryHandleScale": 0.93
     },
     "id": {
       "sidebearingGap": 169.8,
@@ -1311,9 +1311,9 @@
       "entryHandleScale": 1
     },
     "kt": {
-      "sidebearingGap": 189,
-      "exitHandleScale": 0.7,
-      "entryHandleScale": 1
+      "sidebearingGap": 99.1,
+      "exitHandleScale": 0.71,
+      "entryHandleScale": 1.19
     },
     "ku": {
       "sidebearingGap": 189,
@@ -2249,8 +2249,8 @@
       "exitHandleScale": 0.7
     },
     "sk": {
-      "sidebearingGap": 50,
-      "exitHandleScale": 0.73,
+      "sidebearingGap": 110.2,
+      "exitHandleScale": 0.85,
       "entryHandleScale": 1.39
     },
     "sl": {
