@@ -40,6 +40,7 @@ const HIGH_PROBE = "o";
 
 // A slightly open spacing works better once joins are stroked into font outlines.
 const JOIN_SPACING = { minSidebearingGap: 140 };
+const AFTER_UPPER_FONT_GAP = 75;
 
 // Candidate canonical seam heights to sweep in the diagnostic (font y-up units;
 // 0 = baseline, 500 = x-height top). The connecting stroke of a cursive hand
@@ -611,6 +612,74 @@ function makeGlyphPair(
     return { name, unicodes, advance, contours };
 }
 
+function makeGlyphAfterUpper(
+    name: string,
+    letter: string,
+    trailing: "exit" | "leadout"
+): GlyphOut {
+    return trimPositiveLeftSidebearing(makeGlyphPair(name, letter, null, trailing, []));
+}
+
+function trimPositiveLeftSidebearing(glyph: GlyphOut): GlyphOut {
+    const minX = measureGlyphCurveMinX(glyph);
+    if (!Number.isFinite(minX) || minX <= 0) {
+        return glyph;
+    }
+    return {
+        ...glyph,
+        advance: Math.max(0, glyph.advance - minX),
+        contours: glyph.contours.map((contour) =>
+            contour.map(
+                ([x0, y0, x1, y1, x2, y2, x3, y3]) =>
+                    [x0 - minX, y0, x1 - minX, y1, x2 - minX, y2, x3 - minX, y3] as Seg
+            )
+        ),
+    };
+}
+
+function measureGlyphCurveMinX(glyph: GlyphOut): number {
+    let minX = Infinity;
+    for (const contour of glyph.contours) {
+        for (const segment of contour) {
+            minX = Math.min(minX, measureSegmentCurveMinX(segment));
+        }
+    }
+    return minX;
+}
+
+function measureSegmentCurveMinX([x0, , x1, , x2, , x3]: Seg): number {
+    const candidates = [x0, x3];
+    for (const t of cubicDerivativeRoots(x0, x1, x2, x3)) {
+        candidates.push(cubicCoordinate(x0, x1, x2, x3, t));
+    }
+    return Math.min(...candidates);
+}
+
+function cubicDerivativeRoots(p0: number, p1: number, p2: number, p3: number): number[] {
+    const a = -p0 + 3 * p1 - 3 * p2 + p3;
+    const b = 2 * (p0 - 2 * p1 + p2);
+    const c = p1 - p0;
+    const roots: number[] = [];
+    const EPS = 1e-9;
+    if (Math.abs(a) < EPS) {
+        if (Math.abs(b) > EPS) {
+            roots.push(-c / b);
+        }
+    } else {
+        const disc = b * b - 4 * a * c;
+        if (disc >= 0) {
+            const s = Math.sqrt(disc);
+            roots.push((-b + s) / (2 * a), (-b - s) / (2 * a));
+        }
+    }
+    return roots.filter((t) => t > 0 && t < 1);
+}
+
+function cubicCoordinate(p0: number, p1: number, p2: number, p3: number, t: number): number {
+    const mt = 1 - t;
+    return mt * mt * mt * p0 + 3 * mt * mt * t * p1 + 3 * mt * t * t * p2 + t * t * t * p3;
+}
+
 function extractStandalonePrint(letter: string): { contours: Contour[]; advance: number } {
     const path = buildHandwritingPath(letter, {
         style: "print",
@@ -665,6 +734,23 @@ function makeStandalonePrintGlyph(name: string, unicodes: number[]): GlyphOut {
     };
 }
 
+function makeStandalonePrintGlyphBeforeLowercase(name: string): GlyphOut {
+    const { contours } = extractStandalonePrint(name);
+    const splitContours = splitStandaloneContoursForFont(name, contours);
+    let maxX = -Infinity;
+    for (const contour of splitContours) {
+        for (const segment of contour) {
+            maxX = Math.max(maxX, segment[0], segment[2], segment[4], segment[6]);
+        }
+    }
+    return {
+        name: `${name}.ucnext`,
+        unicodes: [],
+        advance: Math.round(Number.isFinite(maxX) ? maxX + AFTER_UPPER_FONT_GAP : 0),
+        contours: splitContours,
+    };
+}
+
 function splitStandaloneContoursForFont(letter: string, contours: Contour[]): Contour[] {
     if (letter !== "R") {
         return contours;
@@ -690,12 +776,15 @@ function buildFontGeometry(): { meta: any; glyphs: GlyphOut[] } {
     const glyphs: GlyphOut[] = [];
     for (const l of UPPERCASE_LETTERS) {
         glyphs.push(round(makeStandalonePrintGlyph(l, [l.codePointAt(0)!])));
+        glyphs.push(round(makeStandalonePrintGlyphBeforeLowercase(l)));
     }
     for (const l of LETTERS) {
         const cp = l.codePointAt(0)!;
         // Isolated (cmap default) and word-initial.
         glyphs.push(round(makeGlyphPair(l, l, null, "leadout", [cp])));
         glyphs.push(round(makeGlyphPair(`${l}.init`, l, null, "exit", [])));
+        glyphs.push(round(makeGlyphAfterUpper(`${l}.ucmedi`, l, "exit")));
+        glyphs.push(round(makeGlyphAfterUpper(`${l}.ucfina`, l, "leadout")));
         // Generic placeholders == the after-`n` forms; calt always upgrades
         // them to the predecessor-specific form, so they only ever surface
         // after `n` itself.
@@ -728,7 +817,7 @@ function buildFontGeometry(): { meta: any; glyphs: GlyphOut[] } {
             highExit: HIGH_EXIT_LETTERS,
             midExit: MID_EXIT_LETTERS,
             genericPredecessor: GENERIC_PRED,
-            formsPerLetter: 4 + 2 * (LETTERS.length - 1),
+            formsPerLetter: 6 + 2 * (LETTERS.length - 1),
         },
         glyphs,
     };

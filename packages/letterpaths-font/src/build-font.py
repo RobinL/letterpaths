@@ -39,7 +39,14 @@ from font_build_core import (
 def _all_forms_of(letter, letters, generic_pred):
     """Every glyph form of `letter`: base, init, generic medi/fina, and the
     pair-specific medi<P>/fina<P> for every predecessor P != generic_pred."""
-    forms = [letter, f"{letter}.init", f"{letter}.medi", f"{letter}.fina"]
+    forms = [
+        letter,
+        f"{letter}.init",
+        f"{letter}.ucmedi",
+        f"{letter}.ucfina",
+        f"{letter}.medi",
+        f"{letter}.fina",
+    ]
     for p in letters:
         if p == generic_pred:
             continue
@@ -62,7 +69,11 @@ def font_features(letters, generic_pred):
                    pair-specific form.
     """
     lc = " ".join(letters)
+    uc = " ".join(l.upper() for l in letters)
+    ucnext = " ".join(f"{l.upper()}.ucnext" for l in letters)
     init = " ".join(f"{l}.init" for l in letters)
+    ucmedi = " ".join(f"{l}.ucmedi" for l in letters)
+    ucfina = " ".join(f"{l}.ucfina" for l in letters)
     medi = " ".join(f"{l}.medi" for l in letters)
     fina = " ".join(f"{l}.fina" for l in letters)
     all_forms = " ".join(
@@ -74,7 +85,11 @@ def font_features(letters, generic_pred):
         "languagesystem latn dflt;",
         "",
         f"@lc = [{lc}];",
+        f"@uc = [{uc}];",
+        f"@ucnext = [{ucnext}];",
         f"@init = [{init}];",
+        f"@ucmedi = [{ucmedi}];",
+        f"@ucfina = [{ucfina}];",
         f"@medi = [{medi}];",
         f"@fina = [{fina}];",
         f"@all = [{all_forms}];",
@@ -94,6 +109,16 @@ def font_features(letters, generic_pred):
     lines += [
         "",
         "feature calt {",
+        "    # Lowercase directly after a capital should not use a fresh lead-in.",
+        "    lookup o4Upper {",
+        "        sub @uc @lc' @lc by @ucmedi;",
+        "        sub @uc @lc' by @ucfina;",
+        "    } o4Upper;",
+        "    lookup o4UpperTight {",
+        "        sub @uc' @ucmedi by @ucnext;",
+        "        sub @uc' @ucfina by @ucnext;",
+        "    } o4UpperTight;",
+        "",
         "    # --- Stage A: positional forms (generic = after-%s) ---" % generic_pred,
         "    lookup o4Exit {",
         "        sub @lc' @lc by @init;",

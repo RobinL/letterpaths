@@ -18,6 +18,7 @@ import {
   buildStepsFromDeferredStrokes,
   buildStepsFromStrokes,
   buildStrokesFromSteps,
+  capitalToLowercaseLetterSpacing,
   cursiveLetterSpacing,
   curveToStep,
   dropLeadingMove,
@@ -147,12 +148,16 @@ export function joinCursiveWord(
 
     const char = rawChar.toLowerCase();
     if (!prevExitCurve && hasPlacedLetter) {
-      cursorX = (prevStandaloneRightSidebearing ?? rightEdge) + cursiveLetterSpacing;
+      const spacing =
+        prevStandaloneRightSidebearing !== null
+          ? capitalToLowercaseLetterSpacing
+          : cursiveLetterSpacing;
+      cursorX = (prevStandaloneRightSidebearing ?? rightEdge) + spacing;
     }
 
-    const isFirstDrawableLetter = prevExitCurve === null;
+    const startsNewLowercaseWord = prevExitCurve === null;
     const entryVariant =
-      keepInitialLeadIn && isFirstDrawableLetter
+      keepInitialLeadIn && startsNewLowercaseWord
         ? defaultCursiveEntryVariant
         : getEntryVariantForExitVariant(prevExitVariant);
     const letter = findCursiveLetter(letterMap, char, entryVariant);
@@ -186,8 +191,8 @@ export function joinCursiveWord(
         ...stroke,
         curves: filterCurvesBySegment(
           stroke.curves,
-          keepInitialLeadIn && isFirstDrawableLetter,
-          prevExitCurve !== null || (keepInitialLeadIn && isFirstDrawableLetter),
+          keepInitialLeadIn && startsNewLowercaseWord,
+          prevExitCurve !== null || (keepInitialLeadIn && startsNewLowercaseWord),
           !isLastInWord || keepFinalLeadOut,
           keepFinalLeadOut && isLastInWord
         )
@@ -200,7 +205,9 @@ export function joinCursiveWord(
       );
       const visibleMinFromLeftSidebearing = visibleBounds.minX - normalizedGuides.left;
       const minCursorX =
-        prevStandaloneRightSidebearing + cursiveLetterSpacing - visibleMinFromLeftSidebearing;
+        prevStandaloneRightSidebearing +
+        capitalToLowercaseLetterSpacing -
+        visibleMinFromLeftSidebearing;
       cursorX = Math.max(cursorX, minCursorX);
     }
 

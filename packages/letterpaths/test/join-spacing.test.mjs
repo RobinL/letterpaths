@@ -154,8 +154,12 @@ test("capital letters in cursive text render as standalone print letters", () =>
   assert.equal(countSegments(mixed, "join"), 3);
 });
 
-test("capital letters do not consume initial cursive lead-in", () => {
+test("capital letters follow the cursive initial lead-in setting for the next lowercase", () => {
   const initialLowercase = buildHandwritingPath("apple", {
+    style: "cursive",
+    keepInitialLeadIn: true
+  });
+  const capitalOnly = buildHandwritingPath("H", {
     style: "cursive",
     keepInitialLeadIn: true
   });
@@ -163,24 +167,77 @@ test("capital letters do not consume initial cursive lead-in", () => {
     style: "cursive",
     keepInitialLeadIn: true
   });
-  const firstStrokeWithLeadIn = mixed.strokes.find((stroke) =>
-    stroke.curveSegments?.includes("lead-in")
+  const mixedWithoutLeadIn = buildHandwritingPath("Hello", {
+    style: "cursive",
+    keepInitialLeadIn: false
+  });
+  const firstLowercaseStroke = mixed.strokes[capitalOnly.strokes.length];
+  const firstLowercaseStrokeWithoutLeadIn =
+    mixedWithoutLeadIn.strokes[capitalOnly.strokes.length];
+
+  assert.ok(countSegments(initialLowercase, "lead-in") > 0);
+  assert.ok(countSegments(initialLowercase, "entry") > 0);
+  assert.ok(firstLowercaseStroke);
+  assert.equal(firstLowercaseStroke.curveSegments?.[0], "lead-in");
+  assert.ok(firstLowercaseStrokeWithoutLeadIn);
+  assert.notEqual(firstLowercaseStrokeWithoutLeadIn.curveSegments?.[0], "lead-in");
+  assert.notEqual(firstLowercaseStrokeWithoutLeadIn.curveSegments?.[0], "entry");
+});
+
+test("capital-to-lowercase cursive spacing is tighter than capital-to-capital spacing", () => {
+  const options = {
+    style: "cursive",
+    keepInitialLeadIn: false,
+    keepFinalLeadOut: false
+  };
+  const capitalOnly = buildHandwritingPath("F", options);
+  const capitalCapital = buildHandwritingPath("FO", options);
+  const capitalLowercaseO = buildHandwritingPath("Fo", options);
+  const capitalLowercaseC = buildHandwritingPath("Fc", options);
+  const capitalRight = maxCurveX(capitalOnly.strokes.flatMap((stroke) => stroke.curves));
+  const secondCapitalLeft = minCurveX(
+    capitalCapital.strokes.slice(capitalOnly.strokes.length).flatMap((stroke) => stroke.curves)
   );
-  const firstLeadInStrokeIndex = mixed.strokes.findIndex((stroke) =>
-    stroke.curveSegments?.includes("lead-in")
+  const lowercaseOLeft = minCurveX(
+    capitalLowercaseO.strokes
+      .slice(capitalOnly.strokes.length)
+      .flatMap((stroke) => stroke.curves)
   );
-  const previousVisibleMaxX = maxCurveX(
-    mixed.strokes.slice(0, firstLeadInStrokeIndex).flatMap((stroke) => stroke.curves)
+  const lowercaseCLeft = minCurveX(
+    capitalLowercaseC.strokes
+      .slice(capitalOnly.strokes.length)
+      .flatMap((stroke) => stroke.curves)
   );
-  const leadInMinX = minCurveX(
-    firstStrokeWithLeadIn?.curves.filter(
-      (_curve, index) => firstStrokeWithLeadIn.curveSegments?.[index] === "lead-in"
-    ) ?? []
-  );
+
+  assert.ok(lowercaseOLeft - capitalRight < secondCapitalLeft - capitalRight);
+  assert.ok(lowercaseCLeft - capitalRight < secondCapitalLeft - capitalRight);
+});
+
+test("capital letters follow the pre-cursive initial lead-in setting for the next lowercase", () => {
+  const initialLowercase = buildHandwritingPath("apple", {
+    style: "pre-cursive",
+    keepInitialLeadIn: true
+  });
+  const capitalOnly = buildHandwritingPath("H", {
+    style: "pre-cursive",
+    keepInitialLeadIn: true
+  });
+  const mixed = buildHandwritingPath("Happy", {
+    style: "pre-cursive",
+    keepInitialLeadIn: true
+  });
+  const mixedWithoutLeadIn = buildHandwritingPath("Happy", {
+    style: "pre-cursive",
+    keepInitialLeadIn: false
+  });
+  const firstLowercaseStrokeWithoutLeadIn =
+    mixedWithoutLeadIn.strokes[capitalOnly.strokes.length];
 
   assert.ok(countSegments(initialLowercase, "lead-in") > 0);
   assert.ok(countSegments(initialLowercase, "entry") > 0);
   assert.ok(countSegments(mixed, "lead-in") > 0);
-  assert.equal(firstStrokeWithLeadIn?.curveSegments?.[0], "lead-in");
-  assert.ok(leadInMinX > previousVisibleMaxX);
+  assert.ok(countSegments(mixed, "entry") > 0);
+  assert.ok(firstLowercaseStrokeWithoutLeadIn);
+  assert.notEqual(firstLowercaseStrokeWithoutLeadIn.curveSegments?.[0], "lead-in");
+  assert.notEqual(firstLowercaseStrokeWithoutLeadIn.curveSegments?.[0], "entry");
 });
