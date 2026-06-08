@@ -22,7 +22,7 @@
 import { writeFileSync, mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { buildHandwritingPath, type CubicBezier } from "letterpaths";
+import { buildHandwritingPath, type CubicBezier } from "../../letterpaths/src/index.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const OUT_DIR = resolve(__dirname, "../build/geometry");

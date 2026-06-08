@@ -6,9 +6,10 @@
   "description": "Build installable fonts from letterpaths cursive geometry.",
   "scripts": {
     "export": "tsx src/export-geometry.ts",
-    "build": "uv run python src/build-font.py",
+    "build": "pnpm run export && uv run python src/build-font.py",
+    "postbuild": "node ../../scripts/sync-font-asset.mjs",
     "verify": "uv run python src/verify-shaping.py",
-    "all": "pnpm run export && pnpm run build && pnpm run verify"
+    "all": "pnpm run build && pnpm run verify"
   },
   "dependencies": {
     "letterpaths": "workspace:*"
