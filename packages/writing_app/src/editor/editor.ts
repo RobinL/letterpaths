@@ -99,15 +99,15 @@ type BuiltInLetterVariant = "low" | "high" | "print";
 type LetterSelectorMode = "built-in" | "editable-folder";
 
 const builtInLetterModulesByVariant: Record<BuiltInLetterVariant, Record<string, unknown>> = {
-  low: import.meta.glob("../../letterpaths/src/data/bezier/entry-low/*.json", {
+  low: import.meta.glob("../../../letterpaths/src/data/bezier/entry-low/*.json", {
     eager: true,
     import: "default"
   }) as Record<string, unknown>,
-  high: import.meta.glob("../../letterpaths/src/data/bezier/entry-high/*.json", {
+  high: import.meta.glob("../../../letterpaths/src/data/bezier/entry-high/*.json", {
     eager: true,
     import: "default"
   }) as Record<string, unknown>,
-  print: import.meta.glob("../../letterpaths/src/data/bezier/print/*.json", {
+  print: import.meta.glob("../../../letterpaths/src/data/bezier/print/*.json", {
     eager: true,
     import: "default"
   }) as Record<string, unknown>
@@ -849,6 +849,18 @@ function loadBuiltInLetter(option: BuiltInLetterOption) {
   editorStatusEl.textContent = `Loaded ${result.label}.`;
 }
 
+function loadDefaultBuiltInLetter() {
+  state.builtInVariant = "low";
+  populateBuiltInLetterSelectForVariant();
+  const firstOption = builtInLetterOptionsByVariant.low[0];
+  if (!firstOption) {
+    updateEditorUI();
+    return;
+  }
+  builtInLetterSelectEl.value = firstOption.path;
+  loadBuiltInLetter(firstOption);
+}
+
 async function loadSelectedLetter() {
   if (letterSelectorMode === "editable-folder") {
     await loadSelectedEditableFolderLetter();
@@ -1467,6 +1479,11 @@ async function restoreEditorFromUrl() {
       loadSelectedBuiltInLetter();
       return;
     }
+  }
+
+  if (!source && !letter) {
+    loadDefaultBuiltInLetter();
+    return;
   }
 
   updateEditorUI();
