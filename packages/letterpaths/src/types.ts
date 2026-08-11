@@ -54,6 +54,37 @@ export type CursiveKerningSettings = {
   pairs: CursiveKerningPairs;
 };
 
+export type CapitalToLowercaseKerningPair = {
+  withLeadIn: number;
+  withoutLeadIn: number;
+  reviewed?: boolean;
+};
+
+export type CapitalToLowercaseKerningPairs = Record<
+  string,
+  CapitalToLowercaseKerningPair
+>;
+
+export type CapitalToLowercaseKerningSettings = {
+  schemaVersion: number;
+  description?: string;
+  units?: string;
+  pairs: CapitalToLowercaseKerningPairs;
+};
+
+export type CapitalKerningMetric = {
+  pair: string;
+  previousChar: string;
+  nextChar: string;
+  hasLeadIn: boolean;
+  kerningSource: "default" | "override";
+  baseGap: number;
+  renderedGap: number;
+  previousVisibleRightX: number;
+  nextVisibleLeftX: number;
+  actualNextLeftSidebearingX: number;
+};
+
 export type BezierPoint = Point;
 
 export type BezierMark = { kind: "dot"; size?: number };
@@ -127,4 +158,5 @@ export type WritingPath = {
   bounds: { minX: number; maxX: number; minY: number; maxY: number };
   guides: LetterGuides;
   joinMetrics?: JoinMetric[];
+  capitalKerningMetrics?: CapitalKerningMetric[];
 };

@@ -1,8 +1,10 @@
 import type {
   BezierLetter,
+  CapitalToLowercaseKerningSettings,
   CursiveKerningSettings
 } from "../types";
 
+import capitalToLowercaseKerning from "./capital-to-lowercase-kerning.json";
 import cursiveKerning from "./cursive-kerning.json";
 import aLowerCursiveEntryLow from "./bezier/entry-low/a-lower-cursive-bezier-entry-low.json";
 import aLowerCursiveEntryHigh from "./bezier/entry-high/a-lower-cursive-bezier-entry-high.json";
@@ -333,3 +335,7 @@ export const lettersByVariantId = {
 export const defaultCursiveKerningSettings =
   cursiveKerning as CursiveKerningSettings;
 export const defaultCursiveKerningPairs = defaultCursiveKerningSettings.pairs;
+export const defaultCapitalToLowercaseKerningSettings =
+  capitalToLowercaseKerning as CapitalToLowercaseKerningSettings;
+export const defaultCapitalToLowercaseKerningPairs =
+  defaultCapitalToLowercaseKerningSettings.pairs;

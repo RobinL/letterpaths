@@ -1,6 +1,9 @@
 import type {
   BezierLetter,
   BezierStep,
+  CapitalKerningMetric,
+  CapitalToLowercaseKerningPair,
+  CapitalToLowercaseKerningPairs,
   Curve,
   CursiveKerningPair,
   CursiveKerningPairs,
@@ -9,6 +12,7 @@ import type {
   WritingPath
 } from "../types";
 import {
+  defaultCapitalToLowercaseKerningPairs,
   defaultCursiveEntryVariant,
   defaultCursiveKerningPairs,
   type CursiveExitVariant
@@ -18,7 +22,6 @@ import {
   buildStepsFromDeferredStrokes,
   buildStepsFromStrokes,
   buildStrokesFromSteps,
-  capitalToLowercaseLetterSpacing,
   cursiveLetterSpacing,
   curveToStep,
   dropLeadingMove,
@@ -53,12 +56,18 @@ export function joinCursiveWord(
   const joinSpacing = resolveJoinSpacingOptions(options.joinSpacing);
   const joinKerningOverrides = options.joinKerning ?? {};
   const joinKerning = mergeKerningPairs(defaultCursiveKerningPairs, joinKerningOverrides);
+  const capitalKerningOverrides = options.capitalKerning ?? {};
+  const capitalKerning = mergeCapitalKerningPairs(
+    defaultCapitalToLowercaseKerningPairs,
+    capitalKerningOverrides
+  );
   const wordSpacing = resolveWordSpacing(target, options);
 
   const outputSteps: BezierStep[] = [];
   const deferredWordSteps: BezierStep[] = [];
   const joinStepIndices = new Set<number>();
   const joinMetrics: JoinMetric[] = [];
+  const capitalKerningMetrics: CapitalKerningMetric[] = [];
 
   const flushDeferredWordSteps = () => {
     if (deferredWordSteps.length === 0) {
@@ -74,6 +83,8 @@ export function joinCursiveWord(
   let prevExitVariant: CursiveExitVariant | null = null;
   let prevRightSidebearing = 0;
   let prevStandaloneRightSidebearing: number | null = null;
+  let prevStandaloneVisibleRight: number | null = null;
+  let prevStandaloneChar: string | null = null;
   let prevChar: string | null = null;
   let hasPlacedLetter = false;
   const keepInitialLeadIn = options.keepInitialLeadIn ?? false;
@@ -87,6 +98,8 @@ export function joinCursiveWord(
       prevExitVariant = null;
       prevRightSidebearing = 0;
       prevStandaloneRightSidebearing = null;
+      prevStandaloneVisibleRight = null;
+      prevStandaloneChar = null;
       prevChar = null;
       hasPlacedLetter = false;
       cursorX = rightEdge + wordSpacing;
@@ -102,6 +115,8 @@ export function joinCursiveWord(
         prevExitVariant = null;
         prevRightSidebearing = 0;
         prevStandaloneRightSidebearing = null;
+        prevStandaloneVisibleRight = null;
+        prevStandaloneChar = null;
         prevChar = null;
         hasPlacedLetter = false;
         cursorX = rightEdge + wordSpacing;
@@ -141,6 +156,8 @@ export function joinCursiveWord(
       prevExitVariant = null;
       prevRightSidebearing = 0;
       prevStandaloneRightSidebearing = rightSidebearing;
+      prevStandaloneVisibleRight = visibleRight;
+      prevStandaloneChar = rawChar;
       prevChar = null;
       hasPlacedLetter = true;
       continue;
@@ -148,11 +165,10 @@ export function joinCursiveWord(
 
     const char = rawChar.toLowerCase();
     if (!prevExitCurve && hasPlacedLetter) {
-      const spacing =
+      cursorX =
         prevStandaloneRightSidebearing !== null
-          ? capitalToLowercaseLetterSpacing
-          : cursiveLetterSpacing;
-      cursorX = (prevStandaloneRightSidebearing ?? rightEdge) + spacing;
+          ? prevStandaloneRightSidebearing
+          : rightEdge + cursiveLetterSpacing;
     }
 
     const startsNewLowercaseWord = prevExitCurve === null;
@@ -167,6 +183,8 @@ export function joinCursiveWord(
       prevExitVariant = null;
       prevRightSidebearing = 0;
       prevStandaloneRightSidebearing = null;
+      prevStandaloneVisibleRight = null;
+      prevStandaloneChar = null;
       prevChar = null;
       hasPlacedLetter = false;
       cursorX = rightEdge + wordSpacing;
@@ -199,16 +217,33 @@ export function joinCursiveWord(
       }))
       .filter((stroke) => stroke.curves.length > 0);
 
-    if (prevStandaloneRightSidebearing !== null) {
+    if (
+      prevStandaloneRightSidebearing !== null &&
+      prevStandaloneVisibleRight !== null &&
+      prevStandaloneChar !== null
+    ) {
       const visibleBounds = measureCurveBounds(
         filteredMainStrokes.flatMap((stroke) => stroke.curves)
       );
       const visibleMinFromLeftSidebearing = visibleBounds.minX - normalizedGuides.left;
-      const minCursorX =
-        prevStandaloneRightSidebearing +
-        capitalToLowercaseLetterSpacing -
-        visibleMinFromLeftSidebearing;
-      cursorX = Math.max(cursorX, minCursorX);
+      const pair = `${prevStandaloneChar}${char}`;
+      const kerning = getCapitalKerningPair(capitalKerning, pair);
+      const hasLeadIn = keepInitialLeadIn && startsNewLowercaseWord;
+      const baseGap = hasLeadIn ? kerning.withLeadIn : kerning.withoutLeadIn;
+      cursorX =
+        prevStandaloneVisibleRight + baseGap - visibleMinFromLeftSidebearing;
+      capitalKerningMetrics.push({
+        pair,
+        previousChar: prevStandaloneChar,
+        nextChar: char,
+        hasLeadIn,
+        kerningSource: capitalKerningOverrides[pair] ? "override" : "default",
+        baseGap,
+        renderedGap: baseGap,
+        previousVisibleRightX: prevStandaloneVisibleRight,
+        nextVisibleLeftX: cursorX + visibleMinFromLeftSidebearing,
+        actualNextLeftSidebearingX: cursorX
+      });
     }
 
     const entryCurve = findEntryCurve(filteredMainStrokes);
@@ -286,6 +321,8 @@ export function joinCursiveWord(
     prevExitCurve = shiftedExitCurve;
     prevExitVariant = getExitVariantForLetter(char);
     prevStandaloneRightSidebearing = null;
+    prevStandaloneVisibleRight = null;
+    prevStandaloneChar = null;
     prevChar = char;
     hasPlacedLetter = true;
   }
@@ -299,7 +336,8 @@ export function joinCursiveWord(
     strokes,
     bounds,
     guides: target,
-    joinMetrics
+    joinMetrics,
+    capitalKerningMetrics
   };
 }
 
@@ -359,6 +397,34 @@ function mergeKerningPairs(
   defaults: CursiveKerningPairs,
   overrides: CursiveKerningPairs
 ): CursiveKerningPairs {
+  const merged = { ...defaults };
+  for (const [pair, override] of Object.entries(overrides)) {
+    merged[pair] = {
+      ...defaults[pair],
+      ...override
+    };
+  }
+  return merged;
+}
+
+function getCapitalKerningPair(
+  kerning: CapitalToLowercaseKerningPairs,
+  pair: string
+): CapitalToLowercaseKerningPair {
+  const value = kerning[pair];
+  return {
+    withLeadIn:
+      value && Number.isFinite(value.withLeadIn) ? value.withLeadIn : 0,
+    withoutLeadIn:
+      value && Number.isFinite(value.withoutLeadIn) ? value.withoutLeadIn : 0,
+    reviewed: value?.reviewed
+  };
+}
+
+function mergeCapitalKerningPairs(
+  defaults: CapitalToLowercaseKerningPairs,
+  overrides: CapitalToLowercaseKerningPairs
+): CapitalToLowercaseKerningPairs {
   const merged = { ...defaults };
   for (const [pair, override] of Object.entries(overrides)) {
     merged[pair] = {

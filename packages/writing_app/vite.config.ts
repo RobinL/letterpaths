@@ -22,7 +22,11 @@ export default defineConfig(({ command }) => ({
         editor: path.resolve(__dirname, "editor.html"),
         gallery: path.resolve(__dirname, "gallery.html"),
         joinStats: path.resolve(__dirname, "join_stats/index.html"),
-        kerningEditor: path.resolve(__dirname, "kerning_editor/index.html")
+        kerningEditor: path.resolve(__dirname, "kerning_editor/index.html"),
+        capitalKerningEditor: path.resolve(
+          __dirname,
+          "capital_kerning_editor/index.html"
+        )
       }
     }
   },

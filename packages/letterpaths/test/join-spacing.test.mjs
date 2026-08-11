@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   buildHandwritingPath,
+  defaultCapitalToLowercaseKerningPairs,
   defaultCursiveKerningPairs
 } from "../dist/index.js";
 
@@ -53,6 +54,30 @@ test("default cursive kerning has a sidebearing gap for every lowercase pair", (
   }
 
   assert.deepEqual(missing, []);
+});
+
+test("default capital kerning covers every capital-to-lowercase pair and lead-in mode", () => {
+  const missing = [];
+  for (const previous of alphabet.map((letter) => letter.toUpperCase())) {
+    for (const next of alphabet) {
+      const pair = `${previous}${next}`;
+      const kerning = defaultCapitalToLowercaseKerningPairs[pair];
+      if (
+        typeof kerning?.withLeadIn !== "number" ||
+        typeof kerning?.withoutLeadIn !== "number"
+      ) {
+        missing.push(pair);
+      }
+    }
+  }
+
+  assert.deepEqual(missing, []);
+  assert.equal(
+    Object.values(defaultCapitalToLowercaseKerningPairs).filter(
+      (kerning) => kerning.reviewed
+    ).length,
+    676
+  );
 });
 
 test("joins use hard-coded sidebearing gaps by default", () => {
@@ -182,6 +207,62 @@ test("capital letters follow the cursive initial lead-in setting for the next lo
   assert.ok(firstLowercaseStrokeWithoutLeadIn);
   assert.notEqual(firstLowercaseStrokeWithoutLeadIn.curveSegments?.[0], "lead-in");
   assert.notEqual(firstLowercaseStrokeWithoutLeadIn.curveSegments?.[0], "entry");
+});
+
+test("capital-to-lowercase pairs use separate manual gaps for each lead-in mode", () => {
+  const withLeadIn = buildHandwritingPath("Th", {
+    style: "cursive",
+    keepInitialLeadIn: true
+  }).capitalKerningMetrics?.[0];
+  const withoutLeadIn = buildHandwritingPath("Th", {
+    style: "cursive",
+    keepInitialLeadIn: false
+  }).capitalKerningMetrics?.[0];
+
+  assert.ok(withLeadIn);
+  assert.ok(withoutLeadIn);
+  assert.equal(withLeadIn.pair, "Th");
+  assert.equal(withLeadIn.hasLeadIn, true);
+  assert.equal(withLeadIn.kerningSource, "default");
+  assert.equal(
+    withLeadIn.renderedGap,
+    defaultCapitalToLowercaseKerningPairs.Th.withLeadIn
+  );
+  assert.equal(withoutLeadIn.hasLeadIn, false);
+  assert.equal(
+    withoutLeadIn.renderedGap,
+    defaultCapitalToLowercaseKerningPairs.Th.withoutLeadIn
+  );
+  assert.ok(
+    Math.abs(
+      withLeadIn.nextVisibleLeftX -
+        withLeadIn.previousVisibleRightX -
+        withLeadIn.renderedGap
+    ) < 0.000001
+  );
+  assert.ok(
+    Math.abs(
+      withoutLeadIn.nextVisibleLeftX -
+        withoutLeadIn.previousVisibleRightX -
+        withoutLeadIn.renderedGap
+    ) < 0.000001
+  );
+});
+
+test("capital kerning can be overridden without affecting lowercase joins", () => {
+  const path = buildHandwritingPath("Then", {
+    style: "cursive",
+    keepInitialLeadIn: true,
+    capitalKerning: {
+      Th: { withLeadIn: 17.5, withoutLeadIn: 23.5 }
+    }
+  });
+  const capitalMetric = path.capitalKerningMetrics?.[0];
+
+  assert.ok(capitalMetric);
+  assert.equal(capitalMetric.kerningSource, "override");
+  assert.equal(capitalMetric.renderedGap, 17.5);
+  assert.deepEqual(path.joinMetrics?.map((metric) => metric.pair), ["he", "en"]);
 });
 
 test("capital-to-lowercase cursive spacing is tighter than capital-to-capital spacing", () => {

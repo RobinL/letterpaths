@@ -14,6 +14,7 @@ import type {
   BezierLetter,
   BezierMarkPoint,
   BezierStep,
+  CapitalToLowercaseKerningPairs,
   CursiveKerningPairs,
   Curve,
   HandwritingStyle,
@@ -31,6 +32,7 @@ export type JoinCursiveOptions = {
   targetGuides?: LetterGuides;
   joinSpacing?: JoinSpacingOptions;
   joinKerning?: CursiveKerningPairs;
+  capitalKerning?: CapitalToLowercaseKerningPairs;
   wordSpacing?: number;
   keepInitialLeadIn?: boolean;
   keepFinalLeadOut?: boolean;
@@ -64,7 +66,6 @@ const defaultGuideValues = {
 export const printLetterSpacing = 130;
 export const cursiveLetterSpacing = 60;
 export const preCursiveLetterSpacing = cursiveLetterSpacing;
-export const capitalToLowercaseLetterSpacing = 0;
 
 export const defaultJoinSpacingOptions: ResolvedJoinSpacingOptions = {
   sidebearingGapAdjustment: 0
