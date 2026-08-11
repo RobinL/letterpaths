@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   analyzeTracingSections,
+  analyzeTracingGroups,
   buildHandwritingPath,
   compileFormationAnnotations,
   compileFormationArrows,
@@ -13,6 +14,48 @@ import {
 
 const preparedSys = () =>
   compileTracingPath(buildHandwritingPath("sys", { style: "cursive" }));
+
+test("retrace matching preserves established multi-letter group boundaries", () => {
+  const groups = analyzeTracingGroups(preparedSys()).groups;
+
+  assert.deepEqual(
+    groups.map((group) => ({
+      kind: group.kind,
+      startDistance: Number(group.startDistance.toFixed(3)),
+      matchedEarlierDistance:
+        group.matchedEarlierDistance === undefined
+          ? null
+          : Number(group.matchedEarlierDistance.toFixed(3))
+    })),
+    [
+      { kind: "base", startDistance: 0, matchedEarlierDistance: null },
+      { kind: "retrace", startDistance: 913.919, matchedEarlierDistance: 817.817 },
+      { kind: "retrace", startDistance: 1563.844, matchedEarlierDistance: 1469.671 },
+      { kind: "retrace", startDistance: 2425.645, matchedEarlierDistance: 2329.479 },
+      { kind: "retrace", startDistance: 4316.911, matchedEarlierDistance: 4223.056 }
+    ]
+  );
+});
+
+test("multi-word retrace matching stays within the worksheet interaction budget", () => {
+  const prepared = compileTracingPath(
+    buildHandwritingPath("the quick brown fox jumps over the lazy dog", {
+      style: "cursive",
+      targetGuides: { xHeight: 320, baseline: 700 },
+      keepInitialLeadIn: true,
+      keepFinalLeadOut: true
+    })
+  );
+  const startedAt = performance.now();
+  const groups = analyzeTracingGroups(prepared).groups;
+  const duration = performance.now() - startedAt;
+
+  assert.equal(groups.length, 48);
+  assert.ok(
+    duration < 250,
+    `Expected multi-word retrace matching under 250ms, got ${duration.toFixed(1)}ms.`
+  );
+});
 
 test("tracing boundaries expose incoming and outgoing tangents", () => {
   const prepared = compileTracingPath(buildHandwritingPath("p", { style: "cursive" }));

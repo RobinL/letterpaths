@@ -6,6 +6,7 @@ import {
   type FormationAnnotation,
   type Point,
   type PreparedTracingPath,
+  type TracingSection,
   type WritingPath
 } from "letterpaths";
 
@@ -88,7 +89,8 @@ export const EMPTY_FORMATION_ANNOTATION_VISIBILITY: FormationAnnotationVisibilit
 export const buildFormationAnnotationMarkup = (
   _path: WritingPath,
   preparedPath: PreparedTracingPath,
-  options: FormationAnnotationMarkupOptions
+  options: FormationAnnotationMarkupOptions,
+  preparedSections?: TracingSection[]
 ): string => {
   const hasVisibleAnnotations = Object.values(options.visibility).some(Boolean);
   if (!hasVisibleAnnotations) {
@@ -101,6 +103,7 @@ export const buildFormationAnnotationMarkup = (
   const arrowLaneOffset = options.offsetArrowLanes ? options.turnRadius : 0;
   const arrowLaneOffsetMode = options.alwaysOffsetArrowLanes ? "always" : "bidirectional-only";
   const annotations = compileFormationAnnotations(preparedPath, {
+    ...(preparedSections ? { sections: preparedSections } : {}),
     directionalDashes: options.visibility["directional-dash"]
       ? {
           spacing: options.directionalDashSpacing,

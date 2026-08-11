@@ -1,5 +1,6 @@
 import "./style.css";
 import {
+  analyzeTracingSections,
   compileTracingPath,
   cursiveEntryVariantByExitVariant,
   cursiveExitVariantByLetter,
@@ -8,7 +9,8 @@ import {
   type FormationAnnotation,
   type JoinSpacingOptions,
   type LetterGuides,
-  type PreparedTracingPath
+  type PreparedTracingPath,
+  type TracingSection
 } from "letterpaths";
 import {
   buildFormationAnnotationMarkup,
@@ -1592,13 +1594,19 @@ const renderGuideLines = (layout: ShiftedWordLayout, width: number): string => `
 const renderWordContent = (
   layout: ShiftedWordLayout,
   preparedPath: PreparedTracingPath,
-  settings: WorksheetAnnotationSettings
+  settings: WorksheetAnnotationSettings,
+  preparedSections?: TracingSection[]
 ): string => {
   const drawableStrokes = layout.path.strokes.filter((stroke) => stroke.type !== "lift");
   const strokePaths = drawableStrokes
     .map((stroke) => `<path class="worksheet-word__stroke" d="${buildPathD(stroke.curves)}"></path>`)
     .join("");
-  const annotationMarkup = buildFormationAnnotationMarkup(layout.path, preparedPath, settings);
+  const annotationMarkup = buildFormationAnnotationMarkup(
+    layout.path,
+    preparedPath,
+    settings,
+    preparedSections
+  );
 
   return `
     ${strokePaths}
@@ -1611,9 +1619,10 @@ const renderWordSvg = (
   preparedPath: PreparedTracingPath,
   settings: WorksheetAnnotationSettings,
   className: string,
-  ariaLabel: string
+  ariaLabel: string,
+  preparedSections?: TracingSection[]
 ): string => {
-  const wordContent = renderWordContent(layout, preparedPath, settings);
+  const wordContent = renderWordContent(layout, preparedPath, settings, preparedSections);
 
   return `
     <svg
@@ -1638,14 +1647,13 @@ const getPracticeAdvance = (layout: ShiftedWordLayout): number => {
 
 const renderPracticeRowSvg = (
   layout: ShiftedWordLayout,
-  preparedPath: PreparedTracingPath,
+  wordContent: string,
   settings: WorksheetAnnotationSettings,
   repeatCount: number,
   rowIndex: number
 ): string => {
   const advance = getPracticeAdvance(layout);
   const rowWidth = layout.width + advance * (repeatCount - 1);
-  const wordContent = renderWordContent(layout, preparedPath, settings);
   const symbolId = `practice-word-${rowIndex}`;
   const repeatedWords = Array.from({ length: repeatCount }, (_, repeatIndex) => {
     const x = repeatIndex * advance;
@@ -1708,18 +1716,31 @@ const renderWorksheet = () => {
   }
 
   const preparedPath = compileTracingPath(layout.path);
+  const hasVisibleAnnotations = [state.top, state.practice].some((settings) =>
+    Object.values(settings.visibility).some(Boolean)
+  );
+  const preparedSections = hasVisibleAnnotations
+    ? analyzeTracingSections(preparedPath).sections
+    : undefined;
   const topSvg = renderWordSvg(
     layout,
     preparedPath,
     state.top,
     "worksheet-word worksheet-word--top",
-    `${state.text} with formation annotations`
+    `${state.text} with formation annotations`,
+    preparedSections
   );
   const practiceRowCount = getPracticeRowCount();
+  const practiceWordContent = renderWordContent(
+    layout,
+    preparedPath,
+    state.practice,
+    preparedSections
+  );
   const practiceRows = Array.from({ length: practiceRowCount }, (_, rowIndex) =>
     renderPracticeRowSvg(
       layout,
-      preparedPath,
+      practiceWordContent,
       state.practice,
       state.practiceRepeatCount,
       rowIndex

@@ -39,11 +39,31 @@ export type TracingGroupAnalysis = {
 
 type FlattenedSample = TracingSample & {
   overallDistance: number;
+  strokeIndex: number;
 };
 
 type OverlapRun = {
   startIndex: number;
   matchedEarlierIndex: number;
+};
+
+type TracingSampleSpatialIndex = {
+  cellSize: number;
+  buckets: Map<string, number[]>;
+};
+
+type RetraceBoundaryCandidate = {
+  boundary: PreparedTracingBoundary;
+  sampleIndex: number;
+  strokeEndIndexExclusive: number;
+};
+
+type RetraceBoundaryMatch = {
+  candidateIndex: number;
+  sampleIndex: number;
+  matchedEarlierIndex: number;
+  overallDistance: number;
+  point: Point;
 };
 
 const MATCH_BACKTRACK_TOLERANCE = 12;
@@ -70,6 +90,15 @@ export function analyzeTracingGroups(
     return { groups: [], totalLength };
   }
 
+  const sampleSpatialIndex = buildTracingSampleSpatialIndex(samples, proximityThreshold);
+  // Candidate turns are authored curve boundaries. Resolve their sample positions once so the
+  // group loop does not repeatedly rescan every boundary and every sample.
+  const retraceBoundaryCandidates = buildRetraceBoundaryCandidates(
+    path.boundaries,
+    samples,
+    retraceTurnAngleThreshold
+  );
+
   const groups: TracingGroup[] = [];
   let groupStartIndex = 0;
   let groupStartDistance = samples[0]?.overallDistance ?? 0;
@@ -78,17 +107,23 @@ export function analyzeTracingGroups(
     : { x: 0, y: 0 };
   let nextGroupKind: TracingGroup["kind"] = "base";
   let nextMatchedEarlierDistance: number | undefined;
+  let nextBoundaryCandidateIndex = 0;
 
   while (groupStartIndex < samples.length) {
-    const boundary = findFirstBoundaryFromIndex(samples, groupStartIndex, {
-      boundaries: path.boundaries,
-      proximityThreshold,
-      minOverlapLength,
-      minPathSeparation,
-      requireOpposingDirection,
-      oppositeDirectionDotThreshold,
-      retraceTurnAngleThreshold
-    });
+    const boundary = findFirstBoundaryFromIndex(
+      samples,
+      sampleSpatialIndex,
+      retraceBoundaryCandidates,
+      nextBoundaryCandidateIndex,
+      groupStartIndex,
+      {
+        proximityThreshold,
+        minOverlapLength,
+        minPathSeparation,
+        requireOpposingDirection,
+        oppositeDirectionDotThreshold
+      }
+    );
 
     const endPoint = boundary
       ? boundary.point
@@ -116,7 +151,8 @@ export function analyzeTracingGroups(
       break;
     }
 
-    groupStartIndex = findSampleIndexAtOrAfterDistance(samples, boundary.overallDistance);
+    nextBoundaryCandidateIndex = boundary.candidateIndex + 1;
+    groupStartIndex = boundary.sampleIndex;
     groupStartDistance = boundary.overallDistance;
     groupStartPoint = boundary.point;
     nextGroupKind = "retrace";
@@ -130,11 +166,12 @@ function flattenSamples(path: PreparedTracingPath): FlattenedSample[] {
   const flattened: FlattenedSample[] = [];
   let strokeOffset = 0;
 
-  path.strokes.forEach((stroke) => {
+  path.strokes.forEach((stroke, strokeIndex) => {
     stroke.samples.forEach((sample) => {
       flattened.push({
         ...sample,
-        overallDistance: strokeOffset + sample.distanceAlongStroke
+        overallDistance: strokeOffset + sample.distanceAlongStroke,
+        strokeIndex
       });
     });
     strokeOffset += stroke.totalLength;
@@ -145,6 +182,7 @@ function flattenSamples(path: PreparedTracingPath): FlattenedSample[] {
 
 function findMatchingEarlierSample(
   samples: FlattenedSample[],
+  sampleSpatialIndex: TracingSampleSpatialIndex | null,
   currentIndex: number,
   minEarlierIndex: number,
   maxEarlierIndexExclusive: number,
@@ -160,36 +198,57 @@ function findMatchingEarlierSample(
     return null;
   }
 
+  if (options.proximityThreshold < 0) {
+    return null;
+  }
+
   let bestIndex: number | null = null;
   let bestDistance = Infinity;
 
   const cappedEarlierIndex = Math.min(maxEarlierIndexExclusive, currentIndex);
-
-  for (let earlierIndex = minEarlierIndex; earlierIndex < cappedEarlierIndex; earlierIndex += 1) {
+  const evaluateCandidate = (earlierIndex: number) => {
     const earlier = samples[earlierIndex];
     if (!earlier) {
-      continue;
+      return;
     }
 
     if (current.overallDistance - earlier.overallDistance < options.minPathSeparation) {
-      continue;
+      return;
     }
 
     const spatialDistance = Math.hypot(current.x - earlier.x, current.y - earlier.y);
-    if (spatialDistance > options.proximityThreshold || spatialDistance >= bestDistance) {
-      continue;
+    if (
+      spatialDistance > options.proximityThreshold ||
+      spatialDistance > bestDistance ||
+      (spatialDistance === bestDistance && bestIndex !== null && earlierIndex >= bestIndex)
+    ) {
+      return;
     }
 
     if (options.requireOpposingDirection) {
       const directionDot =
         current.tangent.x * earlier.tangent.x + current.tangent.y * earlier.tangent.y;
       if (directionDot > options.oppositeDirectionDotThreshold) {
-        continue;
+        return;
       }
     }
 
     bestIndex = earlierIndex;
     bestDistance = spatialDistance;
+  };
+
+  if (sampleSpatialIndex) {
+    forEachNearbySampleIndex(
+      sampleSpatialIndex,
+      current,
+      minEarlierIndex,
+      cappedEarlierIndex,
+      evaluateCandidate
+    );
+  } else {
+    for (let earlierIndex = minEarlierIndex; earlierIndex < cappedEarlierIndex; earlierIndex += 1) {
+      evaluateCandidate(earlierIndex);
+    }
   }
 
   return bestIndex;
@@ -197,46 +256,66 @@ function findMatchingEarlierSample(
 
 function findFirstBoundaryFromIndex(
   samples: FlattenedSample[],
+  sampleSpatialIndex: TracingSampleSpatialIndex | null,
+  boundaryCandidates: RetraceBoundaryCandidate[],
+  startBoundaryCandidateIndex: number,
   startIndex: number,
   options: {
-    boundaries: PreparedTracingBoundary[];
     proximityThreshold: number;
     minOverlapLength: number;
     minPathSeparation: number;
     requireOpposingDirection: boolean;
     oppositeDirectionDotThreshold: number;
-    retraceTurnAngleThreshold: number;
   }
-): { startIndex: number; matchedEarlierIndex: number; overallDistance: number; point: Point } | null {
+): RetraceBoundaryMatch | null {
   const groupStartDistance = samples[startIndex]?.overallDistance ?? 0;
 
-  for (const boundary of options.boundaries) {
-    if (!isRetraceBoundary(boundary, options.retraceTurnAngleThreshold)) {
+  for (
+    let candidateIndex = startBoundaryCandidateIndex;
+    candidateIndex < boundaryCandidates.length;
+    candidateIndex += 1
+  ) {
+    const candidate = boundaryCandidates[candidateIndex];
+    if (!candidate) {
       continue;
     }
+    const {
+      boundary,
+      sampleIndex: boundarySampleIndex,
+      strokeEndIndexExclusive
+    } = candidate;
     if (boundary.overallDistance <= groupStartDistance) {
       continue;
     }
 
-    const boundarySampleIndex = findSampleIndexAtOrAfterDistance(samples, boundary.overallDistance);
     if (boundarySampleIndex <= startIndex) {
       continue;
     }
 
-    const overlapRun = findOverlapRunAfterBoundary(samples, startIndex, boundarySampleIndex, {
-      proximityThreshold: options.proximityThreshold,
-      minOverlapLength: options.minOverlapLength,
-      minPathSeparation: options.minPathSeparation,
-      requireOpposingDirection: options.requireOpposingDirection,
-      oppositeDirectionDotThreshold: options.oppositeDirectionDotThreshold
-    });
+    const overlapRun = findOverlapRunAfterBoundary(
+      samples,
+      sampleSpatialIndex,
+      startIndex,
+      boundarySampleIndex,
+      // A retrace is a continuous reversal of the current pen stroke. Do not search through a
+      // later pen-down stroke for evidence that an earlier boundary was a retrace.
+      strokeEndIndexExclusive,
+      {
+        proximityThreshold: options.proximityThreshold,
+        minOverlapLength: options.minOverlapLength,
+        minPathSeparation: options.minPathSeparation,
+        requireOpposingDirection: options.requireOpposingDirection,
+        oppositeDirectionDotThreshold: options.oppositeDirectionDotThreshold
+      }
+    );
 
     if (!overlapRun) {
       continue;
     }
 
     return {
-      startIndex: boundarySampleIndex,
+      candidateIndex,
+      sampleIndex: boundarySampleIndex,
       matchedEarlierIndex: overlapRun.matchedEarlierIndex,
       overallDistance: boundary.overallDistance,
       point: boundary.point
@@ -248,8 +327,10 @@ function findFirstBoundaryFromIndex(
 
 function findOverlapRunAfterBoundary(
   samples: FlattenedSample[],
+  sampleSpatialIndex: TracingSampleSpatialIndex | null,
   startIndex: number,
   boundarySampleIndex: number,
+  maxCurrentIndexExclusive: number,
   options: {
     proximityThreshold: number;
     minOverlapLength: number;
@@ -260,9 +341,14 @@ function findOverlapRunAfterBoundary(
 ): OverlapRun | null {
   let activeRun: OverlapRun | null = null;
 
-  for (let currentIndex = boundarySampleIndex + 1; currentIndex < samples.length; currentIndex += 1) {
+  for (
+    let currentIndex = boundarySampleIndex + 1;
+    currentIndex < maxCurrentIndexExclusive;
+    currentIndex += 1
+  ) {
     const matchIndex = findMatchingEarlierSample(
       samples,
+      sampleSpatialIndex,
       currentIndex,
       startIndex,
       boundarySampleIndex,
@@ -316,15 +402,136 @@ function isRetraceBoundary(
   );
 }
 
+function buildRetraceBoundaryCandidates(
+  boundaries: PreparedTracingBoundary[],
+  samples: FlattenedSample[],
+  retraceTurnAngleThreshold: number
+): RetraceBoundaryCandidate[] {
+  return boundaries
+    .filter((boundary) => isRetraceBoundary(boundary, retraceTurnAngleThreshold))
+    .map((boundary) => {
+      const sampleIndex = findSampleIndexAtOrAfterDistance(samples, boundary.overallDistance);
+      return {
+        boundary,
+        sampleIndex,
+        strokeEndIndexExclusive: findStrokeEndIndexExclusive(samples, sampleIndex)
+      };
+    });
+}
+
+function findStrokeEndIndexExclusive(samples: FlattenedSample[], startIndex: number): number {
+  const strokeIndex = samples[startIndex]?.strokeIndex;
+  if (strokeIndex === undefined) {
+    return samples.length;
+  }
+
+  let endIndex = startIndex + 1;
+  while (endIndex < samples.length && samples[endIndex]?.strokeIndex === strokeIndex) {
+    endIndex += 1;
+  }
+  return endIndex;
+}
+
 function findSampleIndexAtOrAfterDistance(
   samples: FlattenedSample[],
   overallDistance: number
 ): number {
-  for (let index = 0; index < samples.length; index += 1) {
-    const sample = samples[index];
-    if (sample && sample.overallDistance >= overallDistance) {
-      return index;
+  let low = 0;
+  let high = samples.length;
+
+  while (low < high) {
+    const middle = Math.floor((low + high) / 2);
+    const sample = samples[middle];
+    if (sample && sample.overallDistance < overallDistance) {
+      low = middle + 1;
+    } else {
+      high = middle;
     }
   }
-  return Math.max(0, samples.length - 1);
+
+  return Math.min(low, Math.max(0, samples.length - 1));
+}
+
+function buildTracingSampleSpatialIndex(
+  samples: FlattenedSample[],
+  proximityThreshold: number
+): TracingSampleSpatialIndex | null {
+  if (!Number.isFinite(proximityThreshold)) {
+    return null;
+  }
+
+  const cellSize = proximityThreshold > 0 ? proximityThreshold : 1;
+  const buckets = new Map<string, number[]>();
+
+  // A cell is exactly one match radius wide, so every possible match is in the current cell or
+  // one of its eight neighbours.
+  samples.forEach((sample, sampleIndex) => {
+    const key = getTracingSampleSpatialIndexKey(
+      Math.floor(sample.x / cellSize),
+      Math.floor(sample.y / cellSize)
+    );
+    const bucket = buckets.get(key);
+    if (bucket) {
+      bucket.push(sampleIndex);
+    } else {
+      buckets.set(key, [sampleIndex]);
+    }
+  });
+
+  return { cellSize, buckets };
+}
+
+function forEachNearbySampleIndex(
+  spatialIndex: TracingSampleSpatialIndex,
+  sample: FlattenedSample,
+  minSampleIndex: number,
+  maxSampleIndexExclusive: number,
+  visit: (sampleIndex: number) => void
+): void {
+  const cellX = Math.floor(sample.x / spatialIndex.cellSize);
+  const cellY = Math.floor(sample.y / spatialIndex.cellSize);
+
+  for (let dx = -1; dx <= 1; dx += 1) {
+    for (let dy = -1; dy <= 1; dy += 1) {
+      const bucket = spatialIndex.buckets.get(
+        getTracingSampleSpatialIndexKey(cellX + dx, cellY + dy)
+      );
+      if (!bucket) {
+        continue;
+      }
+
+      for (
+        let bucketIndex = lowerBoundSampleIndices(bucket, minSampleIndex);
+        bucketIndex < bucket.length;
+        bucketIndex += 1
+      ) {
+        const sampleIndex = bucket[bucketIndex];
+        if (sampleIndex === undefined || sampleIndex >= maxSampleIndexExclusive) {
+          break;
+        }
+        visit(sampleIndex);
+      }
+    }
+  }
+}
+
+function getTracingSampleSpatialIndexKey(cellX: number, cellY: number): string {
+  return `${cellX},${cellY}`;
+}
+
+function lowerBoundSampleIndices(sampleIndices: number[], targetIndex: number): number {
+  let low = 0;
+  let high = sampleIndices.length;
+
+  while (low < high) {
+    const middle = Math.floor((low + high) / 2);
+    const sampleIndex = sampleIndices[middle];
+    if (sampleIndex !== undefined && sampleIndex < targetIndex) {
+      low = middle + 1;
+    } else {
+      high = middle;
+    }
+  }
+
+  return low;
 }

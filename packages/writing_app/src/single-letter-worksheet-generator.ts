@@ -1762,14 +1762,13 @@ const getPracticeAdvance = (layout: ShiftedWordLayout): number => {
 
 const renderPracticeRowSvg = (
   layout: ShiftedWordLayout,
-  preparedPath: PreparedTracingPath,
+  letterContent: string,
   settings: WorksheetAnnotationSettings,
   repeatCount: number,
   rowIndex: number
 ): string => {
   const advance = getPracticeAdvance(layout);
   const rowWidth = layout.width + advance * (repeatCount - 1);
-  const letterContent = renderLetterContent(layout.path, preparedPath, settings);
   const symbolId = `practice-letter-${rowIndex}`;
   const repeatedLetters = Array.from({ length: repeatCount }, (_, repeatIndex) => {
     const x = repeatIndex * advance;
@@ -1840,10 +1839,11 @@ const renderWorksheet = () => {
     );
   }).join("");
   const practiceRowCount = getPracticeRowCount();
+  const practiceLetterContent = renderLetterContent(layout.path, fullPreparedPath, state.practice);
   const practiceRows = Array.from({ length: practiceRowCount }, (_, rowIndex) =>
     renderPracticeRowSvg(
       layout,
-      fullPreparedPath,
+      practiceLetterContent,
       state.practice,
       state.practiceRepeatCount,
       rowIndex

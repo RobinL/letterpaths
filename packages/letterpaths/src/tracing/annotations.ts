@@ -374,9 +374,15 @@ export function compileFormationAnnotations(
   path: PreparedTracingPath,
   options: CompileFormationAnnotationsOptions = {}
 ): FormationAnnotation[] {
+  const sharedDefaultGroups = shouldShareDefaultTracingGroups(options)
+    ? analyzeTracingGroups(path).groups
+    : undefined;
   const sections =
     options.sections ??
-    analyzeTracingSections(path, options.sectionAnalysis ?? {}).sections;
+    analyzeTracingSections(path, {
+      ...options.sectionAnalysis,
+      ...(sharedDefaultGroups ? { groups: sharedDefaultGroups } : {})
+    }).sections;
   const sampleIndex =
     options.directionalDashes ||
     options.startArrows !== false ||
@@ -402,7 +408,14 @@ export function compileFormationAnnotations(
   }
 
   if (options.turningPoints !== false) {
-    annotations.push(...compileTurningPointAnnotations(path, sections, options.turningPoints));
+    annotations.push(
+      ...compileTurningPointAnnotations(
+        path,
+        sections,
+        options.turningPoints,
+        sharedDefaultGroups
+      )
+    );
   }
 
   if (options.drawOrderNumbers !== false) {
@@ -436,6 +449,18 @@ export function compileFormationAnnotations(
   return annotations.sort(compareAnnotations);
 }
 
+function shouldShareDefaultTracingGroups(options: CompileFormationAnnotationsOptions): boolean {
+  return (
+    options.sections === undefined &&
+    options.turningPoints !== false &&
+    options.sectionAnalysis?.includeRetraceTurns !== false &&
+    options.sectionAnalysis?.groups === undefined &&
+    options.sectionAnalysis?.groupAnalysis === undefined &&
+    options.turningPoints?.groups === undefined &&
+    options.turningPoints?.groupAnalysis === undefined
+  );
+}
+
 export function annotationCommandsToSvgPathData(
   commands: AnnotationPathCommand[]
 ): string {
@@ -445,9 +470,12 @@ export function annotationCommandsToSvgPathData(
 function compileTurningPointAnnotations(
   path: PreparedTracingPath,
   sections: TracingSection[],
-  options: TurningPointAnnotationOptions = {}
+  options: TurningPointAnnotationOptions = {},
+  sharedGroups?: TracingGroup[]
 ): TurningPointAnnotation[] {
-  const arrows = compileFormationArrows(path, { retraceTurns: options });
+  const arrows = compileFormationArrows(path, {
+    retraceTurns: sharedGroups ? { ...options, groups: sharedGroups } : options
+  });
 
   return arrows
     .map((arrow) => {

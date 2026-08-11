@@ -1,5 +1,6 @@
 import {
   analyzeTracingSections,
+  analyzeTracingGroups,
   buildHandwritingPath,
   compileFormationAnnotations,
   compileTracingPath,
@@ -270,6 +271,7 @@ const buildOptions = {
 
 const pathBenchmark = benchmark(iterations, () => buildHandwritingPath(text, buildOptions));
 const preparedBenchmark = benchmark(iterations, () => compileTracingPath(pathBenchmark.value));
+const groupBenchmark = benchmark(iterations, () => analyzeTracingGroups(preparedBenchmark.value));
 const sectionBenchmark = benchmark(iterations, () => analyzeTracingSections(preparedBenchmark.value));
 
 const familyBenchmarks = Object.fromEntries(
@@ -330,11 +332,17 @@ const output = {
   path: {
     strokes: pathBenchmark.value.strokes.length,
     curves: countCurves(pathBenchmark.value),
-    joins: pathBenchmark.value.joinMetrics?.length ?? 0
+    joins: pathBenchmark.value.joinMetrics?.length ?? 0,
+    samples: preparedBenchmark.value.strokes.reduce(
+      (sum, stroke) => sum + stroke.samples.length,
+      0
+    ),
+    tracingGroups: groupBenchmark.value.groups.length
   },
   timings: {
     buildHandwritingPath: pathBenchmark.summary,
     compileTracingPath: preparedBenchmark.summary,
+    analyzeTracingGroups: groupBenchmark.summary,
     analyzeTracingSections: sectionBenchmark.summary,
     annotationFamilies: familyBenchmarks,
     topAnnotations: {
