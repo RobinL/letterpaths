@@ -20,6 +20,7 @@ import {
   type FormationAnnotationVisibility
 } from "./formation-annotation-markup";
 import { buildPathD, buildShiftedWordLayout, type ShiftedWordLayout } from "./shared";
+import { setupWorksheetPreviewPanZoom } from "./worksheet-preview-pan-zoom";
 
 type AnnotationScope = "top" | "practice";
 
@@ -507,9 +508,17 @@ app.innerHTML = `
         <button class="worksheet-app__zoom-button" id="preview-zoom-out-button" type="button" aria-label="Zoom out">&minus;</button>
         <output class="worksheet-app__zoom-value" id="preview-zoom-value" aria-live="polite">${DEFAULT_PREVIEW_ZOOM}%</output>
         <button class="worksheet-app__zoom-button" id="preview-zoom-in-button" type="button" aria-label="Zoom in">+</button>
+        <span class="worksheet-app__gesture-hint">Scroll to pan · pinch or Ctrl + scroll to zoom</span>
       </div>
-      <div class="worksheet-app__page-frame" id="worksheet-page-frame">
-        <section class="worksheet-page" id="worksheet-page" aria-label="Printable worksheet"></section>
+      <div
+        class="worksheet-app__preview-viewport"
+        id="worksheet-preview-viewport"
+        tabindex="0"
+        aria-label="Worksheet canvas. Scroll or drag to pan. Pinch or Control plus scroll to zoom."
+      >
+        <div class="worksheet-app__page-frame" id="worksheet-page-frame">
+          <section class="worksheet-page" id="worksheet-page" aria-label="Printable worksheet"></section>
+        </div>
       </div>
     </main>
   </div>
@@ -525,6 +534,9 @@ const topAnnotationPresetButtons = Array.from(
   document.querySelectorAll<HTMLButtonElement>("[data-top-annotation-preset]")
 );
 const printButton = document.querySelector<HTMLButtonElement>("#print-worksheet-button");
+const worksheetPreviewViewport = document.querySelector<HTMLElement>(
+  "#worksheet-preview-viewport"
+);
 const worksheetPageFrame = document.querySelector<HTMLElement>("#worksheet-page-frame");
 const worksheetPage = document.querySelector<HTMLElement>("#worksheet-page");
 const statusEl = document.querySelector<HTMLParagraphElement>("#worksheet-status");
@@ -537,6 +549,7 @@ if (
   !practiceRepeatSlider ||
   !strokeWidthSlider ||
   !printButton ||
+  !worksheetPreviewViewport ||
   !worksheetPageFrame ||
   !worksheetPage ||
   !statusEl
@@ -1366,11 +1379,11 @@ const fitPreviewZoomToWidth = () => {
     return;
   }
 
-  const previewStyles = window.getComputedStyle(worksheetPageFrame.parentElement ?? worksheetPageFrame);
+  const previewStyles = window.getComputedStyle(worksheetPreviewViewport);
   const horizontalPadding =
     Number.parseFloat(previewStyles.paddingLeft) + Number.parseFloat(previewStyles.paddingRight);
   const availableWidth =
-    worksheetPageFrame.parentElement?.clientWidth ?? worksheetPageFrame.clientWidth;
+    worksheetPreviewViewport.clientWidth;
   const previewWidth = Math.max(0, availableWidth - horizontalPadding - PREVIEW_FIT_PADDING_PX);
   const pageWidth = worksheetPage.offsetWidth;
   if (pageWidth <= 0 || previewWidth <= 0) {
@@ -1936,12 +1949,22 @@ const createWorksheetPngBlob = async (): Promise<Blob> => {
   });
 };
 
+const previewPanZoom = setupWorksheetPreviewPanZoom({
+  viewport: worksheetPreviewViewport,
+  frame: worksheetPageFrame,
+  getZoom: () => state.previewZoom,
+  setZoom: (zoom) => setPreviewZoom(zoom, { manual: true }),
+  minZoom: MIN_PREVIEW_ZOOM,
+  maxZoom: MAX_PREVIEW_ZOOM,
+  zoomStep: PREVIEW_ZOOM_STEP
+});
+
 textInput.addEventListener("input", renderWorksheet);
 previewZoomOutButton.addEventListener("click", () => {
-  setPreviewZoom(state.previewZoom - PREVIEW_ZOOM_STEP, { manual: true });
+  previewPanZoom.zoomBy(-PREVIEW_ZOOM_STEP);
 });
 previewZoomInButton.addEventListener("click", () => {
-  setPreviewZoom(state.previewZoom + PREVIEW_ZOOM_STEP, { manual: true });
+  previewPanZoom.zoomBy(PREVIEW_ZOOM_STEP);
 });
 practiceSizeSlider.addEventListener("input", renderWorksheet);
 practiceRepeatSlider.addEventListener("input", renderWorksheet);
@@ -2070,7 +2093,7 @@ fitPreviewZoomToWidth();
 
 new ResizeObserver(() => {
   fitPreviewZoomToWidth();
-}).observe(worksheetPageFrame.parentElement ?? worksheetPageFrame);
+}).observe(worksheetPreviewViewport);
 
 window.__worksheetProfiler = {
   getState: getWorksheetProfilerState,

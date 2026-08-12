@@ -1119,7 +1119,7 @@ body {
 }
 
 .worksheet-app {
-  min-height: 100svh;
+  height: 100svh;
   display: grid;
   grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
   color: #23313d;
@@ -1365,21 +1365,23 @@ body {
 }
 
 .worksheet-app__preview {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
   min-width: 0;
-  padding: 2px 22px 22px;
-  overflow: auto;
+  min-height: 0;
+  padding: 10px 14px 14px;
+  overflow: hidden;
 }
 
 .worksheet-app__preview-toolbar {
-  position: sticky;
-  top: 14px;
   z-index: 2;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
   width: max-content;
-  margin: 10px auto 24px;
+  max-width: 100%;
+  margin: 0 auto 10px;
   padding: 6px;
   border: 1px solid rgba(35, 49, 61, 0.14);
   border-radius: 8px;
@@ -1422,8 +1424,42 @@ body {
   text-align: center;
 }
 
+.worksheet-app__gesture-hint {
+  padding: 0 6px;
+  color: #5b6773;
+  font-size: 0.78rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.worksheet-app__preview-viewport {
+  min-width: 0;
+  min-height: 0;
+  padding: 20px;
+  overflow: auto;
+  border: 1px solid rgba(35, 49, 61, 0.1);
+  border-radius: 12px;
+  background: #e4ebef;
+  cursor: grab;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  touch-action: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.worksheet-app__preview-viewport:focus-visible {
+  outline: 3px solid rgba(47, 125, 104, 0.35);
+  outline-offset: 2px;
+}
+
+.worksheet-app__preview-viewport--dragging {
+  cursor: grabbing;
+  user-select: none;
+}
+
 .worksheet-app__page-frame {
   --worksheet-preview-scale: 1;
+  position: relative;
   width: calc(210mm * var(--worksheet-preview-scale));
   height: calc(297mm * var(--worksheet-preview-scale));
   margin: 0 auto;
@@ -1431,19 +1467,22 @@ body {
 
 .worksheet-page {
   --practice-row-height: 24mm;
+  position: absolute;
+  top: 0;
+  left: 0;
   display: grid;
   grid-template-rows: auto 84mm 1fr;
   gap: 4mm;
   width: 210mm;
   height: 297mm;
-  margin: 0 auto;
+  margin: 0;
   padding: 12mm;
   overflow: hidden;
   background: #ffffff;
   box-shadow: 0 18px 42px rgba(35, 49, 61, 0.18);
   print-color-adjust: exact;
   transform: scale(var(--worksheet-preview-scale));
-  transform-origin: top center;
+  transform-origin: top left;
 }
 
 .worksheet-page--without-meta {
@@ -1575,8 +1614,10 @@ body {
   text-align: center;
 }
 
-@media (max-width: 980px) {
+@media (max-width: 1100px) {
   .worksheet-app {
+    height: auto;
+    min-height: 100svh;
     grid-template-columns: 1fr;
   }
 
@@ -1593,16 +1634,123 @@ body {
   }
 
   .worksheet-app__preview {
-    padding: 8px 14px 14px;
+    grid-template-rows: auto minmax(0, 1fr);
+    height: max(520px, 78svh);
+    padding: 10px;
   }
 
-
-  .worksheet-app__page-frame {
-    margin: 0;
+  .worksheet-app__preview-toolbar {
+    margin-bottom: 8px;
   }
 
-  .worksheet-page {
-    width: min(210mm, 100%);
+  .worksheet-app__preview-viewport {
+    padding: 12px;
+    border-radius: 10px;
+  }
+}
+
+@media (max-width: 600px) {
+  .worksheet-app__controls-inner {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 9px 12px;
+    padding: 12px;
+  }
+
+  .worksheet-app__heading,
+  .worksheet-app__controls-inner > .worksheet-app__field:first-of-type,
+  .worksheet-app__checks,
+  .worksheet-app__preset-buttons,
+  .worksheet-app__button-row,
+  .worksheet-app__status {
+    grid-column: 1 / -1;
+  }
+
+  .worksheet-app__title {
+    font-size: 1.28rem;
+    line-height: 1.08;
+  }
+
+  .worksheet-app__field {
+    gap: 4px;
+    font-size: 0.78rem;
+  }
+
+  .worksheet-app__field span {
+    gap: 6px;
+  }
+
+  .worksheet-app__button,
+  .worksheet-app__text-input,
+  .worksheet-app__select {
+    min-height: 40px;
+  }
+
+  .worksheet-app__text-input,
+  .worksheet-app__select {
+    padding: 8px 10px;
+    font-size: 0.92rem;
+  }
+
+  .worksheet-app__range {
+    min-height: 24px;
+  }
+
+  .worksheet-app__checks {
+    gap: 5px 8px;
+  }
+
+  .worksheet-app__check {
+    gap: 6px;
+    font-size: 0.78rem;
+  }
+
+  .worksheet-app__preset-buttons {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .worksheet-app__preset-buttons legend {
+    font-size: 0.78rem;
+  }
+
+  .worksheet-app__preset-buttons .worksheet-app__button {
+    min-height: 0;
+    padding: 8px 5px;
+    font-size: 0.76rem;
+    line-height: 1.08;
+  }
+
+  .worksheet-app__details summary {
+    padding: 9px 10px;
+    font-size: 0.82rem;
+  }
+
+  .worksheet-app__details[open] {
+    grid-column: 1 / -1;
+  }
+
+  .worksheet-app__button-row .worksheet-app__button {
+    padding: 10px 14px;
+    font-size: 0.92rem;
+  }
+
+  .worksheet-app__status {
+    min-height: 0;
+    font-size: 0.8rem;
+  }
+
+  .worksheet-app__preview {
+    height: 72svh;
+    min-height: 460px;
+  }
+
+  .worksheet-app__gesture-hint {
+    display: none;
+  }
+
+  .worksheet-app__zoom-button {
+    inline-size: 42px;
+    block-size: 42px;
   }
 }
 
@@ -1641,6 +1789,15 @@ body {
     display: none;
   }
 
+  .worksheet-app__preview-viewport {
+    display: block;
+    padding: 0;
+    overflow: visible;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+  }
+
   .worksheet-app__page-frame {
     width: auto;
     height: auto;
@@ -1648,6 +1805,7 @@ body {
   }
 
   .worksheet-page {
+    position: static;
     width: 210mm;
     height: 296mm;
     margin: 0;
