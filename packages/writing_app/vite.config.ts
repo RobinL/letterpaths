@@ -13,6 +13,10 @@ export default defineConfig(({ command }) => ({
           __dirname,
           "cursive_worksheet_generator/index.html"
         ),
+        fadingPractice: path.resolve(
+          __dirname,
+          "fading_practice/index.html"
+        ),
         singleLetterWorksheetGenerator: path.resolve(
           __dirname,
           "single_letter_worksheet_generator/index.html"

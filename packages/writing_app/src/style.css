@@ -1539,7 +1539,7 @@ body {
   stroke-width: var(--worksheet-word-stroke-width, 54);
   stroke-linecap: round;
   stroke-linejoin: round;
-  stroke-opacity: 0.92;
+  stroke-opacity: var(--worksheet-word-stroke-opacity, 0.92);
 }
 
 .worksheet-word--top .worksheet-word__stroke {
@@ -1551,6 +1551,18 @@ body {
   stroke: var(--worksheet-guide-color, #b3bec7);
   stroke-width: var(--worksheet-guide-stroke-width, 2);
   vector-effect: non-scaling-stroke;
+}
+
+.worksheet-page--handwriting-practice {
+  grid-template-rows: auto 45mm 1fr;
+}
+
+.worksheet-page--handwriting-practice.worksheet-page--without-meta {
+  grid-template-rows: 45mm 1fr;
+}
+
+.worksheet-page--handwriting-practice .worksheet-page__practice {
+  gap: var(--practice-row-gap, 0);
 }
 
 .worksheet-page__empty {
