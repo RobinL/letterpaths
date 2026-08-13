@@ -2095,7 +2095,6 @@ practiceRepeatSlider.addEventListener("input", renderWorksheet);
 practiceRepeatSpacingSlider.addEventListener("input", renderWorksheet);
 strokeWidthSlider.addEventListener("input", renderWorksheet);
 printButton.addEventListener("click", () => {
-  renderWorksheet();
   window.print();
 });
 

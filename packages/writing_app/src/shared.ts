@@ -31,7 +31,7 @@ export type ShiftedWordLayout = {
 
 export type ShiftedWordLayoutOptions = Pick<
   BuildHandwritingOptions,
-  "joinSpacing" | "keepInitialLeadIn" | "keepFinalLeadOut"
+  "joinSpacing" | "letterSpacing" | "wordSpacing" | "keepInitialLeadIn" | "keepFinalLeadOut"
 >;
 
 export type ShiftedHandwritingLayoutOptions = ShiftedWordLayoutOptions & {
@@ -96,6 +96,8 @@ export const buildShiftedHandwritingLayout = (
     style,
     targetGuides: TARGET_GUIDES,
     joinSpacing: options.joinSpacing ?? JOIN_SPACING,
+    letterSpacing: options.letterSpacing,
+    wordSpacing: options.wordSpacing,
     letters: lettersByVariantId,
     keepInitialLeadIn: options.keepInitialLeadIn,
     keepFinalLeadOut: options.keepFinalLeadOut

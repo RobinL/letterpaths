@@ -1189,6 +1189,11 @@ body {
   align-items: center;
 }
 
+.worksheet-app__standalone-spacing-controls {
+  display: grid;
+  gap: 16px;
+}
+
 .worksheet-app__text-input,
 .worksheet-app__select {
   width: 100%;
@@ -1614,6 +1619,10 @@ body {
   text-align: center;
 }
 
+.worksheet-page__print-raster {
+  display: none;
+}
+
 @media (max-width: 1100px) {
   .worksheet-app {
     height: auto;
@@ -1811,5 +1820,16 @@ body {
     margin: 0;
     box-shadow: none;
     transform: none;
+  }
+
+  .worksheet-body--raster-print .worksheet-page {
+    display: none;
+  }
+
+  .worksheet-body--raster-print .worksheet-page__print-raster {
+    display: block;
+    width: 210mm;
+    height: 297mm;
+    object-fit: contain;
   }
 }

@@ -9,6 +9,7 @@ import {
   buildShiftedHandwritingLayout,
   type ShiftedWordLayout
 } from "./shared";
+import { setupWorksheetPreviewPanZoom } from "./worksheet-preview-pan-zoom";
 import {
   buildFormationAnnotationMarkup,
   DEFAULT_FORMATION_ANNOTATION_VISIBILITY,
@@ -36,10 +37,13 @@ type WorksheetState = {
   previewZoom: number;
   rowHeightMm: number;
   rowGapMm: number;
+  letterSpacing: number;
+  wordSpacing: number;
   repeatCount: number;
   repeatGap: number;
   strokeWidth: number;
   fadeRows: number;
+  initialTraceOpacity: number;
   showBaselineGuide: boolean;
   showXHeightGuide: boolean;
   showAscenderGuide: boolean;
@@ -72,10 +76,13 @@ const PREVIEW_ZOOM_STEP = 5;
 const PREVIEW_FIT_PADDING_PX = 20;
 const DEFAULT_ROW_HEIGHT_MM = 12;
 const DEFAULT_ROW_GAP_MM = 2;
+const DEFAULT_LETTER_SPACING = 0;
+const DEFAULT_WORD_SPACING = 480;
 const DEFAULT_REPEAT_COUNT = 1;
 const DEFAULT_REPEAT_GAP = 140;
 const DEFAULT_STROKE_WIDTH = 50;
 const DEFAULT_FADE_ROWS = 10;
+const DEFAULT_INITIAL_TRACE_OPACITY = 20;
 const DEFAULT_GUIDE_STROKE_WIDTH = 0.8;
 const DEFAULT_GUIDE_COLOR = "#9bb7d8";
 const DEFAULT_TRACE_COLOR = "#d5dbe2";
@@ -101,10 +108,13 @@ const WORKSHEET_URL_PARAM_KEYS = [
   "previewZoom",
   "rowHeight",
   "rowGap",
+  "letterSpacing",
+  "wordSpacing",
   "repeatCount",
   "repeatGap",
   "strokeWidth",
   "fadeRows",
+  "initialTraceOpacity",
   "showBaselineGuide",
   "showXHeightGuide",
   "showAscenderGuide",
@@ -132,10 +142,13 @@ const createDefaultState = (): WorksheetState => ({
   previewZoom: DEFAULT_PREVIEW_ZOOM,
   rowHeightMm: DEFAULT_ROW_HEIGHT_MM,
   rowGapMm: DEFAULT_ROW_GAP_MM,
+  letterSpacing: DEFAULT_LETTER_SPACING,
+  wordSpacing: DEFAULT_WORD_SPACING,
   repeatCount: DEFAULT_REPEAT_COUNT,
   repeatGap: DEFAULT_REPEAT_GAP,
   strokeWidth: DEFAULT_STROKE_WIDTH,
   fadeRows: DEFAULT_FADE_ROWS,
+  initialTraceOpacity: DEFAULT_INITIAL_TRACE_OPACITY,
   showBaselineGuide: true,
   showXHeightGuide: true,
   showAscenderGuide: true,
@@ -239,6 +252,27 @@ app.innerHTML = `
 
         ${renderStyleSelect()}
 
+        <div class="worksheet-app__standalone-spacing-controls" id="standalone-spacing-controls" hidden>
+          ${renderRangeControl({
+  id: "letter-spacing-slider",
+  label: "Letter spacing",
+  value: DEFAULT_LETTER_SPACING,
+  min: -40,
+  max: 280,
+  step: 10,
+  valueId: "letter-spacing-value"
+})}
+          ${renderRangeControl({
+  id: "word-spacing-slider",
+  label: "Space width",
+  value: DEFAULT_WORD_SPACING,
+  min: 180,
+  max: 960,
+  step: 20,
+  valueId: "word-spacing-value"
+})}
+        </div>
+
         ${renderRangeControl({
   id: "row-height-slider",
   label: "Line height",
@@ -287,6 +321,16 @@ app.innerHTML = `
   max: 20,
   step: 1,
   valueId: "fade-rows-value"
+})}
+
+        ${renderRangeControl({
+  id: "initial-trace-opacity-slider",
+  label: "Initial trace darkness",
+  value: DEFAULT_INITIAL_TRACE_OPACITY,
+  min: 1,
+  max: 100,
+  step: 1,
+  valueId: "initial-trace-opacity-value"
 })}
 
         ${renderRangeControl({
@@ -343,9 +387,17 @@ app.innerHTML = `
         <button class="worksheet-app__zoom-button" id="preview-zoom-out-button" type="button" aria-label="Zoom out">&minus;</button>
         <output class="worksheet-app__zoom-value" id="preview-zoom-value" aria-live="polite">${DEFAULT_PREVIEW_ZOOM}%</output>
         <button class="worksheet-app__zoom-button" id="preview-zoom-in-button" type="button" aria-label="Zoom in">+</button>
+        <span class="worksheet-app__gesture-hint">Scroll to pan · pinch or Ctrl + scroll to zoom</span>
       </div>
-      <div class="worksheet-app__page-frame" id="worksheet-page-frame">
-        <section class="worksheet-page worksheet-page--handwriting-practice" id="worksheet-page" aria-label="Printable worksheet"></section>
+      <div
+        class="worksheet-app__preview-viewport"
+        id="worksheet-preview-viewport"
+        tabindex="0"
+        aria-label="Worksheet canvas. Scroll or drag to pan. Pinch or Control plus scroll to zoom."
+      >
+        <div class="worksheet-app__page-frame" id="worksheet-page-frame">
+          <section class="worksheet-page worksheet-page--handwriting-practice" id="worksheet-page" aria-label="Printable worksheet"></section>
+        </div>
       </div>
     </main>
   </div>
@@ -353,13 +405,20 @@ app.innerHTML = `
 
 const textInput = document.querySelector<HTMLInputElement>("#worksheet-text-input");
 const styleSelect = document.querySelector<HTMLSelectElement>("#worksheet-style-select");
+const standaloneSpacingControls = document.querySelector<HTMLElement>("#standalone-spacing-controls");
 const previewZoomInButton = document.querySelector<HTMLButtonElement>("#preview-zoom-in-button");
 const previewZoomOutButton = document.querySelector<HTMLButtonElement>("#preview-zoom-out-button");
+const worksheetPreviewViewport = document.querySelector<HTMLElement>("#worksheet-preview-viewport");
 const rowHeightSlider = document.querySelector<HTMLInputElement>("#row-height-slider");
 const rowGapSlider = document.querySelector<HTMLInputElement>("#row-gap-slider");
+const letterSpacingSlider = document.querySelector<HTMLInputElement>("#letter-spacing-slider");
+const wordSpacingSlider = document.querySelector<HTMLInputElement>("#word-spacing-slider");
 const repeatCountSlider = document.querySelector<HTMLInputElement>("#repeat-count-slider");
 const repeatGapSlider = document.querySelector<HTMLInputElement>("#repeat-gap-slider");
 const fadeRowsSlider = document.querySelector<HTMLInputElement>("#fade-rows-slider");
+const initialTraceOpacitySlider = document.querySelector<HTMLInputElement>(
+  "#initial-trace-opacity-slider"
+);
 const strokeWidthSlider = document.querySelector<HTMLInputElement>("#stroke-width-slider");
 const printButton = document.querySelector<HTMLButtonElement>("#print-worksheet-button");
 const worksheetPageFrame = document.querySelector<HTMLElement>("#worksheet-page-frame");
@@ -369,13 +428,18 @@ const statusEl = document.querySelector<HTMLParagraphElement>("#worksheet-status
 if (
   !textInput ||
   !styleSelect ||
+  !standaloneSpacingControls ||
   !previewZoomInButton ||
   !previewZoomOutButton ||
+  !worksheetPreviewViewport ||
   !rowHeightSlider ||
   !rowGapSlider ||
+  !letterSpacingSlider ||
+  !wordSpacingSlider ||
   !repeatCountSlider ||
   !repeatGapSlider ||
   !fadeRowsSlider ||
+  !initialTraceOpacitySlider ||
   !strokeWidthSlider ||
   !printButton ||
   !worksheetPageFrame ||
@@ -607,6 +671,12 @@ const syncSettingsUrl = () => {
   if (state.rowGapMm !== DEFAULT_STATE.rowGapMm) {
     url.searchParams.set("rowGap", String(state.rowGapMm));
   }
+  if (state.letterSpacing !== DEFAULT_STATE.letterSpacing) {
+    url.searchParams.set("letterSpacing", String(state.letterSpacing));
+  }
+  if (state.wordSpacing !== DEFAULT_STATE.wordSpacing) {
+    url.searchParams.set("wordSpacing", String(state.wordSpacing));
+  }
   if (state.repeatCount !== DEFAULT_STATE.repeatCount) {
     url.searchParams.set("repeatCount", String(state.repeatCount));
   }
@@ -618,6 +688,9 @@ const syncSettingsUrl = () => {
   }
   if (state.fadeRows !== DEFAULT_STATE.fadeRows) {
     url.searchParams.set("fadeRows", String(state.fadeRows));
+  }
+  if (state.initialTraceOpacity !== DEFAULT_STATE.initialTraceOpacity) {
+    url.searchParams.set("initialTraceOpacity", String(state.initialTraceOpacity));
   }
   if (state.showBaselineGuide !== DEFAULT_STATE.showBaselineGuide) {
     url.searchParams.set("showBaselineGuide", state.showBaselineGuide ? "1" : "0");
@@ -668,9 +741,12 @@ const syncLabels = () => {
   setText("preview-zoom-value", `${state.previewZoom}%`);
   setText("row-height-value", `${state.rowHeightMm} mm`);
   setText("row-gap-value", `${state.rowGapMm} mm`);
+  setText("letter-spacing-value", `${state.letterSpacing > 0 ? "+" : ""}${state.letterSpacing}px`);
+  setText("word-spacing-value", `${state.wordSpacing}px`);
   setText("repeat-count-value", `${state.repeatCount}`);
   setText("repeat-gap-value", `${state.repeatGap}px`);
   setText("fade-rows-value", `${state.fadeRows}`);
+  setText("initial-trace-opacity-value", `${state.initialTraceOpacity}%`);
   setText("stroke-width-value", `${state.strokeWidth}px`);
   setText("guide-stroke-width-value", `${state.guideStrokeWidth.toFixed(1)}px`);
 };
@@ -681,9 +757,15 @@ const syncSettingsControlsFromState = () => {
   state.previewZoom = normalizePreviewZoom(state.previewZoom);
   state.rowHeightMm = syncSliderValue(rowHeightSlider, state.rowHeightMm);
   state.rowGapMm = syncSliderValue(rowGapSlider, state.rowGapMm);
+  state.letterSpacing = syncSliderValue(letterSpacingSlider, state.letterSpacing);
+  state.wordSpacing = syncSliderValue(wordSpacingSlider, state.wordSpacing);
   state.repeatCount = syncSliderValue(repeatCountSlider, state.repeatCount);
   state.repeatGap = syncSliderValue(repeatGapSlider, state.repeatGap);
   state.fadeRows = syncSliderValue(fadeRowsSlider, state.fadeRows);
+  state.initialTraceOpacity = syncSliderValue(
+    initialTraceOpacitySlider,
+    state.initialTraceOpacity
+  );
   state.strokeWidth = syncSliderValue(strokeWidthSlider, state.strokeWidth);
 
   globalSettingInputs.forEach((input) => {
@@ -739,6 +821,10 @@ const applyUrlSettings = () => {
 
   state.rowHeightMm = parseSliderSearchParam(params, "rowHeight", rowHeightSlider) ?? state.rowHeightMm;
   state.rowGapMm = parseSliderSearchParam(params, "rowGap", rowGapSlider) ?? state.rowGapMm;
+  state.letterSpacing =
+    parseSliderSearchParam(params, "letterSpacing", letterSpacingSlider) ?? state.letterSpacing;
+  state.wordSpacing =
+    parseSliderSearchParam(params, "wordSpacing", wordSpacingSlider) ?? state.wordSpacing;
   state.repeatCount =
     parseSliderSearchParam(params, "repeatCount", repeatCountSlider) ?? state.repeatCount;
   state.repeatGap =
@@ -746,6 +832,9 @@ const applyUrlSettings = () => {
   state.strokeWidth =
     parseSliderSearchParam(params, "strokeWidth", strokeWidthSlider) ?? state.strokeWidth;
   state.fadeRows = parseSliderSearchParam(params, "fadeRows", fadeRowsSlider) ?? state.fadeRows;
+  state.initialTraceOpacity =
+    parseSliderSearchParam(params, "initialTraceOpacity", initialTraceOpacitySlider) ??
+    state.initialTraceOpacity;
 
   globalSettingInputs.forEach((input) => {
     const setting = input.dataset.globalSetting;
@@ -930,7 +1019,7 @@ const renderWordSvg = (
       preserveAspectRatio="${preserveAspectRatio}"
       role="img"
       aria-label="${escapeHtml(ariaLabel)}"
-      style="--worksheet-word-stroke: ${state.traceColor}; --worksheet-word-stroke-width: ${state.strokeWidth}; --worksheet-word-stroke-opacity: ${opacity}; --worksheet-guide-color: ${state.guideColor}; --worksheet-guide-stroke-width: ${state.guideStrokeWidth};"
+      style="--worksheet-word-stroke: #000000; --worksheet-word-stroke-width: ${state.strokeWidth}; --worksheet-word-stroke-opacity: ${opacity}; --worksheet-guide-color: ${state.guideColor}; --worksheet-guide-stroke-width: ${state.guideStrokeWidth};"
     >
       ${renderGuideLines(layout, width)}
       ${opacity > 0 ? repeatedWords : ""}
@@ -979,8 +1068,12 @@ const getRowOpacity = (rowIndex: number): number => {
   }
 
   const progress = state.fadeRows <= 1 ? 1 : rowIndex / (state.fadeRows - 1);
-  const opacity = Math.max(0, 0.9 * (1 - progress));
+  const opacity = Math.max(0, (state.initialTraceOpacity / 100) * (1 - progress));
   return Number(opacity.toFixed(3));
+};
+
+const syncStandaloneSpacingControls = () => {
+  standaloneSpacingControls.hidden = state.style === "cursive";
 };
 
 const renderWorksheet = () => {
@@ -990,11 +1083,15 @@ const renderWorksheet = () => {
     style: normalizeStyle(styleSelect.value) ?? state.style,
     rowHeightMm: Number(rowHeightSlider.value),
     rowGapMm: Number(rowGapSlider.value),
+    letterSpacing: Number(letterSpacingSlider.value),
+    wordSpacing: Number(wordSpacingSlider.value),
     repeatCount: Number(repeatCountSlider.value),
     repeatGap: Number(repeatGapSlider.value),
     fadeRows: Number(fadeRowsSlider.value),
+    initialTraceOpacity: Number(initialTraceOpacitySlider.value),
     strokeWidth: Number(strokeWidthSlider.value)
   };
+  syncStandaloneSpacingControls();
   syncLabels();
   syncSettingsUrl();
 
@@ -1010,6 +1107,12 @@ const renderWorksheet = () => {
   try {
     layout = buildShiftedHandwritingLayout(state.text, {
       style: state.style,
+      ...(state.style === "cursive"
+        ? {}
+        : {
+            letterSpacing: state.letterSpacing,
+            wordSpacing: state.wordSpacing
+          }),
       keepInitialLeadIn: state.keepInitialLeadIn,
       keepFinalLeadOut: state.keepFinalLeadOut
     });
@@ -1064,22 +1167,34 @@ const renderWorksheet = () => {
   )}, ${state.repeatCount} word${state.repeatCount === 1 ? "" : "s"} per line`;
 };
 
+const previewPanZoom = setupWorksheetPreviewPanZoom({
+  viewport: worksheetPreviewViewport,
+  frame: worksheetPageFrame,
+  getZoom: () => state.previewZoom,
+  setZoom: (zoom) => setPreviewZoom(zoom, { manual: true }),
+  minZoom: MIN_PREVIEW_ZOOM,
+  maxZoom: MAX_PREVIEW_ZOOM,
+  zoomStep: PREVIEW_ZOOM_STEP
+});
+
 textInput.addEventListener("input", renderWorksheet);
 styleSelect.addEventListener("change", renderWorksheet);
 previewZoomOutButton.addEventListener("click", () => {
-  setPreviewZoom(state.previewZoom - PREVIEW_ZOOM_STEP, { manual: true });
+  previewPanZoom.zoomBy(-PREVIEW_ZOOM_STEP);
 });
 previewZoomInButton.addEventListener("click", () => {
-  setPreviewZoom(state.previewZoom + PREVIEW_ZOOM_STEP, { manual: true });
+  previewPanZoom.zoomBy(PREVIEW_ZOOM_STEP);
 });
 rowHeightSlider.addEventListener("input", renderWorksheet);
 rowGapSlider.addEventListener("input", renderWorksheet);
+letterSpacingSlider.addEventListener("input", renderWorksheet);
+wordSpacingSlider.addEventListener("input", renderWorksheet);
 repeatCountSlider.addEventListener("input", renderWorksheet);
 repeatGapSlider.addEventListener("input", renderWorksheet);
 fadeRowsSlider.addEventListener("input", renderWorksheet);
+initialTraceOpacitySlider.addEventListener("input", renderWorksheet);
 strokeWidthSlider.addEventListener("input", renderWorksheet);
 printButton.addEventListener("click", () => {
-  renderWorksheet();
   window.print();
 });
 
