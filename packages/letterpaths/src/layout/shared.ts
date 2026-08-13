@@ -34,6 +34,7 @@ export type JoinCursiveOptions = {
   joinKerning?: CursiveKerningPairs;
   capitalKerning?: CapitalToLowercaseKerningPairs;
   wordSpacing?: number;
+  letterSpacing?: number;
   keepInitialLeadIn?: boolean;
   keepFinalLeadOut?: boolean;
 };
@@ -80,6 +81,7 @@ export function buildStandaloneWord(
   const letterMap = options.letters ?? lettersByVariantId;
   const target = resolveTargetGuides(options);
   const wordSpacing = resolveWordSpacing(target, options);
+  const letterSpacing = config.additionalSpacing + (options.letterSpacing ?? 0);
 
   const outputSteps: BezierStep[] = [];
   let cursorX = 0;
@@ -91,6 +93,7 @@ export function buildStandaloneWord(
     const rawChar = text[charIndex] ?? "";
     if (rawChar.trim() === "") {
       cursorX = Math.max(rightSidebearingEdge, visibleRightEdge) + wordSpacing;
+      hasPlacedLetter = false;
       continue;
     }
 
@@ -120,9 +123,9 @@ export function buildStandaloneWord(
 
     if (hasPlacedLetter) {
       const visibleMinFromLeftSidebearing = visibleBounds.minX - normalizedGuides.left;
-      const sidebearingCursorX = rightSidebearingEdge + config.additionalSpacing;
+      const sidebearingCursorX = rightSidebearingEdge + letterSpacing;
       const visibleCursorX =
-        visibleRightEdge + config.additionalSpacing - visibleMinFromLeftSidebearing;
+        visibleRightEdge + letterSpacing - visibleMinFromLeftSidebearing;
       cursorX = Math.max(sidebearingCursorX, visibleCursorX);
     }
 
