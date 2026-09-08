@@ -730,15 +730,14 @@ function makeStandalonePrintGlyph(name: string, unicodes: number[]): GlyphOut {
         name,
         unicodes,
         advance,
-        contours: splitStandaloneContoursForFont(name, contours),
+        contours,
     };
 }
 
 function makeStandalonePrintGlyphBeforeLowercase(name: string): GlyphOut {
     const { contours } = extractStandalonePrint(name);
-    const splitContours = splitStandaloneContoursForFont(name, contours);
     let maxX = -Infinity;
-    for (const contour of splitContours) {
+    for (const contour of contours) {
         for (const segment of contour) {
             maxX = Math.max(maxX, segment[0], segment[2], segment[4], segment[6]);
         }
@@ -747,20 +746,8 @@ function makeStandalonePrintGlyphBeforeLowercase(name: string): GlyphOut {
         name: `${name}.ucnext`,
         unicodes: [],
         advance: Math.round(Number.isFinite(maxX) ? maxX + AFTER_UPPER_FONT_GAP : 0),
-        contours: splitContours,
+        contours,
     };
-}
-
-function splitStandaloneContoursForFont(letter: string, contours: Contour[]): Contour[] {
-    if (letter !== "R") {
-        return contours;
-    }
-    return contours.flatMap((contour) => {
-        if (contour.length !== 3) {
-            return [contour];
-        }
-        return [contour.slice(0, 2), contour.slice(2)];
-    });
 }
 
 function round(g: GlyphOut): GlyphOut {

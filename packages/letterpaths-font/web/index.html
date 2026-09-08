@@ -8,8 +8,8 @@
     <style>
         @font-face {
             font-family: "Letterpaths";
-            src: url("../fonts/Letterpaths.woff2") format("woff2"),
-                url("../fonts/Letterpaths.otf") format("opentype");
+            src: url("../fonts/Letterpaths.woff2?v=0.002") format("woff2"),
+                url("../fonts/Letterpaths.otf?v=0.002") format("opentype");
             font-display: block;
         }
 
@@ -26,7 +26,7 @@
         }
 
         .sample {
-            font-family: "Letterpaths";
+            font-family: "Letterpaths", sans-serif;
             font-feature-settings: "calt" 1, "kern" 1;
             font-size: 64px;
             line-height: 1.5;
@@ -37,7 +37,18 @@
 
 <body>
     <h1>Letterpaths</h1>
+    <h2>Joined g regression</h2>
+    <p class="sample">things singing beginning bringing going growing bug</p>
+    <p class="sample">g ng og ug gg nga oga uga</p>
+    <h2>Alphabet and joins</h2>
+    <p class="sample">abcdefghijklmnopqrstuvwxyz</p>
+    <p class="sample">ABCDEFGHIJKLMNOPQRSTUVWXYZ</p>
     <p class="sample">bro ro ovo wow avenue handwriting quartz aqua off banana</p>
+    <h2>Punctuation</h2>
+    <p class="sample">“Good things,” she said: ‘Keep going…’</p>
+    <p class="sample">It's good; "great", even! (Really?) [Yes] a &lt; b &gt; c + d = e * f / g</p>
+    <h2>Application fallback for unsupported characters</h2>
+    <p class="sample">0123456789 &amp; @ % £ $ { }</p>
 </body>
 
 </html>

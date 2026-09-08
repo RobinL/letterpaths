@@ -38,14 +38,14 @@ fs.writeFileSync(targetFont, fontBytes);
 
 const cacheKey = crypto.createHash("sha256").update(fontBytes).digest("hex").slice(0, 12);
 const indexHtml = fs.readFileSync(writingAppIndex, "utf8");
-const nextIndexHtml = indexHtml.replace(
-  /url\("\.\/homepage\/Letterpaths\.woff2(?:\?v=[a-f0-9]+)?"\)/,
-  `url("./homepage/Letterpaths.woff2?v=${cacheKey}")`
-);
-
-if (nextIndexHtml === indexHtml) {
+const fontUrl = /url\("\.\/homepage\/Letterpaths\.woff2(?:\?v=[a-f0-9]+)?"\)/;
+if (!fontUrl.test(indexHtml)) {
   throw new Error(`Could not find Letterpaths font URL in ${writingAppIndex}`);
 }
+const nextIndexHtml = indexHtml.replace(
+  fontUrl,
+  `url("./homepage/Letterpaths.woff2?v=${cacheKey}")`
+);
 
 fs.writeFileSync(writingAppIndex, nextIndexHtml);
 

@@ -178,6 +178,8 @@ source = { virtual = "." }
 dependencies = [
     { name = "brotli" },
     { name = "fonttools" },
+    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "skia-pathops" },
     { name = "skia-python" },
     { name = "ufo2ft" },
@@ -189,6 +191,7 @@ dependencies = [
 requires-dist = [
     { name = "brotli", specifier = ">=1.1" },
     { name = "fonttools", specifier = ">=4.50" },
+    { name = "numpy", specifier = ">=1.24" },
     { name = "skia-pathops", specifier = ">=0.8" },
     { name = "skia-python", specifier = ">=87.5" },
     { name = "ufo2ft", specifier = ">=3.0" },
