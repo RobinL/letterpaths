@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import test from "node:test";
 
 import {
@@ -14,6 +15,50 @@ import {
 
 const preparedSys = () =>
   compileTracingPath(buildHandwritingPath("sys", { style: "cursive" }));
+
+test("formation arrow point lookup preserves established geometry", () => {
+  // Captured before replacing the linear sample scan. Hash the complete output
+  // so every stem point, arrowhead, and source distance must remain identical.
+  const cases = [
+    ["zephyr", {}, "c6943e600a7221aead83d3e85d1477542fe8e445695768bebe0c1d7c6665f7d5"],
+    ["sys", { retraceTurns: { offset: 48, stemLength: 52 } },
+      "f44eb8dfa8e586ad256d653e825ab7b68b21efebb91ec58751ea9d03f6bd323e"],
+    ["jig", { retraceTurns: { offset: 0, stemLength: { incoming: 13.25, outgoing: 29.75 }, head: false } },
+      "05dd70721c96f55b9beb4c98c28d3a8f69626ced45061b6c19ed9a685f75d344"]
+  ];
+
+  for (const [text, options, expectedHash] of cases) {
+    const prepared = compileTracingPath(buildHandwritingPath(text, { style: "cursive" }));
+    const arrows = compileFormationArrows(prepared, options);
+    const actualHash = createHash("sha256").update(JSON.stringify(arrows)).digest("hex");
+    assert.equal(actualHash, expectedHash, `Arrow geometry changed for ${text}.`);
+  }
+});
+
+test("formation arrows avoid rescanning a whole stroke for each stem point", () => {
+  const prepared = compileTracingPath(buildHandwritingPath("zephyr", { style: "cursive" }));
+  const groups = analyzeTracingGroups(prepared).groups;
+  let distanceReads = 0;
+  let sampleCount = 0;
+  for (const stroke of prepared.strokes) {
+    sampleCount += stroke.samples.length;
+    for (const sample of stroke.samples) {
+      const distance = sample.distanceAlongStroke;
+      Object.defineProperty(sample, "distanceAlongStroke", {
+        get() {
+          distanceReads += 1;
+          return distance;
+        }
+      });
+    }
+  }
+
+  const arrows = compileFormationArrows(prepared, { retraceTurns: { groups } });
+  assert.equal(arrows.length, 9);
+  // Count work instead of elapsed time so this also holds on slow CI machines.
+  // Includes the necessary full passes that collect the arrow stem samples.
+  assert.ok(distanceReads < sampleCount * 40, `Unexpected sample scans: ${distanceReads}.`);
+});
 
 test("retrace matching preserves established multi-letter group boundaries", () => {
   const groups = analyzeTracingGroups(preparedSys()).groups;
