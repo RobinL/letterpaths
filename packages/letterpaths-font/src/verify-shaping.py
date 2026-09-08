@@ -1,125 +1,112 @@
-"""Verify pair-specific joining with HarfBuzz by printing the actual glyph
-substitutions HarfBuzz performs for a set of probe words, with the `calt`
-feature on.
+"""Verify contextual joining and character coverage in every distributed format.
 
-The successor carries the real prev->next join. This test asserts that HarfBuzz
-selects the pair-specific form L.medi<P> / L.fina<P>. For example, in "bro" the
-`o` must become `o.finaR`, carrying the genuine r->o join, not a generic form.
-Words after `n` legitimately keep the bare generic form.
+Exhaust all lowercase pairs/triples, capital-to-lowercase pairs, word boundaries,
+and disabled contextual alternates. A mismatch must fail the build.
 
 Run: uv run python src/verify-shaping.py
 """
 
-from pathlib import Path
+from io import BytesIO
+from itertools import product
+from string import ascii_lowercase, ascii_uppercase
 
+from fontTools.ttLib import TTFont
 import uharfbuzz as hb
 
-OUT = Path(__file__).resolve().parent.parent / "fonts"
-FONT = OUT / "Letterpaths.otf"
+from font_build_core import OUT_DIR
 
 GENERIC_PRED = "n"  # bare .medi/.fina carry the after-n join
-
+LOWERCASE = frozenset(ascii_lowercase)
+UPPERCASE = frozenset(ascii_uppercase)
 WORDS = [
-    "min",
-    "minimum",
-    "banana",
-    "aluminium",
-    "handwriting",
-    "bro",
-    "ro",
-    "avenue",
-    "ovo",
-    "wow",
-    "fan",
-    "fun",
-    "off",
-    "quiz",
-    "aqua",
-    "quartz",
+    "min", "minimum", "banana", "aluminium", "handwriting", "bro", "ro",
+    "avenue", "ovo", "wow", "fan", "fun", "off", "quiz", "aqua", "quartz",
+    "things", "singing", "beginning", "bringing", "going", "growing", "bug",
+    "Things", "Going", "Robin", "McGregor", "UK", "aBcd",
+    '“Good things,” she said: “Keep going…”',
 ]
+REQUIRED_CHARACTERS = (
+    ascii_lowercase + ascii_uppercase + " .,!?'-\";:()[]/\\#*+=<>–—‘’“”…\u00a0"
+)
+# Do not claim characters with fake box outlines: allow application fallback.
+UNSUPPORTED_CHARACTERS = "0123456789&@%£${}"
 
 
-def shape(font_path, text, calt=True):
-    blob = hb.Blob.from_file_path(str(font_path))
-    face = hb.Face(blob)
-    hbfont = hb.Font(face)
+def shape(font, glyph_order, text, calt=True):
     buf = hb.Buffer()
     buf.add_str(text)
     buf.guess_segment_properties()
-    features = {"calt": calt, "liga": False, "kern": True}
-    hb.shape(hbfont, buf, features)
-    return [hbfont.glyph_to_string(i.codepoint) for i in buf.glyph_infos]
+    hb.shape(font, buf, {"calt": calt, "liga": False, "kern": True})
+    return [glyph_order[i.codepoint] for i in buf.glyph_infos]
 
 
-def expected_forms(text):
-    """Map glyph index -> required glyph name for an all-letter word.
-
-    isolated -> base; first -> .init; otherwise .medi/.fina with a pair suffix
-    taken from the REAL predecessor (empty suffix after the generic predecessor
-    `n`)."""
-    n = len(text)
-    out = {}
+def expected_forms(text, cmap, calt=True):
+    """Describe joins by adjacent characters, independent of lookup ordering."""
+    out = []
     for i, ch in enumerate(text):
-        if not ch.isalpha():
-            continue
-        if n == 1:
-            out[i] = ch
-        elif i == 0:
-            out[i] = f"{ch}.init"
-        else:
-            pos = "fina" if i == n - 1 else "medi"
-            p = text[i - 1]
-            suf = "" if p == GENERIC_PRED else p.upper()
-            out[i] = f"{ch}.{pos}{suf}"
+        previous = text[i - 1] if i else ""
+        following = text[i + 1] if i + 1 < len(text) else ""
+        prev_lower = previous in LOWERCASE
+        prev_upper = previous in UPPERCASE
+        next_lower = following in LOWERCASE
+        name = cmap.get(ord(ch), ".notdef")
+        if calt and ch in ascii_lowercase:
+            position = "medi" if next_lower else "fina"
+            if prev_lower:
+                suffix = "" if previous == GENERIC_PRED else previous.upper()
+                name = f"{ch}.{position}{suffix}"
+            elif prev_upper:
+                name = f"{ch}.uc{position}"
+            elif next_lower:
+                name = f"{ch}.init"
+        elif calt and ch in ascii_uppercase and next_lower:
+            name = f"{ch}.ucnext"
+        out.append(name)
     return out
 
 
-def main():
-    if not FONT.exists():
-        raise SystemExit(f"missing {FONT}; run build-font.py first")
-    print(f"Font: {FONT.name}  (feature calt ON)\n")
-    ok = True
-    pair_specific_hits = 0
-    pair_specific_total = 0
-    for w in WORDS:
-        glyphs = shape(FONT, w, calt=True)
-        exp = expected_forms(w)
-        mismatches = []
-        for i, want in exp.items():
-            # count positions that REQUIRE a pair-specific form (suffix present)
-            is_pair = (
-                want != w[i]
-                and not want.endswith(".init")
-                and "." in want
-                and want.split(".")[1] not in ("medi", "fina")
+def probes():
+    yield from WORDS
+    yield from ascii_lowercase + ascii_uppercase
+    for length in (2, 3):
+        for letters in product(ascii_lowercase, repeat=length):
+            yield "".join(letters)
+    for capital, lower in product(ascii_uppercase, ascii_lowercase):
+        yield capital + lower
+        yield capital + lower + "g"
+    for separator in " .,!?'-\";:()[]/\\–—‘’“”…0123&@%\n":
+        yield f"ag{separator}ga"
+
+
+def verify(font_path):
+    with TTFont(font_path) as ttfont:
+        cmap = ttfont.getBestCmap()
+        missing = [ch for ch in REQUIRED_CHARACTERS if ord(ch) not in cmap]
+        placeholders = [ch for ch in UNSUPPORTED_CHARACTERS if ord(ch) in cmap]
+        assert not missing, f"{font_path.name}: missing supported characters {missing}"
+        assert not placeholders, f"{font_path.name}: fake character coverage {placeholders}"
+        glyph_order = ttfont.getGlyphOrder()
+        # HarfBuzz accepts sfnt, not compressed WOFF2: decode with FontTools.
+        ttfont.flavor = None
+        data = BytesIO()
+        ttfont.save(data)
+    font = hb.Font(hb.Face(data.getvalue()))
+    count = 0
+    for calt, texts in ((True, probes()), (False, WORDS)):
+        for text in texts:
+            actual = shape(font, glyph_order, text, calt)
+            expected = expected_forms(text, cmap, calt)
+            assert actual == expected, (
+                f"{font_path.name}: {text!r} (calt={calt})\n"
+                f"  expected: {' '.join(expected)}\n  actual:   {' '.join(actual)}"
             )
-            if is_pair:
-                pair_specific_total += 1
-            if i < len(glyphs) and glyphs[i] == want:
-                if is_pair:
-                    pair_specific_hits += 1
-            else:
-                got = glyphs[i] if i < len(glyphs) else "<none>"
-                mismatches.append(f"@{i} want {want} got {got}")
-        flag = "" if not mismatches else "  <-- " + "; ".join(mismatches)
-        if mismatches:
-            ok = False
-        print(f"  {w:12} -> {' '.join(glyphs)}{flag}")
-    print(
-        f"\nPair-specific selections verified: "
-        f"{pair_specific_hits}/{pair_specific_total}"
-    )
-    # Spotlight: bro must use the real r->o join (o.finaR), not a generic form.
-    bro = shape(FONT, "bro", calt=True)
-    print(
-        f"  spotlight bro -> {' '.join(bro)} "
-        f"(expect b.init r.mediB o.finaR -> proves r->o pair join)"
-    )
-    print(
-        "\nALL forms correct (pair-specific joins selected)."
-        if ok
-        else "SOME forms WRONG."
-    )
+            count += 1
+    print(f"{font_path.name}: {count} shaping probes and character coverage passed")
+
+
+def main():
+    for suffix in ("otf", "ttf", "woff2"):
+        verify(OUT_DIR / f"Letterpaths.{suffix}")
 
 
 if __name__ == "__main__":

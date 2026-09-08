@@ -3,8 +3,9 @@ from __future__ import annotations
 from pathlib import Path
 
 import skia
+from fontTools.pens.transformPen import TransformPen
 from fontTools.ttLib import TTFont
-from pathops import Path as SkiaOpsPath
+from pathops import FillType, Path as SkiaOpsPath
 from ufo2ft import compileOTF, compileTTF
 from ufoLib2.objects import Font as UFOFont
 
@@ -66,7 +67,14 @@ def stroke_to_ops_path(contours, scale, pen_width):
     dst = skia.Path()
     paint.getFillPath(src, dst)
 
+    # Resolve stroke overlaps while Skia still has its native conic curves.
+    # Approximating those curves first can change nearly coincident crossings
+    # at retraced strokes: PathOps then fills the bowl of joined g forms and
+    # drops their descender. Preserve Simplify's fill rule when transferring
+    # the result, or enclosed counters in letters such as b and O fill in.
+    dst = skia.Simplify(dst)
     ops = SkiaOpsPath()
+    ops.fillType = FillType(int(dst.getFillType()))
     pen = ops.getPen()
     it = skia.Path.Iter(dst, False)
     open_contour = False
@@ -235,13 +243,46 @@ def add_punctuation(font, letter_advance):
     ]
     emit(g, [hook, circle(cx - r * 0.8, r, r)])
 
+    def copy_shapes(name, codepoint, width, sources):
+        glyph = font.newGlyph(name)
+        glyph.unicode = codepoint
+        glyph.width = round(width)
+        for source, transform in sources:
+            font[source].draw(TransformPen(glyph.getPen(), transform))
+        return glyph
 
-def add_basic_latin_placeholders(font, letter_advance):
-    """Add enough conventional Basic Latin coverage for app font classifiers.
+    identity = (1, 0, 0, 1, 0, 0)
+    copy_shapes("nbspace", 0xA0, font["space"].width, [])
+    copy_shapes("quoteright", 0x2019, dot_adv, [("quotesingle", identity)])
+    copy_shapes(
+        "quoteleft", 0x2018, dot_adv,
+        [("quotesingle", (-1, 0, 0, -1, dot_adv, 2 * yt - 2.6 * r))],
+    )
+    quote_gap = round(dot_adv * 0.7)
+    for name, codepoint, source in (
+        ("quotedbl", 0x22, "quotesingle"),
+        ("quotedblleft", 0x201C, "quoteleft"),
+        ("quotedblright", 0x201D, "quoteright"),
+    ):
+        copy_shapes(name, codepoint, dot_adv + quote_gap, [
+            (source, identity), (source, (1, 0, 0, 1, quote_gap, 0)),
+        ])
 
-    Lowercase letters are the real handwriting glyphs. These fallback glyphs are
-    intentionally simple; they make the font classify as Latin text while the
-    real design work remains focused on lowercase cursive.
+    g = copy_shapes("colon", 0x3A, dot_adv, [("period", identity)])
+    emit(g, [circle(dot_adv / 2, TARGET_XHEIGHT * 0.65, r)])
+    g = copy_shapes("semicolon", 0x3B, dot_adv, [("comma", identity)])
+    emit(g, [circle(dot_adv / 2, TARGET_XHEIGHT * 0.65, r)])
+    copy_shapes("ellipsis", 0x2026, 3 * dot_adv, [
+        ("period", (1, 0, 0, 1, i * dot_adv, 0)) for i in range(3)
+    ])
+
+
+def add_symbols(font, letter_advance):
+    """Add supported symbols; leave unsupported characters out of the cmap.
+
+    A fake box mapped to a digit or symbol prevents applications from selecting
+    a readable fallback font. The exported alphabet already supplies real Latin
+    coverage; there is no need to claim characters we have not drawn.
     """
 
     def new_or_existing(name, unicode_value, width=None):
@@ -270,58 +311,25 @@ def add_basic_latin_placeholders(font, letter_advance):
     def horizontal(glyph, x0, x1, y, width):
         rectangle(glyph, x0, y - width / 2, x1, y + width / 2)
 
-    def box_placeholder(glyph):
-        w = glyph.width
-        stroke = max(18, PEN_WIDTH * 0.45)
-        x0, x1 = w * 0.18, w * 0.82
-        y0, y1 = TARGET_XHEIGHT * 0.02, TARGET_XHEIGHT * 1.28
-        horizontal(glyph, x0, x1, y0, stroke)
-        horizontal(glyph, x0, x1, y1, stroke)
-        vertical(glyph, x0, y0, y1, stroke)
-        vertical(glyph, x1, y0, y1, stroke)
-
-    def digit_placeholder(glyph, digit):
-        box_placeholder(glyph)
-        if digit in "0235689":
-            horizontal(glyph, glyph.width * 0.24, glyph.width * 0.76, TARGET_XHEIGHT * 0.65, PEN_WIDTH * 0.35)
-        if digit in "147":
-            vertical(glyph, glyph.width * 0.55, TARGET_XHEIGHT * 0.05, TARGET_XHEIGHT * 1.25, PEN_WIDTH * 0.4)
-
-    for ch in "ABCDEFGHIJKLMNOPQRSTUVWXYZ":
-        g, created = new_or_existing(ch, ord(ch))
-        if created:
-            box_placeholder(g)
-
-    for ch in "0123456789":
-        g, created = new_or_existing(ch, ord(ch), letter_advance * 0.62)
-        if created:
-            digit_placeholder(g, ch)
+    def polyline(glyph, points):
+        segments = [(*a, *a, *b, *b) for a, b in zip(points, points[1:])]
+        stroke_to_ops_path([segments], 1, PEN_WIDTH).draw(glyph.getPen())
 
     common = {
-        "semicolon": (0x3B, ";"),
-        "colon": (0x3A, ":"),
-        "quotedbl": (0x22, '"'),
         "endash": (0x2013, "dash"),
         "emdash": (0x2014, "dashwide"),
-        "parenleft": (0x28, "box"),
-        "parenright": (0x29, "box"),
-        "bracketleft": (0x5B, "box"),
-        "bracketright": (0x5D, "box"),
-        "braceleft": (0x7B, "box"),
-        "braceright": (0x7D, "box"),
+        "parenleft": (0x28, "parenleft"),
+        "parenright": (0x29, "parenright"),
+        "bracketleft": (0x5B, "bracketleft"),
+        "bracketright": (0x5D, "bracketright"),
         "slash": (0x2F, "slash"),
         "backslash": (0x5C, "backslash"),
-        "ampersand": (0x26, "box"),
-        "at": (0x40, "box"),
         "numbersign": (0x23, "hash"),
-        "percent": (0x25, "percent"),
         "asterisk": (0x2A, "asterisk"),
         "plus": (0x2B, "plus"),
         "equal": (0x3D, "equal"),
         "less": (0x3C, "less"),
         "greater": (0x3E, "greater"),
-        "sterling": (0xA3, "box"),
-        "dollar": (0x24, "box"),
     }
 
     for name, (codepoint, kind) in common.items():
@@ -354,24 +362,25 @@ def add_basic_latin_placeholders(font, letter_advance):
             vertical(g, w * 0.62, 0, TARGET_XHEIGHT, stroke)
             horizontal(g, w * 0.18, w * 0.84, TARGET_XHEIGHT * 0.35, stroke)
             horizontal(g, w * 0.16, w * 0.82, TARGET_XHEIGHT * 0.68, stroke)
-        elif kind == "percent":
-            box_placeholder(g)
-            horizontal(g, w * 0.25, w * 0.75, TARGET_XHEIGHT * 0.62, stroke)
         elif kind == "asterisk":
-            vertical(g, w * 0.5, TARGET_XHEIGHT * 0.18, TARGET_XHEIGHT * 0.92, stroke)
-            horizontal(g, w * 0.2, w * 0.8, TARGET_XHEIGHT * 0.55, stroke)
+            for dx, dy in ((w * 0.3, 0), (w * 0.15, 130), (w * 0.15, -130)):
+                polyline(g, [(w / 2 - dx, 350 - dy), (w / 2 + dx, 350 + dy)])
         elif kind == "plus":
             vertical(g, w * 0.5, TARGET_XHEIGHT * 0.18, TARGET_XHEIGHT * 0.82, stroke)
             horizontal(g, w * 0.18, w * 0.82, TARGET_XHEIGHT * 0.5, stroke)
         elif kind == "equal":
             horizontal(g, w * 0.18, w * 0.82, TARGET_XHEIGHT * 0.38, stroke)
             horizontal(g, w * 0.18, w * 0.82, TARGET_XHEIGHT * 0.62, stroke)
-        elif kind == "less":
-            vertical(g, w * 0.38, TARGET_XHEIGHT * 0.28, TARGET_XHEIGHT * 0.72, stroke)
-        elif kind == "greater":
-            vertical(g, w * 0.62, TARGET_XHEIGHT * 0.28, TARGET_XHEIGHT * 0.72, stroke)
-        else:
-            box_placeholder(g)
+        elif kind in ("less", "greater"):
+            x0, x1 = (0.75, 0.25) if kind == "less" else (0.25, 0.75)
+            polyline(g, [(w * x0, 400), (w * x1, 250), (w * x0, 100)])
+        elif kind in ("bracketleft", "bracketright"):
+            x0, x1 = (0.7, 0.3) if kind == "bracketleft" else (0.3, 0.7)
+            polyline(g, [(w * x0, 650), (w * x1, 650), (w * x1, -100), (w * x0, -100)])
+        elif kind in ("parenleft", "parenright"):
+            edge, middle = (w * 0.7, 0) if kind == "parenleft" else (w * 0.3, w)
+            contour = [(edge, 650, middle, 500, middle, 50, edge, -100)]
+            stroke_to_ops_path([contour], 1, PEN_WIDTH).draw(g.getPen())
 
 
 def new_font(family, style):
@@ -390,7 +399,7 @@ def new_font(family, style):
     info.xHeight = TARGET_XHEIGHT
     info.capHeight = int(TARGET_XHEIGHT * 1.4)
     info.versionMajor = 0
-    info.versionMinor = 1
+    info.versionMinor = 2
     info.openTypeOS2UnicodeRanges = [0]
     info.openTypeOS2CodePageRanges = [0]
     return font
@@ -446,8 +455,8 @@ def finalize(font, out_stub):
 def normalize_font_tables(ttfont, family, style):
     full_name = f"{family} {style}"
     ps_name = f"{family.replace(' ', '')}-{style}"
-    version = "Version 0.001"
-    unique = f"0.001;Letterpaths;{ps_name}"
+    version = "Version 0.002"
+    unique = f"0.002;Letterpaths;{ps_name}"
 
     name_table = ttfont["name"]
     for name_id in (1, 2, 3, 4, 5, 6, 16, 17):
@@ -474,3 +483,13 @@ def normalize_font_tables(ttfont, family, style):
         os2.fsSelection |= 1 << 6
         os2.ulUnicodeRange1 |= 1
         os2.ulCodePageRange1 |= 1
+        # g/j/y extend below the nominal -300 descender. Windows uses these
+        # bounds for clipping, so every compiled outline must fit inside them.
+        top = ttfont["head"].yMax
+        bottom = ttfont["head"].yMin
+        os2.usWinAscent = max(os2.usWinAscent, top)
+        os2.usWinDescent = max(os2.usWinDescent, -bottom)
+        os2.sTypoAscender = max(os2.sTypoAscender, top)
+        os2.sTypoDescender = min(os2.sTypoDescender, bottom)
+        ttfont["hhea"].ascent = max(ttfont["hhea"].ascent, top)
+        ttfont["hhea"].descent = min(ttfont["hhea"].descent, bottom)

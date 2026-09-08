@@ -8,7 +8,7 @@
     "export": "tsx src/export-geometry.ts",
     "build": "pnpm run export && uv run python src/build-font.py",
     "postbuild": "node ../../scripts/sync-font-asset.mjs",
-    "verify": "uv run python src/verify-shaping.py",
+    "verify": "uv run python src/verify-outlines.py && uv run python src/verify-shaping.py",
     "all": "pnpm run build && pnpm run verify"
   },
   "dependencies": {
