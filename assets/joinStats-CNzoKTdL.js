@@ -1,4 +1,4 @@
-import"./Z-upper-print-bezier-o7EP_mHt.js";/* empty css             */import{h as V,e as W,C as K,l as U}from"./joiner-DaMnPhLT.js";const R=document.querySelector("#app");if(!R)throw new Error("Missing #app element for join stats.");const Q="cursive",Z={xHeight:360,baseline:720},tt=U,b=[{key:"sidebearingGapAdjustment",label:"Letter spacing adjustment",min:-120,max:120,step:5,value:V.sidebearingGapAdjustment}];R.innerHTML=`
+import"./Z-upper-print-bezier-o7EP_mHt.js";/* empty css             */import{h as V,e as W,C as K,l as U}from"./joiner-DKFU46we.js";const R=document.querySelector("#app");if(!R)throw new Error("Missing #app element for join stats.");const Q="cursive",Z={xHeight:360,baseline:720},tt=U,b=[{key:"sidebearingGapAdjustment",label:"Letter spacing adjustment",min:-120,max:120,step:5,value:V.sidebearingGapAdjustment}];R.innerHTML=`
   <main class="join-stats">
     <header class="join-stats__header">
       <div>
