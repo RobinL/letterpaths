@@ -21,6 +21,7 @@ import {
 } from "./formation-annotation-markup";
 import { buildPathD, buildShiftedWordLayout, type ShiftedWordLayout } from "./shared";
 import { setupWorksheetPreviewPanZoom } from "./worksheet-preview-pan-zoom";
+import { shouldRasterizeWorksheetForPrint } from "./worksheet-print";
 
 type AnnotationScope = "top" | "practice";
 
@@ -1462,7 +1463,7 @@ const profileWorksheetRender = async (
 const withPreviewZoom = async <T>(zoom: number, action: () => Promise<T>): Promise<T> => {
   const previousZoom = state.previewZoom;
   if (previousZoom !== zoom) {
-    setPreviewZoom(zoom, { refreshAfterScale: false });
+    setPreviewZoom(zoom, { syncUrl: false, refreshAfterScale: false });
     await nextFrame();
   }
 
@@ -1470,7 +1471,7 @@ const withPreviewZoom = async <T>(zoom: number, action: () => Promise<T>): Promi
     return await action();
   } finally {
     if (previousZoom !== zoom) {
-      setPreviewZoom(previousZoom, { refreshAfterScale: false });
+      setPreviewZoom(previousZoom, { syncUrl: false, refreshAfterScale: false });
       await nextFrame();
     }
   }
@@ -1792,17 +1793,6 @@ const loadImage = (src: string): Promise<HTMLImageElement> =>
     image.src = src;
   });
 
-const downloadBlob = (blob: Blob, filename: string) => {
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = filename;
-  document.body.append(anchor);
-  anchor.click();
-  anchor.remove();
-  URL.revokeObjectURL(url);
-};
-
 const getRelativeRect = (
   element: Element,
   containerRect: DOMRect
@@ -1890,8 +1880,6 @@ const drawSvgElement = async (
 
 const createWorksheetPngBlob = async (): Promise<Blob> => {
   return await withPreviewZoom(DEFAULT_PREVIEW_ZOOM, async () => {
-    renderWorksheet();
-
     const rect = worksheetPage.getBoundingClientRect();
     const width = Math.ceil(rect.width);
     const height = Math.ceil(rect.height);
@@ -1949,6 +1937,65 @@ const createWorksheetPngBlob = async (): Promise<Blob> => {
   });
 };
 
+const loadPrintImage = (image: HTMLImageElement): Promise<void> =>
+  new Promise((resolve, reject) => {
+    image.addEventListener("load", () => resolve(), { once: true });
+    image.addEventListener(
+      "error",
+      () => reject(new Error("Could not prepare the optimized worksheet for printing.")),
+      { once: true }
+    );
+  });
+
+const printWorksheet = async () => {
+  if (!shouldRasterizeWorksheetForPrint(worksheetPage)) {
+    window.print();
+    return;
+  }
+
+  const previousStatus = statusEl.textContent ?? "";
+  printButton.disabled = true;
+  statusEl.textContent = "Preparing a printer-friendly worksheet…";
+
+  let printImage: HTMLImageElement | null = null;
+  let printImageUrl: string | null = null;
+
+  const cleanup = () => {
+    document.body.classList.remove("worksheet-body--raster-print");
+    printImage?.remove();
+    if (printImageUrl) {
+      URL.revokeObjectURL(printImageUrl);
+    }
+    printButton.disabled = false;
+    statusEl.textContent = previousStatus;
+  };
+
+  try {
+    const blob = await createWorksheetPngBlob();
+    printImageUrl = URL.createObjectURL(blob);
+    printImage = document.createElement("img");
+    printImage.className = "worksheet-page__print-raster";
+    printImage.alt = "";
+    printImage.setAttribute("aria-hidden", "true");
+    const imageLoaded = loadPrintImage(printImage);
+    printImage.src = printImageUrl;
+    worksheetPageFrame.append(printImage);
+    await imageLoaded;
+
+    document.body.classList.add("worksheet-body--raster-print");
+    statusEl.textContent = "Printer-friendly worksheet ready.";
+    await nextFrame();
+    await nextFrame();
+    window.print();
+  } catch (error) {
+    console.error(error);
+    statusEl.textContent = "Could not optimize this worksheet; opening the standard print view.";
+    window.print();
+  } finally {
+    cleanup();
+  }
+};
+
 const previewPanZoom = setupWorksheetPreviewPanZoom({
   viewport: worksheetPreviewViewport,
   frame: worksheetPageFrame,
@@ -1970,8 +2017,7 @@ practiceSizeSlider.addEventListener("input", renderWorksheet);
 practiceRepeatSlider.addEventListener("input", renderWorksheet);
 strokeWidthSlider.addEventListener("input", renderWorksheet);
 printButton.addEventListener("click", () => {
-  renderWorksheet();
-  window.print();
+  void printWorksheet();
 });
 
 globalSettingInputs.forEach((input) => {

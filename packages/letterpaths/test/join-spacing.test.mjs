@@ -169,6 +169,26 @@ test("lead-in and lead-out options apply to every word", () => {
   assert.equal(countSegments(multi, "lead-out"), countSegments(single, "lead-out") * 2);
 });
 
+test("pre-cursive and print spaces preserve a word gap", () => {
+  const wordSpacing = 900;
+  const styles = ["pre-cursive", "print"];
+
+  for (const style of styles) {
+    const compact = buildHandwritingPath("ab", { style, wordSpacing });
+    const spaced = buildHandwritingPath("a b", { style, wordSpacing });
+    const looser = buildHandwritingPath("ab", { style, letterSpacing: 200 });
+
+    assert.ok(
+      spaced.bounds.maxX - compact.bounds.maxX >= wordSpacing * 0.7,
+      `${style} should use the configured word spacing after a space`
+    );
+    assert.ok(
+      looser.bounds.maxX - compact.bounds.maxX >= 200,
+      `${style} should apply the configured letter spacing adjustment`
+    );
+  }
+});
+
 test("capital letters in cursive text render as standalone print letters", () => {
   const capitalOnly = buildHandwritingPath("A", { style: "cursive" });
   const mixed = buildHandwritingPath("Apple", { style: "cursive" });
