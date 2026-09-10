@@ -322,21 +322,28 @@ function interpolateSamplePoint(
     return { x: 0, y: 0 };
   }
 
-  for (let index = 1; index < samples.length; index += 1) {
-    const previous = samples[index - 1];
-    const current = samples[index];
-    if (!previous || !current) {
-      continue;
+  // Samples are ordered by distance. Find the same first enclosing pair as a
+  // linear scan, without walking the entire stroke for every arrow stem point.
+  let low = 1;
+  let high = samples.length;
+  while (low < high) {
+    const mid = Math.floor((low + high) / 2);
+    if (samples[mid]!.distanceAlongStroke >= distanceAlongStroke) {
+      high = mid;
+    } else {
+      low = mid + 1;
     }
+  }
 
-    if (current.distanceAlongStroke >= distanceAlongStroke) {
-      const span = current.distanceAlongStroke - previous.distanceAlongStroke;
-      const ratio = span > 0 ? (distanceAlongStroke - previous.distanceAlongStroke) / span : 0;
-      return {
-        x: previous.x + (current.x - previous.x) * ratio,
-        y: previous.y + (current.y - previous.y) * ratio
-      };
-    }
+  const previous = samples[low - 1];
+  const current = samples[low];
+  if (previous && current) {
+    const span = current.distanceAlongStroke - previous.distanceAlongStroke;
+    const ratio = span > 0 ? (distanceAlongStroke - previous.distanceAlongStroke) / span : 0;
+    return {
+      x: previous.x + (current.x - previous.x) * ratio,
+      y: previous.y + (current.y - previous.y) * ratio
+    };
   }
 
   const last = samples[samples.length - 1];
