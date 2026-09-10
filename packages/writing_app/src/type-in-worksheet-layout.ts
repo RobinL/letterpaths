@@ -1,4 +1,8 @@
-import { buildHandwritingPath, lettersByVariantId } from "letterpaths";
+import {
+  buildHandwritingPath,
+  lettersByVariantId,
+  type HandwritingStyle
+} from "letterpaths";
 import { buildPathD } from "./shared";
 
 export const PAGE_WIDTH = 210;
@@ -9,6 +13,11 @@ const UNIT = 380;
 const STROKE = 28;
 
 type Shape = { markup: string; width: number; offsets: number[] };
+export type TypeInWorksheetStyle = Extract<HandwritingStyle, "cursive" | "pre-cursive" | "print">;
+export type TypeInWorksheetLayoutOptions = {
+  style?: TypeInWorksheetStyle;
+  lineSpacing?: number;
+};
 export type CaretStop = { index: number; x: number };
 export type WorksheetLine = { markup: string; stops: CaretStop[] };
 export type WorksheetLayout = {
@@ -25,9 +34,9 @@ const escapeText = (text: string) => text.replace(/[&<>"']/g, (char) => ({
   "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
 }[char]!));
 
-function buildLetters(text: string) {
+function buildLetters(text: string, style: TypeInWorksheetStyle) {
   return buildHandwritingPath(text, {
-    style: "cursive", letters: lettersByVariantId,
+    style, letters: lettersByVariantId,
     targetGuides: { baseline: 0, xHeight: -UNIT },
     keepInitialLeadIn: true, keepFinalLeadOut: true
   });
@@ -35,8 +44,9 @@ function buildLetters(text: string) {
 
 // Cache geometry at a fixed x-height. Changing height or darkness does not
 // rebuild Beziers; editing only generates shapes for newly encountered words.
-function shapeWord(text: string): Shape {
-  const cached = shapes.get(text);
+function shapeWord(text: string, style: TypeInWorksheetStyle): Shape {
+  const cacheKey = `${style}\u0000${text}`;
+  const cached = shapes.get(cacheKey);
   if (cached) return cached;
   let x = 0;
   let markup = "";
@@ -44,7 +54,7 @@ function shapeWord(text: string): Shape {
   for (const match of text.matchAll(/[A-Za-z]+|[^A-Za-z]/gu)) {
     const part = match[0];
     if (/^[A-Za-z]+$/.test(part)) {
-      const path = buildLetters(part);
+      const path = buildLetters(part, style);
       const shift = STROKE / 2 - path.bounds.minX;
       const width = path.bounds.maxX - path.bounds.minX + STROKE;
       markup += `<g transform="translate(${x + shift},0)">`;
@@ -60,7 +70,7 @@ function shapeWord(text: string): Shape {
         } else if (/[a-z]/.test(part[i]) && /[A-Z]/.test(part[i - 1])) {
           boundary = (path.capitalKerningMetrics?.[capitalIndex++]?.actualNextLeftSidebearingX ?? 0) + shift;
         } else {
-          const prefix = buildLetters(part.slice(0, i));
+          const prefix = buildLetters(part.slice(0, i), style);
           boundary = prefix.bounds.maxX + shift;
         }
         offsets.push(Math.max(offsets[offsets.length - 1], x + Math.min(width, boundary)));
@@ -79,13 +89,17 @@ function shapeWord(text: string): Shape {
   }
   const shape = { markup, width: x, offsets };
   if (shapes.size >= 512) shapes.delete(shapes.keys().next().value!);
-  shapes.set(text, shape);
+  shapes.set(cacheKey, shape);
   return shape;
 }
 
-export function layoutWorksheet(text: string, height: number): WorksheetLayout {
+export function layoutWorksheet(
+  text: string,
+  height: number,
+  { style = "cursive", lineSpacing = 0 }: TypeInWorksheetLayoutOptions = {}
+): WorksheetLayout {
   const scale = height / UNIT;
-  const rowPitch = height * 3.1;
+  const rowPitch = height * 3.1 + Math.max(0, lineSpacing);
   const firstBaseline = MARGIN + height * 1.8;
   const rowsPerPage = Math.max(1, Math.floor((PAGE_HEIGHT - MARGIN - firstBaseline - height * 0.8) / rowPitch) + 1);
   const lines: WorksheetLine[] = [];
@@ -97,7 +111,7 @@ export function layoutWorksheet(text: string, height: number): WorksheetLayout {
     x = 0;
   };
   const placeWord = (word: string, start: number) => {
-    const shape = shapeWord(word);
+    const shape = shapeWord(word, style);
     // The same index appears on both sides of a soft wrap. Caret lookup chooses
     // the following line while selection can still highlight the preceding one.
     line.stops.push({ index: start, x });
@@ -129,14 +143,14 @@ export function layoutWorksheet(text: string, height: number): WorksheetLayout {
         // Bound the amount of geometry work for a pasted unbroken string.
         const candidates = Array.from(remaining).slice(0, 96);
         const candidate = candidates.join("");
-        if (x > 0 && shapeWord(candidate).width * scale > CONTENT_WIDTH - x) newLine(start);
+        if (x > 0 && shapeWord(candidate, style).width * scale > CONTENT_WIDTH - x) newLine(start);
         let count = candidates.length;
-        if (shapeWord(candidate).width * scale > CONTENT_WIDTH - x) {
+        if (shapeWord(candidate, style).width * scale > CONTENT_WIDTH - x) {
           let low = 1;
           let high = count;
           while (low < high) {
             const mid = Math.ceil((low + high) / 2);
-            if (shapeWord(candidates.slice(0, mid).join("")).width * scale <= CONTENT_WIDTH - x) low = mid;
+            if (shapeWord(candidates.slice(0, mid).join(""), style).width * scale <= CONTENT_WIDTH - x) low = mid;
             else high = mid - 1;
           }
           count = low;

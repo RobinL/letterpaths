@@ -19,13 +19,15 @@ p { margin: 0; }
 button { font: inherit; background: #285b50; color: white; border: 0; border-radius: 8px; padding: 13px 19px; cursor: pointer; white-space: nowrap; }
 button:hover { background: #1d493f; }
 button:disabled { opacity: 0.5; cursor: wait; }
-button:focus-visible, a:focus-visible, input:focus-visible { outline: 3px solid #a46b2d; outline-offset: 4px; }
-.writer-toolbar { display: flex; align-items: center; gap: 36px; background: white; border: 1px solid #dce1db; border-radius: 12px; padding: 20px 24px; }
-.writer-toolbar label { flex: 1; display: grid; grid-template-columns: 1fr auto; gap: 10px; font-size: 14px; font-weight: 600; }
+button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid #a46b2d; outline-offset: 4px; }
+.writer-toolbar { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)) minmax(150px, 0.55fr); align-items: center; gap: 20px 36px; background: white; border: 1px solid #dce1db; border-radius: 12px; padding: 20px 24px; }
+.writer-toolbar label { display: grid; grid-template-columns: 1fr auto; gap: 10px; font-size: 14px; font-weight: 600; }
 .writer-toolbar output { font-variant-numeric: tabular-nums; color: #285b50; }
-.writer-toolbar input { width: 100%; margin: 0; accent-color: #285b50; grid-column: 1 / -1; cursor: pointer; }
+.writer-toolbar input, .writer-toolbar select { width: 100%; margin: 0; grid-column: 1 / -1; }
+.writer-toolbar input { accent-color: #285b50; cursor: pointer; }
+.writer-toolbar select { min-height: 32px; padding: 4px 8px; border: 1px solid #aebbb4; border-radius: 5px; background: white; color: #263b3a; font: inherit; cursor: pointer; }
 .writer-toolbar label span { grid-column: 1 / -1; font-size: 11px; font-weight: 400; color: #657370; }
-.writer-paper-note { font-size: 11px; color: #657370; line-height: 1.8; border-left: 1px solid #e4e7e1; padding-left: 24px; }
+.writer-paper-note { grid-column: 3; grid-row: 1 / span 2; font-size: 11px; color: #657370; line-height: 1.8; border-left: 1px solid #e4e7e1; padding-left: 24px; }
 .writer-help { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; margin: 18px 0; color: #657370; font-size: 12px; line-height: 1.6; }
 #draft-status { font-size: 11px; }
 .writer-guides { display: flex; flex-wrap: wrap; gap: 14px 24px; margin: 16px 0 0; padding: 12px 18px 15px; border: 1px solid #dce1db; border-radius: 10px; }
@@ -58,8 +60,8 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 3px solid 
   .writer-heading { gap: 12px; }
   .writer-heading p { font-size: 13px; }
   button { font-size: 12px; padding: 12px; }
-  .writer-toolbar { padding: 16px; gap: 20px; flex-wrap: wrap; }
-  .writer-paper-note { width: 100%; border: 0; padding: 0; }
+  .writer-toolbar { grid-template-columns: 1fr; padding: 16px; gap: 20px; }
+  .writer-paper-note { grid-column: auto; grid-row: auto; width: 100%; border: 0; padding: 0; }
   .writer-paper-note { line-height: 1.6; }
 }
 

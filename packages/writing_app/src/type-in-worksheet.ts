@@ -1,7 +1,9 @@
 import "./type-in-worksheet.css";
 import {
   CONTENT_WIDTH, MARGIN, PAGE_HEIGHT, PAGE_WIDTH,
-  caretLocation, layoutWorksheet, nearestStop, type WorksheetLayout
+  caretLocation, layoutWorksheet, nearestStop,
+  type TypeInWorksheetStyle,
+  type WorksheetLayout
 } from "./type-in-worksheet-layout";
 
 const app = document.querySelector<HTMLDivElement>("#app");
@@ -20,11 +22,23 @@ app.innerHTML = `
         <input id="letter-height" type="range" min="3" max="16" step="0.5" value="8" aria-describedby="height-help" />
         <span id="height-help">Height of a small letter, like a or e</span>
       </label>
+      <label for="line-spacing">Line spacing <output id="line-spacing-value" for="line-spacing">0 mm</output>
+        <input id="line-spacing" type="range" min="0" max="20" step="0.5" value="0" aria-describedby="line-spacing-help" />
+        <span id="line-spacing-help">Extra gap between rows</span>
+      </label>
+      <label for="writing-style">Writing style
+        <select id="writing-style">
+          <option value="cursive" selected>Cursive</option>
+          <option value="pre-cursive">Pre-cursive</option>
+          <option value="print">Print</option>
+        </select>
+        <span>Letters are shown as pale tracing text</span>
+      </label>
       <label for="trace-darkness">Darkness <output id="darkness-value" for="trace-darkness">25%</output>
         <input id="trace-darkness" type="range" min="10" max="80" step="5" value="25" />
         <span>Pale grey → dark grey</span>
       </label>
-      <p class="writer-paper-note">A4 · Cursive<br />Print at 100% for the chosen letter height</p>
+      <p class="writer-paper-note" id="paper-note">A4 · Cursive<br />Print at 100% for the chosen letter height</p>
     </section>
     <fieldset class="writer-guides"><legend>Writing lines</legend>
       <label><input type="checkbox" id="guide-baseline" checked /> Baseline</label>
@@ -43,9 +57,13 @@ app.innerHTML = `
 
 const editor = document.querySelector<HTMLTextAreaElement>("#worksheet-text")!;
 const height = document.querySelector<HTMLInputElement>("#letter-height")!;
+const lineSpacing = document.querySelector<HTMLInputElement>("#line-spacing")!;
+const writingStyle = document.querySelector<HTMLSelectElement>("#writing-style")!;
 const darkness = document.querySelector<HTMLInputElement>("#trace-darkness")!;
 const heightValue = document.querySelector<HTMLOutputElement>("#height-value")!;
+const lineSpacingValue = document.querySelector<HTMLOutputElement>("#line-spacing-value")!;
 const darknessValue = document.querySelector<HTMLOutputElement>("#darkness-value")!;
+const paperNote = document.querySelector<HTMLParagraphElement>("#paper-note")!;
 const printButton = document.querySelector<HTMLButtonElement>("#print-worksheet")!;
 const status = document.querySelector<HTMLSpanElement>("#draft-status")!;
 const viewport = document.querySelector<HTMLDivElement>(".writer-viewport")!;
@@ -65,10 +83,16 @@ let saveTimer: ReturnType<typeof setTimeout> | undefined;
 
 const validSetting = (value: unknown, min: number, max: number): value is number =>
   typeof value === "number" && Number.isFinite(value) && value >= min && value <= max;
+const validStyle = (value: unknown): value is TypeInWorksheetStyle =>
+  value === "cursive" || value === "pre-cursive" || value === "print";
+const styleLabel = (style: TypeInWorksheetStyle) =>
+  style === "pre-cursive" ? "Pre-cursive" : style[0]!.toUpperCase() + style.slice(1);
 try {
   const saved = JSON.parse(localStorage.getItem(storageKey) ?? "null");
   if (saved && typeof saved.text === "string") editor.value = saved.text;
   if (saved && validSetting(saved.height, 3, 16)) height.value = String(saved.height);
+  if (saved && validSetting(saved.lineSpacing, 0, 20)) lineSpacing.value = String(saved.lineSpacing);
+  if (saved && validStyle(saved.style)) writingStyle.value = saved.style;
   if (saved && validSetting(saved.darkness, 10, 80)) darkness.value = String(saved.darkness);
   for (const name of guideNames) {
     if (typeof saved?.guides?.[name] === "boolean") guideInputs[name].checked = saved.guides[name];
@@ -80,7 +104,11 @@ function saveDraft() {
   clearTimeout(saveTimer);
   try {
     localStorage.setItem(storageKey, JSON.stringify({
-      text: editor.value, height: Number(height.value), darkness: Number(darkness.value),
+      text: editor.value,
+      height: Number(height.value),
+      lineSpacing: Number(lineSpacing.value),
+      style: writingStyle.value,
+      darkness: Number(darkness.value),
       guides: Object.fromEntries(guideNames.map(name => [name, guideInputs[name].checked]))
     }));
     status.textContent = "Draft saved in this browser";
@@ -106,7 +134,10 @@ function renderGuides() {
 function renderWorksheet() {
   cancelAnimationFrame(renderRequest);
   renderRequest = 0;
-  layout = layoutWorksheet(editor.value, Number(height.value));
+  layout = layoutWorksheet(editor.value, Number(height.value), {
+    style: writingStyle.value as TypeInWorksheetStyle,
+    lineSpacing: Number(lineSpacing.value)
+  });
   const guides = renderGuides();
   const nextPages = Array.from({ length: layout.pageCount }, (_, page) => {
     const startRow = page * layout.rowsPerPage;
@@ -133,7 +164,9 @@ function applySettings() {
   const grey = Math.round(255 * (1 - Number(darkness.value) / 100));
   document.documentElement.style.setProperty("--trace-colour", `rgb(${grey}, ${grey}, ${grey})`);
   heightValue.value = `${height.value} mm`;
+  lineSpacingValue.value = `${lineSpacing.value} mm`;
   darknessValue.value = `${darkness.value}%`;
+  paperNote.innerHTML = `A4 · ${styleLabel(writingStyle.value as TypeInWorksheetStyle)}<br />Print at 100% for the chosen letter height`;
   renderWorksheet();
 }
 
@@ -293,9 +326,10 @@ for (const event of ["select", "keyup", "focus", "blur"] as const) editor.addEve
 document.addEventListener("selectionchange", () => {
   if (document.activeElement === editor) updateSelection();
 });
-for (const input of [height, darkness, ...Object.values(guideInputs)]) {
+for (const input of [height, lineSpacing, darkness, ...Object.values(guideInputs)]) {
   input.addEventListener("input", () => { applySettings(); saveDraft(); });
 }
+writingStyle.addEventListener("change", () => { applySettings(); saveDraft(); });
 window.addEventListener("pagehide", saveDraft);
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") saveDraft(); });
 window.addEventListener("beforeprint", renderWorksheet);

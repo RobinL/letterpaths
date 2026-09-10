@@ -221,7 +221,7 @@ let lastPointerPoint: Point | null = null;
 let completedCheckpointCount = 0;
 let recordedErrors: number[] = [];
 
-const normalizeWordInput = (word: string): string => word.trim().replace(/\s+/g, " ");
+const normalizeWordInput = (word: string): string => word.replace(/\s/g, " ").trim();
 
 const getSliderValuePrecision = (input: HTMLInputElement): number => {
   if (input.step === "any" || input.step.length === 0) {

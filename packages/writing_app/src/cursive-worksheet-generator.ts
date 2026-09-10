@@ -869,7 +869,7 @@ function renderAnnotationToggle(
   `;
 }
 
-const normalizeText = (value: string): string => value.trim().replace(/\s+/g, " ");
+const normalizeText = (value: string): string => value.replace(/\s/g, " ").trim();
 
 const escapeHtml = (value: string): string =>
   value

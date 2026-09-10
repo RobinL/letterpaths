@@ -22,6 +22,22 @@ test("letters render as paths and retain an insertion point for every character"
   }
 });
 
+test("styles, line spacing and repeated spaces are retained in the worksheet layout", () => {
+  const text = "cat  dog";
+  const compact = layoutWorksheet(text, 8);
+  const spacious = layoutWorksheet("cat\ndog", 8, { lineSpacing: 12 });
+  assert.equal(spacious.rowPitch, compact.rowPitch + 12);
+
+  for (const style of ["cursive", "pre-cursive", "print"] as const) {
+    const layout = layoutWorksheet(text, 8, { style });
+    assert.match(layout.lines[0]!.markup, /<path d="M /);
+    const stops = layout.lines[0]!.stops;
+    const firstSpace = stops.find(stop => stop.index === 4)!;
+    const secondSpace = stops.find(stop => stop.index === 5)!;
+    assert.ok(secondSpace.x > firstSpace.x, `${style} should retain both spaces`);
+  }
+});
+
 test("blank lines, indentation and a trailing newline survive layout", () => {
   const layout = layoutWorksheet("  cat\n\n dog\n", 8);
   assert.equal(layout.lines.length, 4);

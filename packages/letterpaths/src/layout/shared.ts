@@ -92,7 +92,7 @@ export function buildStandaloneWord(
   for (let charIndex = 0; charIndex < text.length; charIndex += 1) {
     const rawChar = text[charIndex] ?? "";
     if (rawChar.trim() === "") {
-      cursorX = Math.max(rightSidebearingEdge, visibleRightEdge) + wordSpacing;
+      cursorX = Math.max(cursorX, rightSidebearingEdge, visibleRightEdge) + wordSpacing;
       hasPlacedLetter = false;
       continue;
     }

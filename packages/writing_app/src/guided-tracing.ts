@@ -1016,7 +1016,7 @@ const rerenderCurrentWord = () => {
   renderWord(currentWord, currentWordIndex);
 };
 
-const normalizeWordInput = (word: string): string => word.trim().replace(/\s+/g, " ");
+const normalizeWordInput = (word: string): string => word.replace(/\s/g, " ").trim();
 
 const applyUrlSettings = () => {
   const params = new URLSearchParams(window.location.search);

@@ -102,7 +102,7 @@ export function joinCursiveWord(
       prevStandaloneChar = null;
       prevChar = null;
       hasPlacedLetter = false;
-      cursorX = rightEdge + wordSpacing;
+      cursorX = Math.max(cursorX, rightEdge) + wordSpacing;
       continue;
     }
 

@@ -189,6 +189,20 @@ test("pre-cursive and print spaces preserve a word gap", () => {
   }
 });
 
+test("each space contributes to the gap between words", () => {
+  const wordSpacing = 900;
+  const styles = ["cursive", "pre-cursive", "print"];
+
+  for (const style of styles) {
+    const oneSpace = buildHandwritingPath("a a", { style, wordSpacing });
+    const twoSpaces = buildHandwritingPath("a  a", { style, wordSpacing });
+    assert.ok(
+      twoSpaces.bounds.maxX - oneSpace.bounds.maxX >= wordSpacing * 0.7,
+      `${style} should preserve each typed space`
+    );
+  }
+});
+
 test("capital letters in cursive text render as standalone print letters", () => {
   const capitalOnly = buildHandwritingPath("A", { style: "cursive" });
   const mixed = buildHandwritingPath("Apple", { style: "cursive" });

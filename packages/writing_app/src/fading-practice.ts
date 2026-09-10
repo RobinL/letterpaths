@@ -544,7 +544,7 @@ function renderGlobalColorControl(
   `;
 }
 
-const normalizeText = (value: string): string => value.trim().replace(/\s+/g, " ");
+const normalizeText = (value: string): string => value.replace(/\s/g, " ").trim();
 
 const normalizeStyle = (value: string): PracticeStyle | null =>
   value === "cursive" || value === "pre-cursive" || value === "print" ? value : null;
