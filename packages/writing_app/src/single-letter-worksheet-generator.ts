@@ -343,6 +343,7 @@ app.innerHTML = `
   <div class="worksheet-app">
     <aside class="worksheet-app__controls" aria-label="Worksheet controls">
       <div class="worksheet-app__controls-inner">
+        <a class="worksheet-app__home-link" href="https://www.robinlinacre.com/letterpaths">Back to all letterpaths apps</a>
         <div class="worksheet-app__heading">
           <h1 class="worksheet-app__title">UK handwriting letter worksheet generator</h1>
         </div>
