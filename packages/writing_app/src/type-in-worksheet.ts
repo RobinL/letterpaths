@@ -10,7 +10,7 @@ const app = document.querySelector<HTMLDivElement>("#app");
 if (!app) throw new Error("Missing worksheet root.");
 app.innerHTML = `
   <header class="writer-header">
-    <a class="writer-back" href="../">← All handwriting tools</a>
+    <a class="writer-back" href="https://www.robinlinacre.com/letterpaths">Back to all letterpaths apps</a>
     <div class="writer-heading">
       <div><h1>Type-in worksheet</h1><p>Your words, ready to trace.</p></div>
       <button id="print-worksheet" type="button">Print / save PDF</button>

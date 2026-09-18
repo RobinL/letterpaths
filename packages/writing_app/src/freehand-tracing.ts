@@ -1,4 +1,5 @@
 import "./style.css";
+import { addFullscreenButton } from "./fullscreen";
 import {
   compileTracingPath,
   type Point,
@@ -61,6 +62,7 @@ registerFreehandServiceWorker();
 
 app.innerHTML = `
   <div class="writing-app writing-app--freehand">
+    <a class="writing-app__home-link" href="https://www.robinlinacre.com/letterpaths">Back to letterpaths</a>
     <main class="writing-app__stage">
       <section class="writing-app__board">
         <header class="writing-app__topbar writing-app__topbar--freehand">
@@ -166,6 +168,8 @@ app.innerHTML = `
     </main>
   </div>
 `;
+
+addFullscreenButton(app.querySelector<HTMLElement>(".writing-app__topbar-actions")!);
 
 const wordInput = document.querySelector<HTMLInputElement>("#word-input");
 const scoreValue = document.querySelector<HTMLSpanElement>("#score-value");

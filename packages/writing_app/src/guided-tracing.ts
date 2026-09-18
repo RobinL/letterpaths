@@ -1,4 +1,5 @@
 import "./style.css";
+import { addFullscreenButton } from "./fullscreen";
 import {
   AnimationPlayer,
   TracingSession,
@@ -556,6 +557,7 @@ registerSnakeServiceWorker();
 
 app.innerHTML = `
   <div class="writing-app writing-app--snake">
+    <a class="writing-app__home-link" href="https://www.robinlinacre.com/letterpaths">Back to letterpaths</a>
     <main class="writing-app__stage">
       <section class="writing-app__board">
         <header class="writing-app__topbar">
@@ -708,6 +710,8 @@ app.innerHTML = `
     </main>
   </div>
 `;
+
+addFullscreenButton(app.querySelector<HTMLElement>(".writing-app__topbar-actions")!);
 
 const wordInput = document.querySelector<HTMLInputElement>("#word-input");
 const snakeInstruction = document.querySelector<HTMLParagraphElement>("#snake-instruction");
