@@ -476,7 +476,7 @@ const annotationKindInputs = Array.from(
 );
 
 function renderLetterSelect(): string {
-  const options = LETTERS.map(
+  const options = (letters: string[]) => letters.map(
     (letter) => `<option value="${letter}" ${letter === DEFAULT_LETTER ? "selected" : ""}>${letter}</option>`
   ).join("");
 
@@ -484,7 +484,8 @@ function renderLetterSelect(): string {
     <label class="worksheet-app__field" for="worksheet-letter-select">
       <span>Letter</span>
       <select class="worksheet-app__select" id="worksheet-letter-select">
-        ${options}
+        <optgroup label="Lowercase">${options(LETTERS)}</optgroup>
+        <optgroup label="Uppercase (print)">${options(LETTERS.map((letter) => letter.toUpperCase()))}</optgroup>
       </select>
     </label>
   `;
@@ -820,8 +821,8 @@ function renderAnnotationToggle(
 }
 
 const normalizeLetter = (value: string): string => {
-  const [letter = ""] = value.trim().toLowerCase();
-  return LETTERS.includes(letter) ? letter : DEFAULT_LETTER;
+  const [letter = ""] = value.trim();
+  return LETTERS.includes(letter.toLowerCase()) ? letter : DEFAULT_LETTER;
 };
 
 const normalizeStyle = (value: string): SingleLetterStyle | null =>
@@ -1217,6 +1218,10 @@ const applyUrlSettings = () => {
   const styleParam = params.get("style");
   if (styleParam !== null) {
     state.style = normalizeStyle(styleParam) ?? state.style;
+  }
+
+  if (state.letter !== state.letter.toLowerCase()) {
+    state.style = "print";
   }
 
   const previewZoomParam = parsePreviewZoomSearchParam(params);
@@ -2083,8 +2088,18 @@ const previewPanZoom = setupWorksheetPreviewPanZoom({
   zoomStep: PREVIEW_ZOOM_STEP
 });
 
-letterSelect.addEventListener("change", renderWorksheet);
-styleSelect.addEventListener("change", renderWorksheet);
+letterSelect.addEventListener("change", () => {
+  if (letterSelect.value !== letterSelect.value.toLowerCase()) {
+    styleSelect.value = "print";
+  }
+  renderWorksheet();
+});
+styleSelect.addEventListener("change", () => {
+  if (styleSelect.value === "pre-cursive") {
+    letterSelect.value = letterSelect.value.toLowerCase();
+  }
+  renderWorksheet();
+});
 previewZoomOutButton.addEventListener("click", () => {
   previewPanZoom.zoomBy(-PREVIEW_ZOOM_STEP);
 });
