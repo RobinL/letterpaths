@@ -9,6 +9,7 @@ export default defineConfig(({ command }) => ({
     rollupOptions: {
       input: {
         main: path.resolve(__dirname, "index.html"),
+        magicPencil: path.resolve(__dirname, "magic_pencil/index.html"),
         typeInWorksheet: path.resolve(__dirname, "type_in_worksheet/index.html"),
         cursiveWorksheetGenerator: path.resolve(
           __dirname,
