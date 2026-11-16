@@ -4,6 +4,21 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="theme-color" content="#000000" />
+  <script>
+    if (!["localhost", "127.0.0.1"].includes(window.location.hostname)) {
+      window.dataLayer = window.dataLayer || [];
+      function gtag() { window.dataLayer.push(arguments); }
+      gtag("js", new Date());
+      // The text query parameter may contain a visitor's name.
+      gtag("config", "G-94373ZKHEE", {
+        page_location: window.location.origin + window.location.pathname
+      });
+      const analyticsScript = document.createElement("script");
+      analyticsScript.async = true;
+      analyticsScript.src = "https://www.googletagmanager.com/gtag/js?id=G-94373ZKHEE";
+      document.head.append(analyticsScript);
+    }
+  </script>
   <title>Magic Pencil | Interactive BBC Words and Pictures Tribute</title>
   <meta name="description" content="Remember the BBC's Magic Pencil from Words and Pictures? Type your own words and watch this interactive 3D tribute write them in 1990s TV style." />
   <link rel="canonical" href="https://www.robinlinacre.com/letterpaths/magic_pencil/" />
