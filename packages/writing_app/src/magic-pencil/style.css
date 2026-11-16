@@ -1,7 +1,11 @@
 * { box-sizing: border-box; }
 html, body, main { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #000; }
 body { font-family: system-ui, sans-serif; color: #eee; }
-main { --input-bottom: max(30px, env(safe-area-inset-bottom)); }
+main {
+  --footer-bottom: max(10px, env(safe-area-inset-bottom));
+  --modes-bottom: calc(var(--footer-bottom) + 28px);
+  --input-bottom: var(--modes-bottom);
+}
 #stage, #stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 #form {
   position: absolute;
@@ -50,7 +54,7 @@ main { --input-bottom: max(30px, env(safe-area-inset-bottom)); }
 #display-modes {
   position: absolute;
   right: 24px;
-  bottom: var(--input-bottom);
+  bottom: var(--modes-bottom);
   display: flex;
   gap: 2px;
   margin: 0;
@@ -75,9 +79,26 @@ main { --input-bottom: max(30px, env(safe-area-inset-bottom)); }
 #display-modes label:hover span { color: #eee; }
 #display-modes input:focus-visible + span { outline: 2px solid #bd8c58; outline-offset: -2px; }
 #display-modes input:checked + span { border-color: #795836; color: #ffd4a3; background: #21180f; }
+#home-link {
+  position: absolute;
+  inset-inline: 16px;
+  bottom: var(--footer-bottom);
+  text-align: center;
+  font: 13px/16px system-ui, sans-serif;
+}
+#home-link a {
+  color: #b9afa2;
+  text-underline-offset: 3px;
+}
+#home-link a:hover,
+#home-link a:focus-visible { color: #ffd4a3; }
+#home-link a:focus-visible { outline: 1px solid #bd8c58; outline-offset: 3px; }
 #message { position: absolute; bottom: calc(var(--input-bottom) + 54px); width: 100%; margin: 0; padding: 0 20px; text-align: center; font-size: 13px; color: #e8b8a1; pointer-events: none; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 @media (max-width: 700px) {
-  main { --input-bottom: calc(max(8px, env(safe-area-inset-bottom)) + 56px); }
-  #display-modes { bottom: max(8px, env(safe-area-inset-bottom)); right: 50%; transform: translateX(50%); }
+  main {
+    --modes-bottom: calc(var(--footer-bottom) + 40px);
+    --input-bottom: calc(var(--modes-bottom) + 56px);
+  }
+  #display-modes { right: 50%; transform: translateX(50%); }
 }
