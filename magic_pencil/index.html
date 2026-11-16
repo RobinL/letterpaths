@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#000000" />
+  <title>Magic Pencil · Letterpaths</title>
+  <meta name="description" content="Watch a magic pencil write your words." />
+  <script type="module" crossorigin src="/letterpaths/assets/magicPencil-BQOxkIDg.js"></script>
+  <link rel="modulepreload" crossorigin href="/letterpaths/assets/Z-upper-print-bezier-o7EP_mHt.js">
+  <link rel="modulepreload" crossorigin href="/letterpaths/assets/joiner-C20HBd4f.js">
+  <link rel="modulepreload" crossorigin href="/letterpaths/assets/shared-CaqXsy5c.js">
+  <link rel="stylesheet" crossorigin href="/letterpaths/assets/magicPencil-kgQ2g_kd.css">
+</head>
+<body>
+  <main>
+    <div id="stage" aria-hidden="true"></div>
+    <p id="idle-status" class="sr-only">awaiting user input</p>
+    <form id="form" autocomplete="off">
+      <label class="sr-only" for="words">Enter text</label>
+      <input id="words" name="words" maxlength="40" placeholder="Enter text" enterkeyhint="go" spellcheck="false" aria-describedby="message" />
+      <button id="go" type="submit">Go</button>
+    </form>
+    <fieldset id="display-modes">
+      <legend class="sr-only">Display mode</legend>
+      <label><input type="radio" name="display" value="clean" /><span>Clean</span></label>
+      <label><input type="radio" name="display" value="vhs" checked /><span>VHS</span></label>
+    </fieldset>
+    <p id="message" role="status" aria-live="polite"></p>
+  </main>
+</body>
+</html>
