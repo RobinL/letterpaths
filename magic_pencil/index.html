@@ -6,27 +6,32 @@
   <meta name="theme-color" content="#000000" />
   <title>Magic Pencil · Letterpaths</title>
   <meta name="description" content="Watch a magic pencil write your words." />
-  <script type="module" crossorigin src="/letterpaths/assets/magicPencil-D_L2c0yP.js"></script>
+  <script type="module" crossorigin src="/letterpaths/assets/magicPencil-DfzxtmnX.js"></script>
   <link rel="modulepreload" crossorigin href="/letterpaths/assets/Z-upper-print-bezier-o7EP_mHt.js">
   <link rel="modulepreload" crossorigin href="/letterpaths/assets/joiner-C20HBd4f.js">
   <link rel="modulepreload" crossorigin href="/letterpaths/assets/shared-CaqXsy5c.js">
-  <link rel="stylesheet" crossorigin href="/letterpaths/assets/magicPencil-Cd82t4JI.css">
+  <link rel="stylesheet" crossorigin href="/letterpaths/assets/magicPencil-Dse7ALZk.css">
 </head>
 <body>
   <main>
     <div id="stage" aria-hidden="true"></div>
     <p id="idle-status" class="sr-only">awaiting user input</p>
     <form id="form" autocomplete="off">
-      <label class="sr-only" for="words">Enter text</label>
-      <input id="words" name="words" maxlength="40" placeholder="Enter text" enterkeyhint="go" spellcheck="false" aria-describedby="message" />
+      <label class="text-cue" for="words">
+        <span>Make it write your words</span>
+        <svg viewBox="0 0 42 32" aria-hidden="true" focusable="false">
+          <path d="M3 8c11-6 28-5 29 5 1 6-4 11-10 14m0-9-1 10 11-1" />
+        </svg>
+      </label>
+      <input id="words" name="words" maxlength="40" placeholder="Enter your text here" enterkeyhint="go" spellcheck="false" aria-describedby="message" />
       <button id="go" type="submit">Go</button>
+      <p id="message" role="status" aria-live="polite"></p>
     </form>
     <fieldset id="display-modes">
       <legend class="sr-only">Display mode</legend>
       <label><input type="radio" name="display" value="clean" /><span>Clean</span></label>
       <label><input type="radio" name="display" value="vhs" checked /><span>VHS</span></label>
     </fieldset>
-    <p id="message" role="status" aria-live="polite"></p>
     <footer id="home-link">
       <a href="../">Back to letterpaths: free cursive handwriting worksheets and apps</a>
     </footer>
